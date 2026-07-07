@@ -3,90 +3,75 @@ package com.akitaattribute.mobfarmblock.item;
 import com.akitaattribute.mobfarmblock.mob.MobProfileFactory;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
 
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.NbtComponent;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.boss.dragon.EnderDragonEntity;
-import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.text.Text;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.CustomData;
 
 public class CaptureToolItem extends Item {
     private static final String STORED_MOB_KEY = "StoredMob";
 
-    public CaptureToolItem(Settings settings) {
-        super(settings);
-    }
+    public CaptureToolItem(Properties properties) { super(properties); }
 
-    @Override
-    public ActionResult useOnEntity(ItemStack stack, PlayerEntity user, LivingEntity entity, Hand hand) {
-        if (user.getWorld().isClient) {
-            return ActionResult.SUCCESS;
-        }
+    @Override public InteractionResult interactLivingEntity(ItemStack stack, Player player, LivingEntity target, InteractionHand hand) {
+        if (player.level().isClientSide) return InteractionResult.SUCCESS;
         if (hasStoredMob(stack)) {
-            user.sendMessage(Text.translatable("item.mob_farm_block.capture_tool.filled"), true);
-            return ActionResult.FAIL;
+            player.displayClientMessage(Component.translatable("item.mob_farm_block.capture_tool.filled"), true);
+            return InteractionResult.FAIL;
         }
-        if (!canCapture(entity)) {
-            user.sendMessage(Text.translatable("item.mob_farm_block.capture_tool.invalid"), true);
-            return ActionResult.FAIL;
+        if (!canCapture(target)) {
+            player.displayClientMessage(Component.translatable("item.mob_farm_block.capture_tool.invalid"), true);
+            return InteractionResult.FAIL;
         }
-
-        StoredMob stored = MobProfileFactory.fromEntity(entity);
+        StoredMob stored = MobProfileFactory.fromEntity(target);
         setStoredMob(stack, stored);
-        entity.remove(Entity.RemovalReason.DISCARDED);
-        user.sendMessage(Text.translatable("item.mob_farm_block.capture_tool.captured"), true);
-        return ActionResult.SUCCESS;
+        target.remove(Entity.RemovalReason.DISCARDED);
+        player.displayClientMessage(Component.translatable("item.mob_farm_block.capture_tool.captured"), true);
+        return InteractionResult.SUCCESS;
     }
 
     private static boolean canCapture(LivingEntity entity) {
-        if (entity instanceof PlayerEntity) {
-            return false;
-        }
-        if (!(entity instanceof MobEntity)) {
-            return false;
-        }
-        return !(entity instanceof EnderDragonEntity);
+        return !(entity instanceof Player) && entity instanceof Mob && !(entity instanceof EnderDragon);
     }
 
     public static boolean hasStoredMob(ItemStack stack) {
-        NbtCompound nbt = getCustomNbt(stack);
-        return nbt != null && nbt.contains(STORED_MOB_KEY);
+        CompoundTag tag = getCustomNbt(stack);
+        return tag != null && tag.contains(STORED_MOB_KEY);
     }
 
     public static StoredMob getStoredMob(ItemStack stack) {
-        NbtCompound nbt = getCustomNbt(stack);
-        if (nbt == null || !nbt.contains(STORED_MOB_KEY)) {
-            return null;
-        }
-        return StoredMob.fromNbt(nbt.getCompound(STORED_MOB_KEY));
+        CompoundTag tag = getCustomNbt(stack);
+        return tag == null || !tag.contains(STORED_MOB_KEY) ? null : StoredMob.fromNbt(tag.getCompound(STORED_MOB_KEY));
     }
 
     public static void setStoredMob(ItemStack stack, StoredMob stored) {
-        NbtCompound nbt = getOrCreateCustomNbt(stack);
-        nbt.put(STORED_MOB_KEY, stored.toNbt());
-        stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
+        CompoundTag tag = getOrCreateCustomNbt(stack);
+        tag.put(STORED_MOB_KEY, stored.toNbt());
+        stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
     }
 
     public static void clearStoredMob(ItemStack stack) {
-        NbtCompound nbt = getOrCreateCustomNbt(stack);
-        nbt.remove(STORED_MOB_KEY);
-        stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
+        CompoundTag tag = getOrCreateCustomNbt(stack);
+        tag.remove(STORED_MOB_KEY);
+        stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
     }
 
-    private static NbtCompound getCustomNbt(ItemStack stack) {
-        NbtComponent component = stack.get(DataComponentTypes.CUSTOM_DATA);
-        return component == null ? null : component.copyNbt();
+    private static CompoundTag getCustomNbt(ItemStack stack) {
+        CustomData data = stack.get(DataComponents.CUSTOM_DATA);
+        return data == null ? null : data.copyTag();
     }
 
-    private static NbtCompound getOrCreateCustomNbt(ItemStack stack) {
-        NbtCompound nbt = getCustomNbt(stack);
-        return nbt == null ? new NbtCompound() : nbt;
+    private static CompoundTag getOrCreateCustomNbt(ItemStack stack) {
+        CompoundTag tag = getCustomNbt(stack);
+        return tag == null ? new CompoundTag() : tag;
     }
 }

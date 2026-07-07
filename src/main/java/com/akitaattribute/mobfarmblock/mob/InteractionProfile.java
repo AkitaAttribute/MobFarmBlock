@@ -1,32 +1,30 @@
 package com.akitaattribute.mobfarmblock.mob;
 
-import java.util.Map;
+import java.util.List;
 
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.util.Identifier;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.resources.ResourceLocation;
 
-public record InteractionProfile(Map<String, NbtCompound> actions) {
-    public static final InteractionProfile EMPTY = new InteractionProfile(Map.of());
+public record InteractionProfile(List<InteractionDefinition> definitions) {
+    public static final InteractionProfile EMPTY = new InteractionProfile(List.of());
 
-    public NbtCompound toNbt() {
-        NbtCompound nbt = new NbtCompound();
-        actions.forEach((key, value) -> nbt.put(key, value.copy()));
-        return nbt;
+    public List<InteractionDefinition> forMethod(ResourceLocation methodId) {
+        return definitions.stream().filter(definition -> definition.methodId().equals(methodId)).toList();
     }
 
-    public static InteractionProfile fromNbt(NbtCompound nbt) {
-        java.util.HashMap<String, NbtCompound> actions = new java.util.HashMap<>();
-        for (String key : nbt.getKeys()) {
-            actions.put(key, nbt.getCompound(key).copy());
-        }
-        return new InteractionProfile(Map.copyOf(actions));
+    public CompoundTag toNbt() {
+        CompoundTag tag = new CompoundTag();
+        ListTag list = new ListTag();
+        definitions.forEach(def -> list.add(def.toNbt()));
+        tag.put("definitions", list);
+        return tag;
     }
 
-    public Identifier breedingItem() {
-        NbtCompound breed = actions.get("breed");
-        if (breed != null && breed.contains("item")) {
-            return Identifier.of(breed.getString("item"));
-        }
-        return null;
+    public static InteractionProfile fromNbt(CompoundTag tag) {
+        java.util.ArrayList<InteractionDefinition> definitions = new java.util.ArrayList<>();
+        for (Tag element : tag.getList("definitions", Tag.TAG_COMPOUND)) definitions.add(InteractionDefinition.fromNbt((CompoundTag) element));
+        return new InteractionProfile(List.copyOf(definitions));
     }
 }

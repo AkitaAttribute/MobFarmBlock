@@ -4,20 +4,20 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import net.minecraft.util.Identifier;
+import net.minecraft.resources.ResourceLocation;
 
 public final class DropProfileRegistry {
-    private static final Map<Identifier, DropProfile> PROFILES = new HashMap<>();
+    private static final Map<ResourceLocation, DropProfile> PROFILES = new HashMap<>();
 
     static {
         registerDefaults();
     }
 
-    public static void put(Identifier id, DropProfile profile) {
+    public static void put(ResourceLocation id, DropProfile profile) {
         PROFILES.put(id, profile);
     }
 
-    public static DropProfile get(Identifier id) {
+    public static DropProfile get(ResourceLocation id) {
         return PROFILES.getOrDefault(id, DropProfile.EMPTY);
     }
 
@@ -27,26 +27,26 @@ public final class DropProfileRegistry {
                 drop("minecraft:leather", 1.0, 0, 2, true, 0.0, 1),
                 drop("minecraft:beef", 1.0, 1, 3, true, 0.0, 1)
         );
-        put(Identifier.of("minecraft:cow"), cow);
-        put(Identifier.of("minecraft:mooshroom"), cow);
+        put(ResourceLocation.parse("minecraft:cow"), cow);
+        put(ResourceLocation.parse("minecraft:mooshroom"), cow);
 
-        put(Identifier.of("minecraft:pig"), profile(
+        put(ResourceLocation.parse("minecraft:pig"), profile(
                 xp(1, 3),
                 drop("minecraft:porkchop", 1.0, 1, 3, true, 0.0, 1)
         ));
 
-        put(Identifier.of("minecraft:sheep"), profile(
+        put(ResourceLocation.parse("minecraft:sheep"), profile(
                 xp(1, 3),
                 drop("minecraft:mutton", 1.0, 1, 2, true, 0.0, 1)
         ));
 
-        put(Identifier.of("minecraft:chicken"), profile(
+        put(ResourceLocation.parse("minecraft:chicken"), profile(
                 xp(1, 3),
                 drop("minecraft:feather", 1.0, 0, 2, true, 0.0, 1),
                 drop("minecraft:chicken", 1.0, 1, 1, true, 0.0, 1)
         ));
 
-        put(Identifier.of("minecraft:rabbit"), profile(
+        put(ResourceLocation.parse("minecraft:rabbit"), profile(
                 xp(1, 3),
                 drop("minecraft:rabbit", 1.0, 0, 1, true, 0.0, 1),
                 drop("minecraft:rabbit_hide", 1.0, 0, 1, true, 0.0, 1),
@@ -63,7 +63,7 @@ public final class DropProfileRegistry {
             double lootingChanceBonus,
             int lootingMaxBonus
     ) {
-        return new DropRule(Identifier.of(itemId), chance, min, max, affectedByLooting, lootingChanceBonus, lootingMaxBonus);
+        return new DropRule(ResourceLocation.parse(itemId), chance, min, max, affectedByLooting, lootingChanceBonus, lootingMaxBonus);
     }
 
     private static XpProfile xp(int min, int max) {

@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "minecraft:block/spawner",
+    "layer1": "minecraft:item/red_mushroom"
+  }
+}

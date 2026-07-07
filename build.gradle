@@ -1,27 +1,50 @@
 plugins {
-    id 'fabric-loom' version '1.10-SNAPSHOT'
+    id 'java-library'
     id 'maven-publish'
+    id 'net.neoforged.moddev' version '2.0.141'
+    id 'idea'
 }
 
-version = '1.0.0'
-group = 'com.akitaattribute'
+version = mod_version
+group = mod_group_id
 
-base { archivesName = 'mob-farm-block' }
+base { archivesName = mod_id }
 
-java { toolchain { languageVersion = JavaLanguageVersion.of(21) }; withSourcesJar() }
+java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
 
-loom { splitEnvironmentSourceSets(); mods { mob_farm_block { sourceSet sourceSets.main; sourceSet sourceSets.client } } }
+repositories {
+    maven { url = 'https://maven.blamejared.com/' }
+}
 
-repositories { maven { url = 'https://maven.blamejared.com/' } }
+neoForge {
+    version = neo_version
+    mods { "${mod_id}" { sourceSet(sourceSets.main) } }
+}
+
+configurations { runtimeClasspath.extendsFrom localRuntime }
 
 dependencies {
-    minecraft 'com.mojang:minecraft:1.21.1'
-    mappings 'net.fabricmc:yarn:1.21.1+build.3:v2'
-    modImplementation 'net.fabricmc:fabric-loader:0.16.10'
-    modImplementation 'net.fabricmc.fabric-api:fabric-api:0.115.1+1.21.1'
-    modCompileOnly 'mezz.jei:jei-1.21.1-fabric-api:19.21.0.247'
+    compileOnly "mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}"
+    localRuntime "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}"
 }
 
-processResources { inputs.property 'version', project.version; filesMatching('fabric.mod.json') { expand 'version': inputs.properties.version } }
+processResources {
+    var replaceProperties = [
+            minecraft_version: minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            neo_version: neo_version,
+            neo_version_range: neo_version_range,
+            loader_version_range: loader_version_range,
+            mod_id: mod_id,
+            mod_name: mod_name,
+            mod_license: mod_license,
+            mod_version: mod_version
+    ]
+    inputs.properties replaceProperties
+    filesMatching('META-INF/neoforge.mods.toml') { expand replaceProperties }
+}
 
-tasks.withType(JavaCompile).configureEach { options.release = 21 }
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 21
+}

@@ -1,10 +1,10 @@
 package com.akitaattribute.mobfarmblock.mob;
 
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.util.Identifier;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceLocation;
 
 public record DropRule(
-        Identifier itemId,
+        ResourceLocation itemId,
         double chance,
         int minCount,
         int maxCount,
@@ -12,27 +12,27 @@ public record DropRule(
         double lootingChanceBonus,
         int lootingMaxBonus
 ) {
-    public NbtCompound toNbt() {
-        NbtCompound nbt = new NbtCompound();
-        nbt.putString("itemId", itemId.toString());
-        nbt.putDouble("chance", chance);
-        nbt.putInt("minCount", minCount);
-        nbt.putInt("maxCount", maxCount);
-        nbt.putBoolean("affectedByLooting", affectedByLooting);
-        nbt.putDouble("lootingChanceBonus", lootingChanceBonus);
-        nbt.putInt("lootingMaxBonus", lootingMaxBonus);
-        return nbt;
+    public CompoundTag toNbt() {
+        CompoundTag tag = new CompoundTag();
+        tag.putString("itemId", itemId.toString());
+        tag.putDouble("chance", chance);
+        tag.putInt("minCount", minCount);
+        tag.putInt("maxCount", maxCount);
+        tag.putBoolean("affectedByLooting", affectedByLooting);
+        tag.putDouble("lootingChanceBonus", lootingChanceBonus);
+        tag.putInt("lootingMaxBonus", lootingMaxBonus);
+        return tag;
     }
 
-    public static DropRule fromNbt(NbtCompound nbt) {
+    public static DropRule fromNbt(CompoundTag tag) {
         return new DropRule(
-                Identifier.of(nbt.getString("itemId")),
-                nbt.getDouble("chance"),
-                nbt.getInt("minCount"),
-                nbt.getInt("maxCount"),
-                nbt.getBoolean("affectedByLooting"),
-                nbt.getDouble("lootingChanceBonus"),
-                nbt.getInt("lootingMaxBonus")
+                ResourceLocation.parse(tag.getString("itemId")),
+                tag.getDouble("chance"),
+                tag.getInt("minCount"),
+                tag.getInt("maxCount"),
+                tag.getBoolean("affectedByLooting"),
+                tag.getDouble("lootingChanceBonus"),
+                tag.getInt("lootingMaxBonus")
         );
     }
 }

@@ -1,15 +1,8 @@
 package com.akitaattribute.mobfarmblock.behavior;
 
-import net.minecraft.util.ActionResult;
+import net.minecraft.world.InteractionResult;
 
 public class GenericMobBehavior implements StoredMobBehavior {
-    @Override
-    public ActionResult interact(MobFarmContext context) {
-        return ActionResult.PASS;
-    }
-
-    @Override
-    public AttackResult attack(MobFarmContext context) {
-        return BehaviorUtil.attack(context);
-    }
+    @Override public InteractionResult interact(MobFarmContext context) { return InteractionResult.PASS; }
+    @Override public AttackResult attack(MobFarmContext context) { return BehaviorUtil.attack(context); }
 }

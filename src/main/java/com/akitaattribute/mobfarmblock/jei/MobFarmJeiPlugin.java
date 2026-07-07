@@ -2,17 +2,20 @@ package com.akitaattribute.mobfarmblock.jei;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.registry.ModBlocks;
+
 import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.constants.RecipeTypes;
 import mezz.jei.api.registration.IRecipeCatalystRegistration;
-import net.minecraft.util.Identifier;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
 
-/** Optional JEI scaffold. The JEI API is compile-only and this plugin is discovered only when JEI is installed. */
 @JeiPlugin
-public class MobFarmJeiPlugin implements IModPlugin {
-    @Override public Identifier getPluginUid() { return MobFarmBlockMod.id("jei_plugin"); }
+public final class MobFarmJeiPlugin implements IModPlugin {
+    public MobFarmJeiPlugin() {}
+
+    @Override public ResourceLocation getPluginUid() { return MobFarmBlockMod.id("jei_plugin"); }
     @Override public void registerRecipeCatalysts(IRecipeCatalystRegistration registration) {
-        registration.addRecipeCatalyst(ModBlocks.MOB_FARM_BLOCK_ITEM.getDefaultStack(), RecipeTypes.CRAFTING);
+        registration.addRecipeCatalyst(new ItemStack(ModBlocks.MOB_FARM_BLOCK.get()), RecipeTypes.CRAFTING);
     }
 }

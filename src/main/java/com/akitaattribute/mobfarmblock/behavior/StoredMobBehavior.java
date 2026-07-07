@@ -1,9 +1,8 @@
 package com.akitaattribute.mobfarmblock.behavior;
 
-import net.minecraft.util.ActionResult;
+import net.minecraft.world.InteractionResult;
 
 public interface StoredMobBehavior {
-    ActionResult interact(MobFarmContext context);
-
+    InteractionResult interact(MobFarmContext context);
     AttackResult attack(MobFarmContext context);
 }

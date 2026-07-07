@@ -1,21 +1,21 @@
 package com.akitaattribute.mobfarmblock.behavior;
 
-import net.minecraft.item.Items;
-import net.minecraft.util.ActionResult;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 public class CowBehavior extends GenericMobBehavior {
-    @Override
-    public ActionResult interact(MobFarmContext context) {
-        if (context.heldItem().isOf(Items.BUCKET)) {
-            context.heldItem().decrement(1);
-            BehaviorUtil.output(context, Items.MILK_BUCKET.getDefaultStack());
-            return ActionResult.SUCCESS;
+    @Override public InteractionResult interact(MobFarmContext context) {
+        if (context.heldItem().is(Items.BUCKET)) {
+            context.heldItem().shrink(1);
+            BehaviorUtil.output(context, new ItemStack(Items.MILK_BUCKET));
+            return InteractionResult.SUCCESS;
         }
-        if (context.heldItem().isOf(Items.WHEAT)) {
-            context.heldItem().decrement(1);
+        if (context.heldItem().is(Items.WHEAT)) {
+            context.heldItem().shrink(1);
             context.stored().count++;
-            return ActionResult.SUCCESS;
+            return InteractionResult.SUCCESS;
         }
-        return ActionResult.PASS;
+        return InteractionResult.PASS;
     }
 }

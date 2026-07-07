@@ -1,7 +1,13 @@
 {
   "parent": "minecraft:item/generated",
-  "textures": {
-    "layer0": "minecraft:block/spawner",
-    "layer1": "minecraft:item/egg"
-  }
+  "textures": { "layer0": "minecraft:block/spawner" },
+  "overrides": [
+    { "predicate": { "mob_farm_block:captured_mob": 1.0 }, "model": "mob_farm_block:item/capture_tool_cow" },
+    { "predicate": { "mob_farm_block:captured_mob": 2.0 }, "model": "mob_farm_block:item/capture_tool_sheep" },
+    { "predicate": { "mob_farm_block:captured_mob": 3.0 }, "model": "mob_farm_block:item/capture_tool_pig" },
+    { "predicate": { "mob_farm_block:captured_mob": 4.0 }, "model": "mob_farm_block:item/capture_tool_chicken" },
+    { "predicate": { "mob_farm_block:captured_mob": 5.0 }, "model": "mob_farm_block:item/capture_tool_rabbit" },
+    { "predicate": { "mob_farm_block:captured_mob": 6.0 }, "model": "mob_farm_block:item/capture_tool_mooshroom" },
+    { "predicate": { "mob_farm_block:captured_mob": 7.0 }, "model": "mob_farm_block:item/capture_tool_generic" }
+  ]
 }

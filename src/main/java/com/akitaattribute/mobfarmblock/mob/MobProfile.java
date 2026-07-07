@@ -1,15 +1,17 @@
 package com.akitaattribute.mobfarmblock.mob;
 
-import net.minecraft.util.Identifier;
+import java.util.Optional;
+
+import net.minecraft.resources.ResourceLocation;
 
 public record MobProfile(
-        Identifier mobId,
+        ResourceLocation mobId,
         MobKind kind,
         DisplaySnapshot display,
         DropProfile dropProfile,
         InteractionProfile interactions,
-        Identifier speciesId,
-        Identifier breedingItem,
+        Optional<ResourceLocation> speciesId,
+        Optional<ResourceLocation> breedingItem,
         long breedingCooldown
 ) {
 }
