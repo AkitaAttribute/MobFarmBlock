@@ -1,0 +1,30 @@
+{
+  "mob": "examplemod:example_creature",
+  "kind": "CUSTOM",
+  "display": {
+    "texture": "examplemod:textures/entity/example_creature.png",
+    "variant": "default",
+    "scale": 1.0
+  },
+  "drops": [
+    {
+      "item": "minecraft:leather",
+      "chance": 0.75,
+      "min": 1,
+      "max": 2,
+      "affectedByLooting": true,
+      "lootingMaxBonus": 1
+    }
+  ],
+  "xp": {
+    "min": 1,
+    "max": 3
+  },
+  "interactions": [
+    {
+      "method": "mob_farm_block:breed",
+      "item": "minecraft:wheat",
+      "cooldownTicks": 24000
+    }
+  ]
+}
