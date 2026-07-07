@@ -1,0 +1,10 @@
+package com.akitaattribute.mobfarmblock.mob;
+import java.util.*; import net.minecraft.nbt.*; import net.minecraft.util.Identifier;
+/** StoredMob is an abstract profile plus counters/cooldown timestamps, not a serialized or ticking entity. */
+public class StoredMob { public Identifier mobId; public MobKind kind; public long count; public DisplaySnapshot display; public NbtCompound state; public DropProfile dropProfile; public Map<Identifier,Long> readyAtTicks;
+ public StoredMob(Identifier mobId,MobKind kind,long count,DisplaySnapshot display,NbtCompound state,DropProfile dropProfile,Map<Identifier,Long> readyAtTicks){this.mobId=mobId;this.kind=kind;this.count=count;this.display=display;this.state=state;this.dropProfile=dropProfile;this.readyAtTicks=readyAtTicks;}
+ public static StoredMob empty(){return new StoredMob(Identifier.of("minecraft:empty"),MobKind.CUSTOM,0,DisplaySnapshot.EMPTY,new NbtCompound(),DropProfile.EMPTY,new HashMap<>());} public boolean isEmpty(){return count<=0||mobId.getPath().equals("empty");}
+ public boolean ready(Identifier action,long now){return now>=readyAtTicks.getOrDefault(action,0L);} public void setCooldown(Identifier action,long now,long cooldown){readyAtTicks.put(action,now+cooldown);} 
+ public NbtCompound toNbt(){var n=new NbtCompound();n.putString("mobId",mobId.toString());n.putString("kind",kind.name());n.putLong("count",count);n.put("display",display.toNbt());n.put("state",state.copy());n.put("dropProfile",dropProfile.toNbt());var r=new NbtCompound();readyAtTicks.forEach((k,v)->r.putLong(k.toString(),v));n.put("readyAtTicks",r);return n;}
+ public static StoredMob fromNbt(NbtCompound n){Map<Identifier,Long> r=new HashMap<>();var rn=n.getCompound("readyAtTicks"); for(String k:rn.getKeys()) r.put(Identifier.of(k),rn.getLong(k)); return new StoredMob(Identifier.of(n.getString("mobId")),MobKind.valueOf(n.getString("kind")),n.getLong("count"),n.contains("display")?DisplaySnapshot.fromNbt(n.getCompound("display")):DisplaySnapshot.EMPTY,n.getCompound("state").copy(),n.contains("dropProfile")?DropProfile.fromNbt(n.getCompound("dropProfile")):DropProfile.EMPTY,r);}
+}

@@ -1,0 +1,4 @@
+package com.akitaattribute.mobfarmblock.mob;
+import java.util.HashMap; import net.minecraft.nbt.NbtCompound; import net.minecraft.util.Identifier;
+/** Capture hooks should create this compact profile only; full entity NBT and live state are intentionally ignored. */
+public final class MobProfileFactory { public static StoredMob vanilla(Identifier mobId, DisplaySnapshot display, long count){return new StoredMob(mobId,MobKind.VANILLA_ENTITY,count,display,initialState(mobId,display),DropProfileRegistry.get(mobId),new HashMap<>());} private static NbtCompound initialState(Identifier id,DisplaySnapshot d){var n=new NbtCompound(); if(id.toString().equals("minecraft:sheep")){n.putString("sheepColor",d.colorKey().isBlank()?"white":d.colorKey());n.putBoolean("hasWool",true);} return n;} private MobProfileFactory(){} }

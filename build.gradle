@@ -1,0 +1,27 @@
+plugins {
+    id 'fabric-loom' version '1.10-SNAPSHOT'
+    id 'maven-publish'
+}
+
+version = '1.0.0'
+group = 'com.akitaattribute'
+
+base { archivesName = 'mob-farm-block' }
+
+java { toolchain { languageVersion = JavaLanguageVersion.of(21) }; withSourcesJar() }
+
+loom { splitEnvironmentSourceSets(); mods { mob_farm_block { sourceSet sourceSets.main; sourceSet sourceSets.client } } }
+
+repositories { maven { url = 'https://maven.blamejared.com/' } }
+
+dependencies {
+    minecraft 'com.mojang:minecraft:1.21.1'
+    mappings 'net.fabricmc:yarn:1.21.1+build.3:v2'
+    modImplementation 'net.fabricmc:fabric-loader:0.16.10'
+    modImplementation 'net.fabricmc.fabric-api:fabric-api:0.115.1+1.21.1'
+    modCompileOnly 'mezz.jei:jei-1.21.1-fabric-api:19.21.0.247'
+}
+
+processResources { inputs.property 'version', project.version; filesMatching('fabric.mod.json') { expand 'version': inputs.properties.version } }
+
+tasks.withType(JavaCompile).configureEach { options.release = 21 }

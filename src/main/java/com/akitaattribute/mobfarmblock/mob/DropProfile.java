@@ -1,0 +1,3 @@
+package com.akitaattribute.mobfarmblock.mob;
+import java.util.*; import net.minecraft.nbt.*;
+public record DropProfile(List<DropRule> drops, XpProfile xp){ public static final DropProfile EMPTY=new DropProfile(List.of(),XpProfile.NONE); public NbtCompound toNbt(){var n=new NbtCompound();var l=new NbtList();drops.forEach(d->l.add(d.toNbt()));n.put("drops",l);n.put("xp",xp.toNbt());return n;} public static DropProfile fromNbt(NbtCompound n){List<DropRule> ds=new ArrayList<>(); for(var e:n.getList("drops",10)) ds.add(DropRule.fromNbt((NbtCompound)e)); return new DropProfile(ds,n.contains("xp")?XpProfile.fromNbt(n.getCompound("xp")):XpProfile.NONE);} }

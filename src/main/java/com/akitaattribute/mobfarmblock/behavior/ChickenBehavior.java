@@ -1,0 +1,3 @@
+package com.akitaattribute.mobfarmblock.behavior;
+import com.akitaattribute.mobfarmblock.MobFarmBlockMod; import net.minecraft.item.Items; import net.minecraft.util.ActionResult;
+public class ChickenBehavior extends GenericMobBehavior { static final long EGG_COOLDOWN=6000; public ActionResult interact(MobFarmContext c){var h=c.heldItem(); if(h.isOf(Items.WHEAT_SEEDS)||h.isOf(Items.PUMPKIN_SEEDS)||h.isOf(Items.MELON_SEEDS)||h.isOf(Items.BEETROOT_SEEDS)){h.decrement(1); c.stored().count++; return ActionResult.SUCCESS;} long now=c.level().getTime(); var id=MobFarmBlockMod.id("egg"); if(c.stored().ready(id,now)){BehaviorUtil.output(c,Items.EGG.getDefaultStack()); c.stored().setCooldown(id,now,EGG_COOLDOWN); return ActionResult.SUCCESS;} return ActionResult.PASS;} }
