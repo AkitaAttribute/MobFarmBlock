@@ -1,2 +1,6 @@
 package com.akitaattribute.mobfarmblock.behavior;
-public enum AttackResult { PASS, SUCCESS }
+
+public enum AttackResult {
+    PASS,
+    SUCCESS
+}

@@ -1,3 +1,31 @@
 package com.akitaattribute.mobfarmblock.mob;
-import java.util.*; import net.minecraft.nbt.*;
-public record DropProfile(List<DropRule> drops, XpProfile xp){ public static final DropProfile EMPTY=new DropProfile(List.of(),XpProfile.NONE); public NbtCompound toNbt(){var n=new NbtCompound();var l=new NbtList();drops.forEach(d->l.add(d.toNbt()));n.put("drops",l);n.put("xp",xp.toNbt());return n;} public static DropProfile fromNbt(NbtCompound n){List<DropRule> ds=new ArrayList<>(); for(var e:n.getList("drops",10)) ds.add(DropRule.fromNbt((NbtCompound)e)); return new DropProfile(ds,n.contains("xp")?XpProfile.fromNbt(n.getCompound("xp")):XpProfile.NONE);} }
+
+import java.util.ArrayList;
+import java.util.List;
+
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtList;
+
+public record DropProfile(List<DropRule> drops, XpProfile xp) {
+    public static final DropProfile EMPTY = new DropProfile(List.of(), XpProfile.NONE);
+
+    public NbtCompound toNbt() {
+        NbtCompound nbt = new NbtCompound();
+        NbtList dropsNbt = new NbtList();
+        for (DropRule drop : drops) {
+            dropsNbt.add(drop.toNbt());
+        }
+        nbt.put("drops", dropsNbt);
+        nbt.put("xp", xp.toNbt());
+        return nbt;
+    }
+
+    public static DropProfile fromNbt(NbtCompound nbt) {
+        List<DropRule> drops = new ArrayList<>();
+        for (var element : nbt.getList("drops", NbtCompound.COMPOUND_TYPE)) {
+            drops.add(DropRule.fromNbt((NbtCompound) element));
+        }
+        XpProfile xp = nbt.contains("xp") ? XpProfile.fromNbt(nbt.getCompound("xp")) : XpProfile.NONE;
+        return new DropProfile(List.copyOf(drops), xp);
+    }
+}

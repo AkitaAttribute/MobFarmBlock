@@ -1,3 +1,79 @@
 package com.akitaattribute.mobfarmblock.mob;
-import java.util.*; import net.minecraft.util.Identifier;
-public final class DropProfileRegistry { private static final Map<Identifier,DropProfile> PROFILES=new HashMap<>(); static { defaults(); } public static void put(Identifier id,DropProfile p){PROFILES.put(id,p);} public static DropProfile get(Identifier id){return PROFILES.getOrDefault(id,DropProfile.EMPTY);} private static void defaults(){ put(Identifier.of("minecraft:cow"),p(xp(1,3),r("minecraft:leather",1,0,2),r("minecraft:beef",1,1,3))); put(Identifier.of("minecraft:mooshroom"),get(Identifier.of("minecraft:cow"))); put(Identifier.of("minecraft:pig"),p(xp(1,3),r("minecraft:porkchop",1,1,3))); put(Identifier.of("minecraft:sheep"),p(xp(1,3),r("minecraft:white_wool",1,1,1),r("minecraft:mutton",1,1,2))); put(Identifier.of("minecraft:chicken"),p(xp(1,3),r("minecraft:feather",1,0,2),r("minecraft:chicken",1,1,1))); put(Identifier.of("minecraft:rabbit"),p(xp(1,3),r("minecraft:rabbit",1,0,1),r("minecraft:rabbit_hide",1,0,1))); } private static DropRule r(String i,double c,int min,int max){return new DropRule(Identifier.of(i),c,min,max,true,0,1);} private static XpProfile xp(int a,int b){return new XpProfile(a,b);} private static DropProfile p(XpProfile xp,DropRule...r){return new DropProfile(List.of(r),xp);} private DropProfileRegistry(){} }
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import net.minecraft.util.Identifier;
+
+public final class DropProfileRegistry {
+    private static final Map<Identifier, DropProfile> PROFILES = new HashMap<>();
+
+    static {
+        registerDefaults();
+    }
+
+    public static void put(Identifier id, DropProfile profile) {
+        PROFILES.put(id, profile);
+    }
+
+    public static DropProfile get(Identifier id) {
+        return PROFILES.getOrDefault(id, DropProfile.EMPTY);
+    }
+
+    private static void registerDefaults() {
+        DropProfile cow = profile(
+                xp(1, 3),
+                drop("minecraft:leather", 1.0, 0, 2, true, 0.0, 1),
+                drop("minecraft:beef", 1.0, 1, 3, true, 0.0, 1)
+        );
+        put(Identifier.of("minecraft:cow"), cow);
+        put(Identifier.of("minecraft:mooshroom"), cow);
+
+        put(Identifier.of("minecraft:pig"), profile(
+                xp(1, 3),
+                drop("minecraft:porkchop", 1.0, 1, 3, true, 0.0, 1)
+        ));
+
+        put(Identifier.of("minecraft:sheep"), profile(
+                xp(1, 3),
+                drop("minecraft:mutton", 1.0, 1, 2, true, 0.0, 1)
+        ));
+
+        put(Identifier.of("minecraft:chicken"), profile(
+                xp(1, 3),
+                drop("minecraft:feather", 1.0, 0, 2, true, 0.0, 1),
+                drop("minecraft:chicken", 1.0, 1, 1, true, 0.0, 1)
+        ));
+
+        put(Identifier.of("minecraft:rabbit"), profile(
+                xp(1, 3),
+                drop("minecraft:rabbit", 1.0, 0, 1, true, 0.0, 1),
+                drop("minecraft:rabbit_hide", 1.0, 0, 1, true, 0.0, 1),
+                drop("minecraft:rabbit_foot", 0.10, 1, 1, true, 0.03, 0)
+        ));
+    }
+
+    private static DropRule drop(
+            String itemId,
+            double chance,
+            int min,
+            int max,
+            boolean affectedByLooting,
+            double lootingChanceBonus,
+            int lootingMaxBonus
+    ) {
+        return new DropRule(Identifier.of(itemId), chance, min, max, affectedByLooting, lootingChanceBonus, lootingMaxBonus);
+    }
+
+    private static XpProfile xp(int min, int max) {
+        return new XpProfile(min, max);
+    }
+
+    private static DropProfile profile(XpProfile xp, DropRule... rules) {
+        return new DropProfile(List.of(rules), xp);
+    }
+
+    private DropProfileRegistry() {
+    }
+}
