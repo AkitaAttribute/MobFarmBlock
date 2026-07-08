@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
+import com.akitaattribute.mobfarmblock.mob.CobblemonRenderSnapshot;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
 
 import net.minecraft.client.Minecraft;
@@ -53,10 +54,28 @@ public final class ClientEntityRenderCache {
         if (entity instanceof Sheep sheep && !stored.display.colorKey().isBlank()) sheep.setColor(DyeColor.byName(stored.display.colorKey(), DyeColor.WHITE));
         if (entity instanceof AgeableMob ageable) ageable.setBaby(stored.display.baby());
         if ("cobblemon:pokemon".equals(stored.mobId.toString()) && stored.speciesId != null) {
+            if (stored.cobblemonRenderSnapshot != null) return applyCobblemonSnapshot(entity, stored);
             String method = applyCobblemonSpecies(entity, stored);
             if (method == null) return false;
         }
         return true;
+    }
+
+    private static boolean applyCobblemonSnapshot(Entity entity, StoredMob stored) {
+        CobblemonRenderSnapshot snapshot = stored.cobblemonRenderSnapshot;
+        boolean applied = false;
+        for (String className : java.util.List.of("com.cobblemon.mod.common.api.pokemon.PokemonProperties", "com.cobblemon.mod.common.pokemon.PokemonProperties")) {
+            applied = tryPokemonPropertiesText(entity, snapshot.speciesId(), snapshotPropertiesText(snapshot), className);
+            if (applied) break;
+        }
+        Optional<Object> pokemon = readPokemon(entity);
+        pokemon.ifPresent(value -> syncCobblemonEntityData(entity, snapshot.speciesId(), value, snapshot.aspects()));
+        ValidationResult validation = validationFor(entity, stored);
+        boolean aspectsValid = snapshot.aspects() == null || snapshot.aspects().isEmpty() || snapshot.aspects().stream().allMatch(aspect -> validation.aspects().contains(aspect));
+        boolean valid = applied && validation.valid() && aspectsValid;
+        MobFarmBlockMod.LOGGER.info("Mob Farm Block Debug: Cobblemon snapshot render for {} applied={} valid={} readBack={} aspects={} expectedAspects={} renderable={} capturedRenderable={}",
+                snapshot.speciesId(), applied, valid, validation.readBack(), validation.aspects(), snapshot.aspects(), validation.renderable(), snapshot.renderableDebug());
+        return valid;
     }
 
     public static void freezeForRender(Entity entity) {
@@ -108,7 +127,14 @@ public final class ClientEntityRenderCache {
 
     private static boolean tryCobblemonMethod(Entity entity, Object existingPokemon, StoredMob stored, String method) {
         if (EXISTING_POKEMON_ENTITY_STATE.equals(method)) return false;
-        if (method.startsWith("PokemonProperties:")) return tryPokemonPropertiesClass(entity, stored.speciesId, stored.display.variantKey(), method.substring("PokemonProperties:".length()));
+        if (method.startsWith("PokemonProperties:")) {
+            boolean applied = tryPokemonPropertiesClass(entity, stored.speciesId, stored.display.variantKey(), method.substring("PokemonProperties:".length()));
+            if (applied) readPokemon(entity).ifPresent(pokemon -> {
+                applyCobblemonAspects(entity, pokemon, stored.display.variantKey());
+                syncCobblemonEntityData(entity, stored.speciesId, pokemon, stored.display.variantKey());
+            });
+            return applied;
+        }
         if ("PokemonObject:setSpecies".equals(method)) {
             if (trySetSpeciesOnPokemon(existingPokemon, stored.speciesId)) {
                 applyCobblemonAspects(entity, existingPokemon, stored.display.variantKey());
@@ -120,21 +146,33 @@ public final class ClientEntityRenderCache {
     }
 
     private static boolean tryPokemonPropertiesClass(Entity entity, ResourceLocation speciesId, String variantKey, String className) {
+        return tryPokemonPropertiesText(entity, speciesId, pokemonPropertiesText(speciesId, variantKey), className);
+    }
+
+    private static boolean tryPokemonPropertiesText(Entity entity, ResourceLocation speciesId, String propertiesText, String className) {
         try {
             Class<?> propertiesClass = Class.forName(className);
-            Object props = invokeStatic(propertiesClass, "parse", pokemonPropertiesText(speciesId, variantKey)).or(() -> invokeStatic(propertiesClass, "parse", speciesId.getPath())).or(() -> invokeStatic(propertiesClass, "parse", speciesId.toString())).orElse(null);
+            Object props = invokeStatic(propertiesClass, "parse", propertiesText).or(() -> invokeStatic(propertiesClass, "parse", speciesId.getPath())).or(() -> invokeStatic(propertiesClass, "parse", speciesId.toString())).orElse(null);
             if (props == null) return false;
             Object pokemon = invoke(props, "create").orElse(null);
             if (pokemon == null) return false;
             if (invoke(entity, "setPokemon", pokemon).isPresent() || setField(entity, "pokemon", pokemon)) {
-                applyCobblemonAspects(entity, pokemon, variantKey);
-                syncCobblemonEntityData(entity, speciesId, pokemon, variantKey);
                 return true;
             }
         } catch (Throwable error) {
             warnOnce("Cobblemon PokemonProperties failed: " + className, error);
         }
         return false;
+    }
+
+    private static String snapshotPropertiesText(CobblemonRenderSnapshot snapshot) {
+        StringBuilder text = new StringBuilder(snapshot.speciesId().getPath());
+        if (snapshot.aspects() != null) for (String aspect : snapshot.aspects()) if (aspect != null && !aspect.isBlank()) text.append(' ').append(aspect);
+        if (snapshot.form() != null && !snapshot.form().isBlank()) text.append(' ').append(snapshot.form());
+        if (snapshot.level() > 0) text.append(" level=").append(snapshot.level());
+        if (snapshot.shiny()) text.append(" shiny");
+        if (snapshot.gender() != null && !snapshot.gender().isBlank()) text.append(' ').append(snapshot.gender().toLowerCase(java.util.Locale.ROOT));
+        return text.toString();
     }
 
     private static String cobblemonMethodKey(StoredMob stored) { return stored.speciesId + "|" + stored.display.variantKey(); }
@@ -212,11 +250,14 @@ public final class ClientEntityRenderCache {
     }
 
     private static void syncCobblemonEntityData(Entity entity, ResourceLocation speciesId, Object pokemon, String variantKey) {
+        syncCobblemonEntityData(entity, speciesId, pokemon, parseAspects(variantKey));
+    }
+
+    private static void syncCobblemonEntityData(Entity entity, ResourceLocation speciesId, Object pokemon, java.util.List<String> aspects) {
         Optional<Object> species = readField(pokemon, "species").or(() -> invoke(pokemon, "getSpecies"));
         setEntityData(entity, "SPECIES", species.orElse(speciesId));
         setEntityData(entity, "SPECIES", speciesId);
         setEntityData(entity, "SPECIES", speciesId.getPath());
-        java.util.List<String> aspects = parseAspects(variantKey);
         if (!aspects.isEmpty()) setEntityData(entity, "ASPECTS", aspects);
         invoke(entity, "refreshDimensions");
     }

@@ -18,10 +18,17 @@ public class StoredMob {
     public Map<ResourceLocation, Long> readyAtTicks;
     public ResourceLocation speciesId;
     public String dropProfileSource;
+    public CobblemonRenderSnapshot cobblemonRenderSnapshot;
 
     public StoredMob(ResourceLocation mobId, MobKind kind, long count, DisplaySnapshot display, CompoundTag state,
                      DropProfile dropProfile, InteractionProfile interactionProfile, Map<ResourceLocation, Long> readyAtTicks,
                      ResourceLocation speciesId, String dropProfileSource) {
+        this(mobId, kind, count, display, state, dropProfile, interactionProfile, readyAtTicks, speciesId, dropProfileSource, null);
+    }
+
+    public StoredMob(ResourceLocation mobId, MobKind kind, long count, DisplaySnapshot display, CompoundTag state,
+                     DropProfile dropProfile, InteractionProfile interactionProfile, Map<ResourceLocation, Long> readyAtTicks,
+                     ResourceLocation speciesId, String dropProfileSource, CobblemonRenderSnapshot cobblemonRenderSnapshot) {
         this.mobId = mobId;
         this.kind = kind;
         this.count = count;
@@ -32,6 +39,7 @@ public class StoredMob {
         this.readyAtTicks = readyAtTicks == null ? new HashMap<>() : readyAtTicks;
         this.speciesId = speciesId;
         this.dropProfileSource = dropProfileSource == null ? "empty" : dropProfileSource;
+        this.cobblemonRenderSnapshot = cobblemonRenderSnapshot;
     }
 
     public static StoredMob empty() {
@@ -63,7 +71,7 @@ public class StoredMob {
 
     public StoredMob copyWithCount(long newCount) {
         return new StoredMob(mobId, kind, newCount, display, state.copy(), dropProfile, interactionProfile,
-                new HashMap<>(readyAtTicks), speciesId, dropProfileSource);
+                new HashMap<>(readyAtTicks), speciesId, dropProfileSource, cobblemonRenderSnapshot);
     }
 
     public CompoundTag toNbt() {
@@ -77,6 +85,7 @@ public class StoredMob {
         tag.put("interactionProfile", interactionProfile.toNbt());
         if (speciesId != null) tag.putString("speciesId", speciesId.toString());
         tag.putString("dropProfileSource", dropProfileSource);
+        if (cobblemonRenderSnapshot != null) tag.put("cobblemonRenderSnapshot", cobblemonRenderSnapshot.toNbt());
         CompoundTag readyTag = new CompoundTag();
         readyAtTicks.forEach((action, tick) -> readyTag.putLong(action.toString(), tick));
         tag.put("readyAtTicks", readyTag);
@@ -88,6 +97,7 @@ public class StoredMob {
         CompoundTag readyTag = tag.getCompound("readyAtTicks");
         for (String key : readyTag.getAllKeys()) readyAtTicks.put(ResourceLocation.parse(key), readyTag.getLong(key));
         ResourceLocation speciesId = tag.contains("speciesId") ? ResourceLocation.parse(tag.getString("speciesId")) : null;
+        CobblemonRenderSnapshot snapshot = tag.contains("cobblemonRenderSnapshot") ? CobblemonRenderSnapshot.fromNbt(tag.getCompound("cobblemonRenderSnapshot")) : null;
         return new StoredMob(
                 ResourceLocation.parse(tag.getString("mobId")),
                 MobKind.valueOf(tag.contains("kind") ? tag.getString("kind") : MobKind.CUSTOM.name()),
@@ -98,7 +108,8 @@ public class StoredMob {
                 tag.contains("interactionProfile") ? InteractionProfile.fromNbt(tag.getCompound("interactionProfile")) : InteractionProfile.EMPTY,
                 readyAtTicks,
                 speciesId,
-                tag.contains("dropProfileSource") ? tag.getString("dropProfileSource") : "empty"
+                tag.contains("dropProfileSource") ? tag.getString("dropProfileSource") : "empty",
+                snapshot
         );
     }
 }

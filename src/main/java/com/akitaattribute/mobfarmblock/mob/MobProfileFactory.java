@@ -24,9 +24,11 @@ public final class MobProfileFactory {
         MobKind kind = detectKind(entity, mobId);
         DisplaySnapshot display = resolveDisplay(entity);
         ResourceLocation species = CobblemonIntegration.getSpeciesId(entity).or(() -> PixelmonIntegration.getSpeciesId(entity)).orElse(null);
+        CobblemonRenderSnapshot cobblemonRenderSnapshot = null;
         if (kind == MobKind.COBBLEMON && species != null) {
             String variant = CobblemonIntegration.getDisplayKey(entity).orElse(species.toString());
             display = new DisplaySnapshot(display.entityTypeId(), display.textureId(), variant, display.colorKey(), display.baby(), display.scale());
+            cobblemonRenderSnapshot = CobblemonIntegration.getRenderSnapshot(entity).orElse(null);
         }
         DropProfile drops = null;
         String source = "vanilla";
@@ -43,7 +45,7 @@ public final class MobProfileFactory {
             }
         }
         return new StoredMob(mobId, kind, 1, display, initialState(mobId, display), drops,
-                builtInInteractions(mobId), new HashMap<>(), species, source);
+                builtInInteractions(mobId), new HashMap<>(), species, source, cobblemonRenderSnapshot);
     }
 
     public static StoredMob vanilla(ResourceLocation mobId, DisplaySnapshot display, long count) {

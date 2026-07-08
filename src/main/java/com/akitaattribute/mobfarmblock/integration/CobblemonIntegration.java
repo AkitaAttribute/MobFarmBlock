@@ -10,6 +10,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
+import com.akitaattribute.mobfarmblock.mob.CobblemonRenderSnapshot;
 import com.akitaattribute.mobfarmblock.mob.DisplaySnapshot;
 import com.akitaattribute.mobfarmblock.mob.DropProfile;
 import com.akitaattribute.mobfarmblock.mob.DropRule;
@@ -156,6 +157,37 @@ public final class CobblemonIntegration {
         appendObjectValue(key, "gender", value(pokemon.get(), "getGender", "gender"));
         appendObjectValue(key, "aspects", value(pokemon.get(), "getAspects", "aspects"));
         return key.isEmpty() ? Optional.empty() : Optional.of(key.toString());
+    }
+
+    public static Optional<CobblemonRenderSnapshot> getRenderSnapshot(Entity entity) {
+        if (!isPokemonEntity(entity)) return Optional.empty();
+        Optional<Object> pokemon = getPokemonObject(entity);
+        Optional<ResourceLocation> species = getSpeciesId(entity);
+        if (pokemon.isEmpty() || species.isEmpty()) return Optional.empty();
+        Object pokemonObject = pokemon.get();
+        Optional<Object> form = getFormObject(pokemonObject);
+        Optional<Object> speciesObject = extractSpeciesObject(pokemonObject);
+        String formId = form.flatMap(f -> value(f, "showdownId", "getShowdownId", "formOnlyShowdownId", "getFormOnlyShowdownId")).map(String::valueOf).orElse("");
+        List<String> aspects = value(pokemonObject, "getAspects", "aspects").map(CobblemonIntegration::stringList).orElse(List.of());
+        int level = value(pokemonObject, "getLevel", "level").flatMap(CobblemonIntegration::coerceInt).orElse(0);
+        boolean shiny = value(pokemonObject, "getShiny", "isShiny", "shiny").map(v -> Boolean.parseBoolean(String.valueOf(v))).orElse(false);
+        String gender = value(pokemonObject, "getGender", "gender").map(String::valueOf).orElse("");
+        float baseScale = form.flatMap(f -> value(f, "getBaseScale", "baseScale")).flatMap(CobblemonIntegration::coerceDouble).map(Double::floatValue)
+                .or(() -> speciesObject.flatMap(s -> value(s, "getBaseScale", "baseScale")).flatMap(CobblemonIntegration::coerceDouble).map(Double::floatValue)).orElse(1.0F);
+        float scaleModifier = value(pokemonObject, "getScaleModifier", "scaleModifier").flatMap(CobblemonIntegration::coerceDouble).map(Double::floatValue).orElse(1.0F);
+        String heldItem = value(pokemonObject, "heldItem", "getHeldItem", "getShownHeldItem", "shownHeldItem").map(String::valueOf).orElse("");
+        String renderable = reflectNoArg(pokemonObject, "asRenderablePokemon").map(String::valueOf).orElse("");
+        String exposedSpecies = reflectNoArg(entity, "getExposedSpecies").map(String::valueOf).orElse("");
+        String exposedForm = reflectNoArg(entity, "getExposedForm").map(String::valueOf).orElse("");
+        String exposedAspects = reflectNoArg(entity, "getExposedAspects").map(String::valueOf).orElse("");
+        return Optional.of(new CobblemonRenderSnapshot(species.get(), formId, aspects, level, shiny, gender, baseScale, scaleModifier, heldItem, renderable, exposedSpecies, exposedForm, exposedAspects));
+    }
+
+    private static List<String> stringList(Object value) {
+        if (value instanceof Collection<?> collection) return collection.stream().map(String::valueOf).map(String::trim).filter(s -> !s.isBlank()).toList();
+        String text = String.valueOf(value).replace("[", "").replace("]", "");
+        if (text.isBlank()) return List.of();
+        return java.util.Arrays.stream(text.split(",")).map(String::trim).filter(s -> !s.isBlank()).toList();
     }
 
     private static void appendObjectValue(StringBuilder key, String name, Optional<Object> value) {
