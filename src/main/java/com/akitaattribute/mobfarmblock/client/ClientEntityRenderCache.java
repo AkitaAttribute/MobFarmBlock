@@ -39,16 +39,20 @@ public final class ClientEntityRenderCache {
             warnOnce("dummy entity could not be created: " + stored.mobId);
             return null;
         }
-        applyDisplay(entity, stored);
+        if (!applyDisplay(entity, stored)) return null;
         CACHE.put(key, entity);
         return entity;
     }
 
-    private static void applyDisplay(Entity entity, StoredMob stored) {
+    private static boolean applyDisplay(Entity entity, StoredMob stored) {
         freezeForRender(entity);
         if (entity instanceof Sheep sheep && !stored.display.colorKey().isBlank()) sheep.setColor(DyeColor.byName(stored.display.colorKey(), DyeColor.WHITE));
         if (entity instanceof AgeableMob ageable) ageable.setBaby(stored.display.baby());
-        if ("cobblemon:pokemon".equals(stored.mobId.toString()) && stored.speciesId != null) applyCobblemonSpecies(entity, stored);
+        if ("cobblemon:pokemon".equals(stored.mobId.toString()) && stored.speciesId != null) {
+            applyCobblemonSpecies(entity, stored);
+            if (!validateCobblemonSpecies(entity, stored)) return false;
+        }
+        return true;
     }
 
     public static void freezeForRender(Entity entity) {
@@ -176,6 +180,38 @@ public final class ClientEntityRenderCache {
         setField(entity, "aspects", aspects);
         invoke(pokemon, "updateAspects");
         invoke(entity, "updateAspects");
+    }
+
+    private static boolean validateCobblemonSpecies(Entity entity, StoredMob stored) {
+        Optional<Object> pokemon = readPokemon(entity);
+        Optional<ResourceLocation> readBack = pokemon.flatMap(ClientEntityRenderCache::readPokemonSpeciesId)
+                .or(() -> invoke(entity, "getExposedSpecies").flatMap(ClientEntityRenderCache::coerceResourceLocation));
+        Optional<Object> aspects = pokemon.flatMap(p -> invoke(p, "getAspects").or(() -> readField(p, "aspects")))
+                .or(() -> invoke(entity, "getExposedAspects"));
+        Optional<Object> renderable = pokemon.flatMap(p -> invoke(p, "asRenderablePokemon"));
+        boolean valid = readBack.isPresent() && readBack.get().equals(stored.speciesId);
+        if (!valid) {
+            warnOnce("Cobblemon dummy validation failed. storedSpecies=" + stored.speciesId + " readBackSpecies=" + readBack.map(Object::toString).orElse("unavailable")
+                    + " variantKey=" + stored.display.variantKey() + " aspects=" + aspects.map(Object::toString).orElse("unavailable")
+                    + " renderable=" + renderable.map(Object::toString).orElse("unavailable"));
+        } else {
+            MobFarmBlockMod.LOGGER.debug("Cobblemon dummy validated: storedSpecies={} readBackSpecies={} aspects={} renderable={}", stored.speciesId, readBack.get(), aspects.map(Object::toString).orElse("unavailable"), renderable.map(Object::toString).orElse("unavailable"));
+        }
+        return valid;
+    }
+
+    private static Optional<ResourceLocation> readPokemonSpeciesId(Object pokemon) {
+        return invoke(pokemon, "getSpecies").or(() -> readField(pokemon, "species")).flatMap(ClientEntityRenderCache::coerceResourceLocation);
+    }
+
+    private static Optional<ResourceLocation> coerceResourceLocation(Object value) {
+        if (value == null) return Optional.empty();
+        if (value instanceof ResourceLocation id) return Optional.of(id);
+        Optional<Object> resource = invoke(value, "getResourceIdentifier").or(() -> invoke(value, "getIdentifier")).or(() -> invoke(value, "getId")).or(() -> readField(value, "resourceIdentifier")).or(() -> readField(value, "identifier"));
+        if (resource.isPresent() && resource.get() != value) return coerceResourceLocation(resource.get());
+        String text = String.valueOf(value);
+        try { return text.contains(":") ? Optional.of(ResourceLocation.parse(text)) : Optional.of(ResourceLocation.fromNamespaceAndPath("cobblemon", text)); }
+        catch (Throwable ignored) { return Optional.empty(); }
     }
 
     private static Optional<Object> readPokemon(Entity entity) { return invoke(entity, "getPokemon").or(() -> invoke(entity, "pokemon")).or(() -> readField(entity, "pokemon")); }

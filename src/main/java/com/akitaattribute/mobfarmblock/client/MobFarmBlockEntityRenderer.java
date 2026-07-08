@@ -75,7 +75,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
             poseStack.scale(-12.0F, -12.0F, 12.0F);
             minecraft.getItemRenderer().renderStatic(line.icon(), ItemDisplayContext.GUI, LightTexture.FULL_BRIGHT, 0, poseStack, buffer, minecraft.level, 0);
             poseStack.popPose();
-            font.drawInBatch(line.text(), -42.0F, y, line.color(), false, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, 0x99000000, LightTexture.FULL_BRIGHT);
+            font.drawInBatch(line.text(), -42.0F, y, line.color(), true, poseStack.last().pose(), buffer, Font.DisplayMode.SEE_THROUGH, 0xAA000000, LightTexture.FULL_BRIGHT);
             y += 14;
         }
         poseStack.popPose();
@@ -83,30 +83,44 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
 
     private static List<HoverLine> hoverLines(StoredMob stored, long now) {
         List<HoverLine> lines = new ArrayList<>();
+        lines.add(new HoverLine(ItemStack.EMPTY, mobLabel(stored), 0xFFFFFF));
         int shownDrops = 0;
         for (DropRule rule : stored.dropProfile.drops()) {
             if (shownDrops++ >= 3) break;
-            lines.add(new HoverLine(new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId())), chanceText(rule.chance()), 0x00FF00));
+            ItemStack icon = new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId()));
+            lines.add(new HoverLine(icon, icon.getHoverName().getString() + ": " + chanceText(rule.chance()), 0x00FF00));
         }
         if ("minecraft:sheep".equals(stored.mobId.toString())) {
             long readyAt = stored.state.getLong("nextWoolReadyAt");
             DyeColor color = DyeColor.byName(stored.state.getString("sheepColor"), DyeColor.WHITE);
-            lines.add(new HoverLine(new ItemStack(com.akitaattribute.mobfarmblock.behavior.SheepBehavior.woolForColor(color)), status(now, readyAt), now >= readyAt ? 0x00FF00 : 0xFFFF55));
+            ItemStack wool = new ItemStack(com.akitaattribute.mobfarmblock.behavior.SheepBehavior.woolForColor(color));
+            lines.add(new HoverLine(wool, wool.getHoverName().getString() + ": " + status(now, readyAt), now >= readyAt ? 0x00FF00 : 0xFFFF55));
         }
         for (InteractionDefinition definition : stored.interactionProfile.definitions()) {
             ResourceLocation method = definition.methodId();
-            if (method.equals(MobFarmBlockMod.id("egg"))) lines.add(new HoverLine(new ItemStack(Items.EGG), status(now, stored.readyAtTicks.getOrDefault(method, 0L)), now >= stored.readyAtTicks.getOrDefault(method, 0L) ? 0x00FF00 : 0xFFFF55));
-            if (method.equals(MobFarmBlockMod.id("milk"))) lines.add(new HoverLine(new ItemStack(Items.MILK_BUCKET), "Ready!", 0x00FF00));
+            if (method.equals(MobFarmBlockMod.id("egg"))) lines.add(new HoverLine(new ItemStack(Items.EGG), "Egg: " + status(now, stored.readyAtTicks.getOrDefault(method, 0L)), now >= stored.readyAtTicks.getOrDefault(method, 0L) ? 0x00FF00 : 0xFFFF55));
+            if (method.equals(MobFarmBlockMod.id("milk"))) lines.add(new HoverLine(new ItemStack(Items.MILK_BUCKET), "Milk: Ready", 0x00FF00));
             if (method.equals(MobFarmBlockMod.id("breed")) && stored.state.getBoolean("breedingCycleActive")) {
                 long base = stored.state.getLong("breedingBaseCount");
                 long fed = stored.state.getLong("breedingFedCount");
                 long maxFeed = (base / 2L) * 2L;
                 long readyAt = stored.state.getLong("breedingReadyAt");
-                lines.add(new HoverLine(breedingIcon(definition), "Breeding: " + fed + "/" + maxFeed + " fed, " + status(now, readyAt), now >= readyAt ? 0x00FF00 : 0xFFFF55));
+                lines.add(new HoverLine(breedingIcon(definition), "Breed: " + fed + "/" + maxFeed + " fed, " + status(now, readyAt), now >= readyAt ? 0x00FF00 : 0xFFFF55));
             }
-            definition.outputItem().ifPresent(item -> lines.add(new HoverLine(new ItemStack(BuiltInRegistries.ITEM.get(item)), status(now, stored.readyAtTicks.getOrDefault(method, 0L)), now >= stored.readyAtTicks.getOrDefault(method, 0L) ? 0x00FF00 : 0xFFFF55)));
+            definition.outputItem().ifPresent(item -> {
+                ItemStack output = new ItemStack(BuiltInRegistries.ITEM.get(item));
+                lines.add(new HoverLine(output, output.getHoverName().getString() + ": " + status(now, stored.readyAtTicks.getOrDefault(method, 0L)), now >= stored.readyAtTicks.getOrDefault(method, 0L) ? 0x00FF00 : 0xFFFF55));
+            });
         }
         return lines;
+    }
+
+    private static String mobLabel(StoredMob stored) {
+        String id = stored.speciesId == null ? stored.mobId.toString() : stored.speciesId.toString();
+        int colon = id.indexOf(':');
+        String name = colon >= 0 ? id.substring(colon + 1) : id;
+        name = java.util.Arrays.stream(name.split("[_-]")).filter(part -> !part.isBlank()).map(part -> part.substring(0, 1).toUpperCase(java.util.Locale.ROOT) + part.substring(1)).reduce((a, b) -> a + " " + b).orElse(name);
+        return name + " x" + stored.count;
     }
 
     private static ItemStack breedingIcon(InteractionDefinition definition) {

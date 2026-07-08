@@ -12,7 +12,7 @@ public final class MobFarmConfig {
         DEBUG_CHAT_MESSAGES = builder
                 .comment("Send player-facing debug messages for capture, insertion, processing, and breeding actions.")
                 .translation("mob_farm_block.configuration.debugChatMessages")
-                .define("debugChatMessages", true);
+                .define("debugChatMessages", false);
         DEBUG_COBBLEMON_JSON_DUMP = builder
                 .comment("Write JSON Cobblemon entity debug dumps when capturing or inserting cobblemon:pokemon.")
                 .translation("mob_farm_block.configuration.debugCobblemonJsonDump")

@@ -64,6 +64,10 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
     private static float entityScale(Entity entity, StoredMob stored, float base, float maxHeight) {
         float displayScale = stored.display.scale() > 0 ? stored.display.scale() : 1.0F;
         float height = Math.max(entity.getBbHeight(), 0.75F) * displayScale;
-        return Math.min(base / Math.max(0.75F, displayScale), base * maxHeight / height);
+        float width = Math.max(entity.getBbWidth(), 0.5F) * displayScale;
+        float bounding = Math.max(height, width * 1.35F);
+        float fit = base * maxHeight / bounding;
+        float natural = base / Math.max(0.75F, displayScale);
+        return Math.max(base * 0.45F, Math.min(natural, fit));
     }
 }
