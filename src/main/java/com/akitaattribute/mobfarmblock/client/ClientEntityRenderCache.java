@@ -23,12 +23,13 @@ import net.minecraft.world.item.DyeColor;
 public final class ClientEntityRenderCache {
     private static final Map<String, Entity> CACHE = new HashMap<>();
     private static final java.util.Set<String> WARNED = new java.util.HashSet<>();
-    private static final java.util.Set<String> FAILED_KEYS = new java.util.HashSet<>();
+    private static final Map<String, Long> FAILED_UNTIL = new HashMap<>();
 
     public static Entity getOrCreate(StoredMob stored) {
         if (stored == null || stored.isEmpty() || Minecraft.getInstance().level == null) return null;
         String key = stored.mobId + "|" + stored.speciesId + "|" + stored.display.variantKey() + "|" + stored.display.colorKey() + "|" + stored.display.baby();
-        if (FAILED_KEYS.contains(key)) return null;
+        long now = Minecraft.getInstance().level == null ? 0L : Minecraft.getInstance().level.getGameTime();
+        if (FAILED_UNTIL.getOrDefault(key, 0L) > now) return null;
         Entity cached = CACHE.get(key);
         if (cached != null) { freezeForRender(cached); return cached; }
         EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(stored.mobId);
@@ -41,7 +42,7 @@ public final class ClientEntityRenderCache {
             warnOnce("dummy entity could not be created: " + stored.mobId);
             return null;
         }
-        if (!applyDisplay(entity, stored)) { FAILED_KEYS.add(key); return null; }
+        if (!applyDisplay(entity, stored)) { FAILED_UNTIL.put(key, now + 20L); return null; }
         CACHE.put(key, entity);
         return entity;
     }
