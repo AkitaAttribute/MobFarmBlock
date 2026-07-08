@@ -233,20 +233,29 @@ public final class CobblemonIntegration {
     }
 
     private static Optional<DropRule> dropRuleFromEntry(Object entry) {
-        Optional<ResourceLocation> item = firstPresent(
-                value(entry, "getItem", "item").flatMap(CobblemonIntegration::coerceItemId),
-                value(entry, "getItemId", "itemId").flatMap(CobblemonIntegration::coerceItemId),
-                value(entry, "itemStack", "stack").flatMap(CobblemonIntegration::coerceItemId)
-        );
-        if (item.isEmpty()) return Optional.empty();
-        double percentage = value(entry, "getPercentage", "percentage", "getChance", "chance").flatMap(CobblemonIntegration::coerceDouble).orElse(100.0D);
+        Optional<Object> rawItem = value(entry, "getItem", "item").or(() -> value(entry, "getItemId", "itemId")).or(() -> value(entry, "itemStack", "stack"));
+        Optional<ResourceLocation> item = rawItem.flatMap(CobblemonIntegration::coerceItemId);
+        Optional<Object> rawPercentage = value(entry, "getPercentage", "percentage", "getChance", "chance");
+        Optional<Object> rawQuantity = value(entry, "getQuantity", "quantity");
+        Optional<Object> rawRange = value(entry, "getQuantityRange", "quantityRange", "range");
+        Optional<Object> rawMaxSelectable = value(entry, "getMaxSelectableTimes", "maxSelectableTimes");
+        if (item.isEmpty()) {
+            MobFarmBlockMod.LOGGER.debug("Cobblemon drop entry could not resolve item: class={} value={}", entry.getClass().getName(), entry);
+            return Optional.empty();
+        }
+        double percentage = rawPercentage.flatMap(CobblemonIntegration::coerceDouble).orElse(100.0D);
         double chance = percentage > 1.0D ? percentage / 100.0D : percentage;
-        int[] range = value(entry, "getQuantityRange", "quantityRange", "range").map(CobblemonIntegration::coerceRange).orElse(null);
-        int min = range == null ? value(entry, "getQuantity", "quantity").flatMap(CobblemonIntegration::coerceInt).orElse(1) : range[0];
+        int[] range = rawRange.map(CobblemonIntegration::coerceRange).orElse(null);
+        int min = range == null ? rawQuantity.flatMap(CobblemonIntegration::coerceInt).orElse(1) : range[0];
         int max = range == null ? min : range[1];
-        int maxSelectableTimes = value(entry, "getMaxSelectableTimes", "maxSelectableTimes").flatMap(CobblemonIntegration::coerceInt).orElse(1);
+        int maxSelectableTimes = rawMaxSelectable.flatMap(CobblemonIntegration::coerceInt).orElse(1);
         if (maxSelectableTimes > 1) max = Math.max(max, max * maxSelectableTimes);
-        return Optional.of(new DropRule(item.get(), Math.max(0.0D, Math.min(1.0D, chance)), Math.max(0, min), Math.max(Math.max(0, min), max), false, 0.0D, 0));
+        DropRule rule = new DropRule(item.get(), Math.max(0.0D, Math.min(1.0D, chance)), Math.max(1, min), Math.max(Math.max(1, min), max), false, 0.0D, 0);
+        MobFarmBlockMod.LOGGER.debug("Cobblemon drop entry converted: entryClass={} entry={} rawItem={} rawChance={} rawQuantity={} rawRange={} rawMaxSelectable={} -> item={} chance={} min={} max={}",
+                entry.getClass().getName(), entry, rawItem.map(String::valueOf).orElse("unavailable"), rawPercentage.map(String::valueOf).orElse("unavailable"),
+                rawQuantity.map(String::valueOf).orElse("unavailable"), rawRange.map(String::valueOf).orElse("unavailable"), rawMaxSelectable.map(String::valueOf).orElse("unavailable"),
+                rule.itemId(), rule.chance(), rule.minCount(), rule.maxCount());
+        return Optional.of(rule);
     }
 
     private static Optional<Object> value(Object target, String... names) {
@@ -278,14 +287,21 @@ public final class CobblemonIntegration {
     private static int[] coerceRange(Object value) {
         if (value instanceof Collection<?> collection && !collection.isEmpty()) {
             List<Integer> ints = collection.stream().map(CobblemonIntegration::coerceInt).filter(Optional::isPresent).map(Optional::get).toList();
-            if (!ints.isEmpty()) return new int[] {ints.get(0), ints.get(ints.size() - 1)};
+            if (!ints.isEmpty()) return orderedRange(ints.get(0), ints.get(ints.size() - 1));
         }
+        Optional<Integer> min = value(value, "getMin", "min", "getMinimum", "minimum", "getStart", "start", "getFirst", "first").flatMap(CobblemonIntegration::coerceInt);
+        Optional<Integer> max = value(value, "getMax", "max", "getMaximum", "maximum", "getEndInclusive", "endInclusive", "getEnd", "end", "getLast", "last").flatMap(CobblemonIntegration::coerceInt);
+        if (min.isPresent() || max.isPresent()) return orderedRange(min.orElse(max.orElse(1)), max.orElse(min.orElse(1)));
         String text = String.valueOf(value).replace("..", "-").replace(" ", "");
         String[] parts = text.split("-");
         if (parts.length >= 2) {
-            try { return new int[] {Integer.parseInt(parts[0].replaceAll("\\D", "")), Integer.parseInt(parts[1].replaceAll("\\D", ""))}; } catch (Throwable ignored) {}
+            try { return orderedRange(Integer.parseInt(parts[0].replaceAll("\\D", "")), Integer.parseInt(parts[1].replaceAll("\\D", ""))); } catch (Throwable ignored) {}
         }
         return new int[] {1, 1};
+    }
+
+    private static int[] orderedRange(int a, int b) {
+        return new int[] {Math.min(a, b), Math.max(a, b)};
     }
 
     public static Optional<DisplaySnapshot> resolveDisplay(Entity entity) { return Optional.empty(); }

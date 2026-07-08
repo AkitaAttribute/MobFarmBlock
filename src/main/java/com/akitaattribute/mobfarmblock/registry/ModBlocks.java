@@ -20,7 +20,7 @@ public final class ModBlocks {
 
     public static final DeferredHolder<Block, MobFarmBlock> MOB_FARM_BLOCK = BLOCKS.register(
             "mob_farm_block",
-            () -> new MobFarmBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.BEDROCK).strength(5.0F, 6.0F))
+            () -> new MobFarmBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.DIRT).strength(0.5F, 0.5F))
     );
 
     public static final DeferredHolder<Item, BlockItem> MOB_FARM_BLOCK_ITEM = ModItems.ITEMS.register(

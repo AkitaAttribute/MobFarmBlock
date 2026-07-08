@@ -72,6 +72,7 @@ public class MobFarmBlock extends BaseEntityBlock {
     }
 
     @Override public void attack(BlockState state, Level level, BlockPos pos, Player player) {
+        if (player.isShiftKeyDown()) return;
         if (level.isClientSide || !(level.getBlockEntity(pos) instanceof MobFarmBlockEntity blockEntity)) return;
         StoredMob stored = blockEntity.getStored();
         if (stored.isEmpty()) return;

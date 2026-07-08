@@ -16,27 +16,48 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
-    public CaptureToolItemRenderer(BlockEntityRenderDispatcher dispatcher, EntityModelSet modelSet) {
-        super(dispatcher, modelSet);
-    }
+    public CaptureToolItemRenderer(BlockEntityRenderDispatcher dispatcher, EntityModelSet modelSet) { super(dispatcher, modelSet); }
 
     @Override
     public void renderByItem(ItemStack stack, ItemDisplayContext displayContext, PoseStack poseStack, MultiBufferSource buffer, int packedLight, int packedOverlay) {
         Minecraft minecraft = Minecraft.getInstance();
+        boolean slotContext = displayContext == ItemDisplayContext.GUI || displayContext == ItemDisplayContext.FIXED || displayContext == ItemDisplayContext.GROUND;
+        poseStack.pushPose();
+        if (slotContext) {
+            poseStack.translate(0.5D, 0.5D, 0.5D);
+            poseStack.scale(0.82F, 0.82F, 0.82F);
+            poseStack.translate(-0.5D, -0.5D, -0.5D);
+        }
         minecraft.getItemRenderer().renderStatic(new ItemStack(Items.SPAWNER), displayContext, packedLight, packedOverlay, poseStack, buffer, minecraft.level, 0);
+        poseStack.popPose();
+
         if (!CaptureToolItem.hasStoredMob(stack)) return;
         StoredMob stored = CaptureToolItem.getStoredMob(stack);
         Entity entity = ClientEntityRenderCache.getOrCreate(stored);
         if (entity == null) return;
 
         poseStack.pushPose();
-        poseStack.translate(0.5D, 0.62D, 0.5D);
-        float scale = stored.display.scale() > 0 ? 0.28F / Math.max(0.75F, stored.display.scale()) : 0.28F;
-        poseStack.scale(scale, scale, scale);
-        poseStack.mulPose(Axis.XP.rotationDegrees(25.0F));
-        poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
+        if (slotContext) {
+            poseStack.translate(0.5D, 0.48D, 0.78D);
+            float scale = entityScale(entity, stored, 0.34F, 0.82F);
+            poseStack.scale(scale, scale, scale);
+            poseStack.mulPose(Axis.XP.rotationDegrees(18.0F));
+            poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
+        } else {
+            poseStack.translate(0.5D, 0.62D, 0.5D);
+            float scale = entityScale(entity, stored, 0.28F, 1.0F);
+            poseStack.scale(scale, scale, scale);
+            poseStack.mulPose(Axis.XP.rotationDegrees(25.0F));
+            poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
+        }
         ClientEntityRenderCache.freezeForRender(entity);
         minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, 0.0F, poseStack, buffer, 0x00F000F0);
         poseStack.popPose();
+    }
+
+    private static float entityScale(Entity entity, StoredMob stored, float base, float maxHeight) {
+        float displayScale = stored.display.scale() > 0 ? stored.display.scale() : 1.0F;
+        float height = Math.max(entity.getBbHeight(), 0.75F) * displayScale;
+        return Math.min(base / Math.max(0.75F, displayScale), base * maxHeight / height);
     }
 }

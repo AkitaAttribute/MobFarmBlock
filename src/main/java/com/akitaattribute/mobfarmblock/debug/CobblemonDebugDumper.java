@@ -63,7 +63,7 @@ public final class CobblemonDebugDumper {
         int n = 0;
         for (Method m : value.getClass().getMethods()) {
             if (n >= MAX_MEMBERS) break;
-            if (m.getParameterCount() != 0 || m.getReturnType() == Void.TYPE) continue;
+            if (m.getParameterCount() != 0 || m.getReturnType() == Void.TYPE || !isSafeAccessorName(m.getName())) continue;
             try { Object v = m.invoke(value); if (isInteresting(m.getName(), v)) { if (n++ > 0) out.append(','); out.append(quote(m.getName())).append(':').append(breakdown(v, depth + 1, seen)); } }
             catch (Throwable error) { if (isInterestingName(m.getName())) { if (n++ > 0) out.append(','); out.append(quote(m.getName())).append(':').append(quote("ERROR: " + error)); } }
         }
@@ -114,6 +114,7 @@ public final class CobblemonDebugDumper {
     }
 
     private static Object invokeNoArg(Object target, String name) throws Exception {
+        if (!isSafeAccessorName(name)) throw new IllegalArgumentException("Refusing to invoke non-accessor method " + name);
         Method method = target.getClass().getMethod(name);
         method.setAccessible(true);
         return method.invoke(target);
@@ -122,6 +123,16 @@ public final class CobblemonDebugDumper {
     private static void appendJsonMember(StringBuilder out, String name, Object value) {
         if (out.length() > 1) out.append(',');
         out.append(quote(name)).append(':').append(breakdown(value, 0, new IdentityHashMap<>()));
+    }
+
+    private static boolean isSafeAccessorName(String name) {
+        String n = name.toLowerCase();
+        if (n.startsWith("remove") || n.equals("clear") || n.startsWith("add") || n.startsWith("set") || n.startsWith("put")
+                || n.startsWith("poll") || n.startsWith("pop") || n.startsWith("push") || n.startsWith("delete") || n.startsWith("destroy")
+                || n.startsWith("discard") || n.startsWith("shrink") || n.startsWith("grow") || n.startsWith("tick") || n.startsWith("update")
+                || n.startsWith("refresh") || n.startsWith("init") || n.startsWith("load") || n.startsWith("save")) return false;
+        return name.startsWith("get") || name.startsWith("is") || name.startsWith("has") || name.startsWith("can") || name.startsWith("should")
+                || name.equals("toString") || name.equals("hashCode") || name.equals("asRenderablePokemon") || name.equals("pokemon") || name.equals("species") || name.equals("form") || name.equals("aspects");
     }
 
     private static boolean isInteresting(String name, Object value) { return simple(value) || isInterestingName(name); }

@@ -64,21 +64,21 @@ public final class ClientEntityRenderCache {
     private static void applyCobblemonSpecies(Entity entity, StoredMob stored) {
         Optional<Object> pokemon = readPokemon(entity);
         if (pokemon.isEmpty()) { warnOnce("Cobblemon dummy has no readable pokemon object for " + stored.speciesId); return; }
-        if (tryPokemonProperties(entity, stored.speciesId)) return;
-        if (trySetSpeciesOnPokemon(pokemon.get(), stored.speciesId)) return;
+        if (tryPokemonProperties(entity, stored.speciesId, stored.display.variantKey())) return;
+        if (trySetSpeciesOnPokemon(pokemon.get(), stored.speciesId)) { applyCobblemonAspects(entity, pokemon.get(), stored.display.variantKey()); return; }
         warnOnce("Could not apply Cobblemon species " + stored.speciesId + " to dummy; rendering generic placeholder");
     }
 
-    private static boolean tryPokemonProperties(Entity entity, ResourceLocation speciesId) {
+    private static boolean tryPokemonProperties(Entity entity, ResourceLocation speciesId, String variantKey) {
         String[] classNames = {"com.cobblemon.mod.common.api.pokemon.PokemonProperties", "com.cobblemon.mod.common.pokemon.PokemonProperties"};
         for (String className : classNames) {
             try {
                 Class<?> propertiesClass = Class.forName(className);
-                Object props = invokeStatic(propertiesClass, "parse", speciesId.getPath()).or(() -> invokeStatic(propertiesClass, "parse", speciesId.toString())).orElse(null);
+                Object props = invokeStatic(propertiesClass, "parse", pokemonPropertiesText(speciesId, variantKey)).or(() -> invokeStatic(propertiesClass, "parse", speciesId.getPath())).or(() -> invokeStatic(propertiesClass, "parse", speciesId.toString())).orElse(null);
                 if (props == null) continue;
                 Object pokemon = invoke(props, "create").orElse(null);
                 if (pokemon == null) continue;
-                if (invoke(entity, "setPokemon", pokemon).isPresent() || setField(entity, "pokemon", pokemon)) return true;
+                if (invoke(entity, "setPokemon", pokemon).isPresent() || setField(entity, "pokemon", pokemon)) { applyCobblemonAspects(entity, pokemon, variantKey); return true; }
             } catch (Throwable error) {
                 warnOnce("Cobblemon PokemonProperties failed: " + className, error);
             }
@@ -89,7 +89,36 @@ public final class ClientEntityRenderCache {
     private static boolean trySetSpeciesOnPokemon(Object pokemon, ResourceLocation speciesId) {
         Optional<Object> species = findSpeciesObject(speciesId);
         if (species.isEmpty()) return false;
-        return invoke(pokemon, "setSpecies", species.get()).isPresent() || setField(pokemon, "species", species.get());
+        boolean changed = invoke(pokemon, "setSpecies", species.get()).isPresent() || setField(pokemon, "species", species.get());
+        return changed;
+    }
+
+    private static String pokemonPropertiesText(ResourceLocation speciesId, String variantKey) {
+        StringBuilder text = new StringBuilder(speciesId.getPath());
+        if (variantKey != null) {
+            for (String aspect : parseAspects(variantKey)) text.append(' ').append(aspect);
+            String form = parseVariantValue(variantKey, "form");
+            if (!form.isBlank()) text.append(' ').append(form);
+        }
+        return text.toString();
+    }
+
+    private static java.util.List<String> parseAspects(String variantKey) {
+        int start = variantKey.indexOf("aspects=[");
+        if (start < 0) return java.util.List.of();
+        int end = variantKey.indexOf(']', start);
+        if (end < 0) return java.util.List.of();
+        String body = variantKey.substring(start + 9, end);
+        if (body.isBlank()) return java.util.List.of();
+        return java.util.Arrays.stream(body.split(",")).map(String::trim).filter(s -> !s.isBlank()).toList();
+    }
+
+    private static String parseVariantValue(String variantKey, String key) {
+        for (String part : variantKey.split("\\|")) {
+            int equals = part.indexOf('=');
+            if (equals > 0 && part.substring(0, equals).equals(key)) return part.substring(equals + 1);
+        }
+        return "";
     }
 
     private static Optional<Object> findSpeciesObject(ResourceLocation speciesId) {
@@ -106,6 +135,17 @@ public final class ClientEntityRenderCache {
             }
         }
         return Optional.empty();
+    }
+
+    private static void applyCobblemonAspects(Entity entity, Object pokemon, String variantKey) {
+        java.util.List<String> aspects = parseAspects(variantKey);
+        if (aspects.isEmpty()) return;
+        invoke(pokemon, "setAspects", aspects);
+        setField(pokemon, "aspects", aspects);
+        invoke(entity, "setAspects", aspects);
+        setField(entity, "aspects", aspects);
+        invoke(pokemon, "updateAspects");
+        invoke(entity, "updateAspects");
     }
 
     private static Optional<Object> readPokemon(Entity entity) { return invoke(entity, "getPokemon").or(() -> invoke(entity, "pokemon")).or(() -> readField(entity, "pokemon")); }
