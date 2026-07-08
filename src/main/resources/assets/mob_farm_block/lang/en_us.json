@@ -1,0 +1,9 @@
+{
+  "block.mob_farm_block.mob_farm_block": "Mob Farm Block",
+  "block.mob_farm_block.mob_farm_block.inserted": "Stored mob inserted",
+  "block.mob_farm_block.mob_farm_block.different_mob": "This block stores a different mob",
+  "item.mob_farm_block.capture_tool": "Capture Tool",
+  "item.mob_farm_block.capture_tool.captured": "Mob profile captured",
+  "item.mob_farm_block.capture_tool.filled": "Capture Tool already contains a mob",
+  "item.mob_farm_block.capture_tool.invalid": "That entity cannot be captured"
+}
