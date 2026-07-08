@@ -24,7 +24,15 @@ public final class CobblemonDebugDumper {
     private static final int MAX_DEPTH = 6;
     private static final int MAX_MEMBERS = 100;
 
+    public static void writeProcessingDump(Player player, StoredMob stored, String rollDetails) {
+        writeDump(player, null, stored, "process", rollDetails);
+    }
+
     public static void writeEntityDump(Player player, Entity entity, StoredMob stored, String action) {
+        writeDump(player, entity, stored, action, null);
+    }
+
+    private static void writeDump(Player player, Entity entity, StoredMob stored, String action, String rollDetails) {
         if (player == null || stored == null || !MobFarmConfig.DEBUG_CHAT_MESSAGES.get() || !MobFarmConfig.DEBUG_COBBLEMON_JSON_DUMP.get()) return;
         if (!"cobblemon:pokemon".equals(stored.mobId.toString()) && (entity == null || !"cobblemon:pokemon".equals(BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString()))) return;
         try {
@@ -33,14 +41,14 @@ public final class CobblemonDebugDumper {
             String stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HHmmss"));
             String entityType = (entity == null ? stored.mobId : BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType())).toString().replace(':', '_');
             Path file = dir.resolve(stamp + "_" + action + "_" + entityType + "_" + player.getUUID() + ".json");
-            Files.writeString(file, jsonRoot(player, entity, stored, action), StandardCharsets.UTF_8);
+            Files.writeString(file, jsonRoot(player, entity, stored, action, rollDetails), StandardCharsets.UTF_8);
             player.displayClientMessage(Component.literal("Mob Farm Block Debug:\nCobblemon debug dump written:\n" + file), false);
         } catch (Exception error) {
             player.displayClientMessage(Component.literal("Mob Farm Block Debug:\nFailed to write Cobblemon debug dump:\n" + error.getMessage()), false);
         }
     }
 
-    private static String jsonRoot(Player player, Entity entity, StoredMob stored, String action) throws IOException {
+    private static String jsonRoot(Player player, Entity entity, StoredMob stored, String action, String rollDetails) throws IOException {
         StringBuilder out = new StringBuilder("{\n");
         prop(out, "action", action, true); prop(out, "gameTime", player.level().getGameTime(), true);
         prop(out, "playerName", player.getGameProfile().getName(), true); prop(out, "playerUuid", player.getUUID().toString(), true);
@@ -48,9 +56,37 @@ public final class CobblemonDebugDumper {
         prop(out, "detectedKind", String.valueOf(stored.kind), true); prop(out, "storedMobId", stored.mobId.toString(), true);
         prop(out, "storedSpeciesId", stored.speciesId == null ? null : stored.speciesId.toString(), true); prop(out, "storedDisplay", stored.display.toString(), true);
         prop(out, "storedDropProfileSource", stored.dropProfileSource, true); prop(out, "storedDropRuleCount", stored.dropProfile.drops().size(), true);
+        out.append("  \"resolvedDropRules\": ").append(dropRulesJson(stored)).append(",\n");
+        out.append("  \"processingRollDetails\": ").append(rollDetails == null ? "null" : quote(rollDetails)).append(",\n");
         out.append("  \"knownCobblemonPaths\": ").append(entity == null ? "null" : knownPaths(entity)).append(",\n");
         out.append("  \"entityBreakdown\": ").append(entity == null ? "null" : breakdown(entity, 0, new IdentityHashMap<>())).append('\n').append('}').append('\n');
         return out.toString();
+    }
+
+    private static String dropRulesJson(StoredMob stored) {
+        StringBuilder out = new StringBuilder("[");
+        for (int i = 0; i < stored.dropProfile.drops().size(); i++) {
+            var rule = stored.dropProfile.drops().get(i);
+            if (i > 0) out.append(',');
+            out.append('{')
+                    .append(quote("index")).append(':').append(i).append(',')
+                    .append(quote("itemId")).append(':').append(quote(rule.itemId().toString())).append(',')
+                    .append(quote("chance")).append(':').append(rule.chance()).append(',')
+                    .append(quote("chancePercent")).append(':').append(quote(chancePercent(rule.chance()))).append(',')
+                    .append(quote("minCount")).append(':').append(rule.minCount()).append(',')
+                    .append(quote("maxCount")).append(':').append(rule.maxCount()).append(',')
+                    .append(quote("affectedByLooting")).append(':').append(rule.affectedByLooting()).append(',')
+                    .append(quote("lootingChanceBonus")).append(':').append(rule.lootingChanceBonus()).append(',')
+                    .append(quote("lootingMaxBonus")).append(':').append(rule.lootingMaxBonus())
+                    .append('}');
+        }
+        return out.append(']').toString();
+    }
+
+    private static String chancePercent(double chance) {
+        double percent = Math.max(0.0D, Math.min(1.0D, chance)) * 100.0D;
+        if (Math.abs(percent - Math.rint(percent)) < 0.0001D) return Long.toString(Math.round(percent)) + "%";
+        return String.format(java.util.Locale.ROOT, "%.2f", percent).replaceAll("0+$", "").replaceAll("\\.$", "") + "%";
     }
 
     private static String breakdown(Object value, int depth, IdentityHashMap<Object, Boolean> seen) {

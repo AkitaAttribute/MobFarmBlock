@@ -1,6 +1,7 @@
 package com.akitaattribute.mobfarmblock.behavior;
 
 import com.akitaattribute.mobfarmblock.debug.MobFarmDebug;
+import com.akitaattribute.mobfarmblock.debug.CobblemonDebugDumper;
 import com.akitaattribute.mobfarmblock.mob.DropRule;
 import com.akitaattribute.mobfarmblock.mob.XpProfile;
 
@@ -25,6 +26,11 @@ final class BehaviorUtil {
     static AttackResult attack(MobFarmContext context) {
         if (context.stored().isEmpty()) return AttackResult.PASS;
         context.stored().count--;
+        if (context.stored().count <= 0) {
+            context.stored().state.putBoolean("breedingCycleActive", false);
+            context.stored().state.putLong("breedingFedCount", 0L);
+            context.stored().state.putLong("breedingReadyAt", 0L);
+        }
         int lootingLevel = getLootingLevel(context);
         StringBuilder details = new StringBuilder();
         StringBuilder rolled = new StringBuilder();
@@ -49,6 +55,7 @@ final class BehaviorUtil {
             }
         }
         int xp = awardXp(context);
+        if ("cobblemon:pokemon".equals(context.stored().mobId.toString())) CobblemonDebugDumper.writeProcessingDump(context.player(), context.stored(), details.toString());
         MobFarmDebug.send(context.player(), Component.literal("Mob Farm Block Debug:\nProcessed mob"
                 + "\n- mob id: " + context.stored().mobId
                 + "\n- kind: " + context.stored().kind

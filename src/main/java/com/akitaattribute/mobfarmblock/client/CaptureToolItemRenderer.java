@@ -21,17 +21,23 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
     @Override
     public void renderByItem(ItemStack stack, ItemDisplayContext displayContext, PoseStack poseStack, MultiBufferSource buffer, int packedLight, int packedOverlay) {
         Minecraft minecraft = Minecraft.getInstance();
-        boolean slotContext = displayContext == ItemDisplayContext.GUI || displayContext == ItemDisplayContext.FIXED || displayContext == ItemDisplayContext.GROUND;
+        boolean slotContext = displayContext == ItemDisplayContext.GUI || displayContext == ItemDisplayContext.FIXED;
+        boolean handContext = displayContext == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND || displayContext == ItemDisplayContext.FIRST_PERSON_LEFT_HAND
+                || displayContext == ItemDisplayContext.THIRD_PERSON_RIGHT_HAND || displayContext == ItemDisplayContext.THIRD_PERSON_LEFT_HAND;
         poseStack.pushPose();
         if (slotContext) {
             poseStack.translate(0.5D, 0.5D, 0.5D);
-            poseStack.scale(0.82F, 0.82F, 0.82F);
+            poseStack.scale(0.78F, 0.78F, 0.78F);
+            poseStack.translate(-0.5D, -0.5D, -0.5D);
+        } else if (handContext) {
+            poseStack.translate(0.5D, 0.5D, 0.5D);
+            poseStack.scale(1.15F, 1.15F, 1.15F);
             poseStack.translate(-0.5D, -0.5D, -0.5D);
         }
         minecraft.getItemRenderer().renderStatic(new ItemStack(Items.SPAWNER), displayContext, packedLight, packedOverlay, poseStack, buffer, minecraft.level, 0);
         poseStack.popPose();
 
-        if (!CaptureToolItem.hasStoredMob(stack)) return;
+        if (!CaptureToolItem.hasStoredMob(stack) || handContext) return;
         StoredMob stored = CaptureToolItem.getStoredMob(stack);
         Entity entity = ClientEntityRenderCache.getOrCreate(stored);
         if (entity == null) return;

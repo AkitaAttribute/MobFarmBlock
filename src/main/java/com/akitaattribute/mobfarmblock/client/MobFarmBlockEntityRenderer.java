@@ -43,7 +43,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         poseStack.pushPose();
         poseStack.translate(0.5D, 0.58D, 0.5D);
         float scale = 0.32F;
-        if (inspected) scale = Math.min(scale, 0.95F / Math.max(0.1F, entity.getBbHeight()));
+        if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, entity.getBbHeight()));
         poseStack.scale(scale, scale, scale);
         poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
         ClientEntityRenderCache.freezeForRender(entity);
@@ -63,9 +63,10 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         List<HoverLine> lines = hoverLines(blockEntity.getStored(), blockEntity.getLevel() == null ? 0L : blockEntity.getLevel().getGameTime());
         if (lines.isEmpty()) return;
         poseStack.pushPose();
-        poseStack.translate(0.5D, 1.68D, 0.5D);
+        poseStack.translate(0.5D, 1.30D, 0.5D);
         poseStack.mulPose(minecraft.getEntityRenderDispatcher().cameraOrientation());
-        poseStack.scale(-0.012F, -0.012F, 0.012F);
+        poseStack.translate(0.0D, 0.0D, 0.03D);
+        poseStack.scale(-0.010F, -0.010F, 0.010F);
         Font font = minecraft.font;
         int y = 0;
         for (HoverLine line : lines.subList(0, Math.min(lines.size(), 4))) {
@@ -74,7 +75,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
             poseStack.scale(12.0F, 12.0F, 12.0F);
             minecraft.getItemRenderer().renderStatic(line.icon(), ItemDisplayContext.GUI, LightTexture.FULL_BRIGHT, 0, poseStack, buffer, minecraft.level, 0);
             poseStack.popPose();
-            font.drawInBatch(line.text(), -42.0F, y, line.ready() ? 0x00FF00 : 0xFFFF55, false, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, 0x66000000, LightTexture.FULL_BRIGHT);
+            font.drawInBatch(line.text(), -42.0F, y, line.color(), false, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, 0x99000000, LightTexture.FULL_BRIGHT);
             y += 14;
         }
         poseStack.popPose();
@@ -85,20 +86,38 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         int shownDrops = 0;
         for (DropRule rule : stored.dropProfile.drops()) {
             if (shownDrops++ >= 3) break;
-            lines.add(new HoverLine(new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId())), "Ready!", true));
+            lines.add(new HoverLine(new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId())), chanceText(rule.chance()), 0x00FF00));
         }
         if ("minecraft:sheep".equals(stored.mobId.toString())) {
             long readyAt = stored.state.getLong("nextWoolReadyAt");
             DyeColor color = DyeColor.byName(stored.state.getString("sheepColor"), DyeColor.WHITE);
-            lines.add(new HoverLine(new ItemStack(com.akitaattribute.mobfarmblock.behavior.SheepBehavior.woolForColor(color)), status(now, readyAt), now >= readyAt));
+            lines.add(new HoverLine(new ItemStack(com.akitaattribute.mobfarmblock.behavior.SheepBehavior.woolForColor(color)), status(now, readyAt), now >= readyAt ? 0x00FF00 : 0xFFFF55));
         }
         for (InteractionDefinition definition : stored.interactionProfile.definitions()) {
             ResourceLocation method = definition.methodId();
-            if (method.equals(MobFarmBlockMod.id("egg"))) lines.add(new HoverLine(new ItemStack(Items.EGG), status(now, stored.readyAtTicks.getOrDefault(method, 0L)), now >= stored.readyAtTicks.getOrDefault(method, 0L)));
-            if (method.equals(MobFarmBlockMod.id("milk"))) lines.add(new HoverLine(new ItemStack(Items.MILK_BUCKET), "Ready!", true));
-            definition.outputItem().ifPresent(item -> lines.add(new HoverLine(new ItemStack(BuiltInRegistries.ITEM.get(item)), status(now, stored.readyAtTicks.getOrDefault(method, 0L)), now >= stored.readyAtTicks.getOrDefault(method, 0L))));
+            if (method.equals(MobFarmBlockMod.id("egg"))) lines.add(new HoverLine(new ItemStack(Items.EGG), status(now, stored.readyAtTicks.getOrDefault(method, 0L)), now >= stored.readyAtTicks.getOrDefault(method, 0L) ? 0x00FF00 : 0xFFFF55));
+            if (method.equals(MobFarmBlockMod.id("milk"))) lines.add(new HoverLine(new ItemStack(Items.MILK_BUCKET), "Ready!", 0x00FF00));
+            if (method.equals(MobFarmBlockMod.id("breed")) && stored.state.getBoolean("breedingCycleActive")) {
+                long base = stored.state.getLong("breedingBaseCount");
+                long fed = stored.state.getLong("breedingFedCount");
+                long maxFeed = (base / 2L) * 2L;
+                long readyAt = stored.state.getLong("breedingReadyAt");
+                lines.add(new HoverLine(breedingIcon(definition), "Breeding: " + fed + "/" + maxFeed + " fed, " + status(now, readyAt), now >= readyAt ? 0x00FF00 : 0xFFFF55));
+            }
+            definition.outputItem().ifPresent(item -> lines.add(new HoverLine(new ItemStack(BuiltInRegistries.ITEM.get(item)), status(now, stored.readyAtTicks.getOrDefault(method, 0L)), now >= stored.readyAtTicks.getOrDefault(method, 0L) ? 0x00FF00 : 0xFFFF55)));
         }
         return lines;
+    }
+
+    private static ItemStack breedingIcon(InteractionDefinition definition) {
+        if (definition.item().isPresent()) return new ItemStack(BuiltInRegistries.ITEM.get(definition.item().get()));
+        return new ItemStack(Items.WHEAT);
+    }
+
+    private static String chanceText(double chance) {
+        double percent = Math.max(0.0D, Math.min(1.0D, chance)) * 100.0D;
+        if (Math.abs(percent - Math.rint(percent)) < 0.0001D) return Long.toString(Math.round(percent)) + "%";
+        return String.format(java.util.Locale.ROOT, "%.2f", percent).replaceAll("0+$", "").replaceAll("\\.$", "") + "%";
     }
 
     private static String status(long now, long readyAt) {
@@ -109,5 +128,5 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         return (seconds / 60L) + "m " + (seconds % 60L) + "s";
     }
 
-    private record HoverLine(ItemStack icon, String text, boolean ready) {}
+    private record HoverLine(ItemStack icon, String text, int color) {}
 }

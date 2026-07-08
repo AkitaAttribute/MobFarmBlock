@@ -49,13 +49,18 @@ public final class InteractionMethodRegistry {
     public static void applyReadyBreeding(MobFarmContext context) {
         CompoundTag state = context.stored().state;
         long now = context.level().getGameTime();
+        if (context.stored().count <= 0 && state.getBoolean("breedingCycleActive")) {
+            clearBreeding(state, 0L);
+            return;
+        }
         if (state.getBoolean("breedingCycleActive") && now >= state.getLong("breedingReadyAt")) {
-            int fed = state.getInt("breedingFedCount");
-            context.stored().count += fed;
-            state.putBoolean("breedingCycleActive", false);
-            state.putInt("breedingFedCount", 0);
-            state.putLong("breedingBaseCount", context.stored().count);
-            state.putLong("breedingReadyAt", 0L);
+            long baseCount = state.getLong("breedingBaseCount");
+            long fed = state.getLong("breedingFedCount");
+            long completedBreedings = fed / 2L;
+            long availableOriginalPairs = Math.min(baseCount, context.stored().count) / 2L;
+            long offspring = Math.min(completedBreedings, availableOriginalPairs);
+            context.stored().count += offspring;
+            clearBreeding(state, context.stored().count);
         }
     }
 
@@ -85,16 +90,29 @@ public final class InteractionMethodRegistry {
             MobFarmDebug.breeding(context.player(), "- cycle started\n- base count: " + context.stored().count + "\n- ready at game time: " + (now + cooldown));
         }
         long baseCount = state.getLong("breedingBaseCount");
-        int fedCount = state.getInt("breedingFedCount");
-        long maxFeedings = baseCount / 2;
-        if (fedCount >= maxFeedings) {
-            MobFarmDebug.breeding(context.player(), "- feed rejected reason: cycle full\n- base count: " + baseCount + "\n- max feedings: " + maxFeedings + "\n- current fed count: " + fedCount);
+        long fedCount = state.getLong("breedingFedCount");
+        long maxBreedings = baseCount / 2L;
+        long maxFeedItems = maxBreedings * 2L;
+        if (baseCount < 2L) {
+            clearBreeding(state, context.stored().count);
+            MobFarmDebug.breeding(context.player(), "- feed rejected reason: not enough parents\n- base count: " + baseCount);
+            return InteractionResult.FAIL;
+        }
+        if (fedCount >= maxFeedItems) {
+            MobFarmDebug.breeding(context.player(), "- feed rejected reason: cycle full\n- base count: " + baseCount + "\n- max breedings: " + maxBreedings + "\n- max feed items: " + maxFeedItems + "\n- current fed count: " + fedCount);
             return InteractionResult.FAIL;
         }
         context.heldItem().shrink(1);
-        state.putInt("breedingFedCount", fedCount + 1);
-        MobFarmDebug.breeding(context.player(), "- feed accepted\n- base count: " + baseCount + "\n- max feedings: " + maxFeedings + "\n- current fed count: " + (fedCount + 1) + "\n- ready at game time: " + state.getLong("breedingReadyAt"));
+        state.putLong("breedingFedCount", fedCount + 1L);
+        MobFarmDebug.breeding(context.player(), "- feed accepted\n- base count: " + baseCount + "\n- max breedings: " + maxBreedings + "\n- max feed items: " + maxFeedItems + "\n- current fed count: " + (fedCount + 1L) + "\n- completed breedings: " + ((fedCount + 1L) / 2L) + "\n- ready at game time: " + state.getLong("breedingReadyAt"));
         return InteractionResult.SUCCESS;
+    }
+
+    private static void clearBreeding(CompoundTag state, long baseCount) {
+        state.putBoolean("breedingCycleActive", false);
+        state.putLong("breedingFedCount", 0L);
+        state.putLong("breedingBaseCount", baseCount);
+        state.putLong("breedingReadyAt", 0L);
     }
 
     private static InteractionResult milk(MobFarmContext context, InteractionDefinition definition) {

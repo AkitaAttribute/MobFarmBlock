@@ -65,7 +65,7 @@ public final class ClientEntityRenderCache {
         Optional<Object> pokemon = readPokemon(entity);
         if (pokemon.isEmpty()) { warnOnce("Cobblemon dummy has no readable pokemon object for " + stored.speciesId); return; }
         if (tryPokemonProperties(entity, stored.speciesId, stored.display.variantKey())) return;
-        if (trySetSpeciesOnPokemon(pokemon.get(), stored.speciesId)) { applyCobblemonAspects(entity, pokemon.get(), stored.display.variantKey()); return; }
+        if (trySetSpeciesOnPokemon(pokemon.get(), stored.speciesId)) { applyCobblemonAspects(entity, pokemon.get(), stored.display.variantKey()); syncCobblemonEntityData(entity, stored.speciesId, pokemon.get(), stored.display.variantKey()); return; }
         warnOnce("Could not apply Cobblemon species " + stored.speciesId + " to dummy; rendering generic placeholder");
     }
 
@@ -78,7 +78,7 @@ public final class ClientEntityRenderCache {
                 if (props == null) continue;
                 Object pokemon = invoke(props, "create").orElse(null);
                 if (pokemon == null) continue;
-                if (invoke(entity, "setPokemon", pokemon).isPresent() || setField(entity, "pokemon", pokemon)) { applyCobblemonAspects(entity, pokemon, variantKey); return true; }
+                if (invoke(entity, "setPokemon", pokemon).isPresent() || setField(entity, "pokemon", pokemon)) { applyCobblemonAspects(entity, pokemon, variantKey); syncCobblemonEntityData(entity, speciesId, pokemon, variantKey); return true; }
             } catch (Throwable error) {
                 warnOnce("Cobblemon PokemonProperties failed: " + className, error);
             }
@@ -135,6 +135,30 @@ public final class ClientEntityRenderCache {
             }
         }
         return Optional.empty();
+    }
+
+    private static void syncCobblemonEntityData(Entity entity, ResourceLocation speciesId, Object pokemon, String variantKey) {
+        Optional<Object> species = readField(pokemon, "species").or(() -> invoke(pokemon, "getSpecies"));
+        setEntityData(entity, "SPECIES", species.orElse(speciesId));
+        setEntityData(entity, "SPECIES", speciesId);
+        setEntityData(entity, "SPECIES", speciesId.getPath());
+        java.util.List<String> aspects = parseAspects(variantKey);
+        if (!aspects.isEmpty()) setEntityData(entity, "ASPECTS", aspects);
+        invoke(entity, "refreshDimensions");
+    }
+
+    private static boolean setEntityData(Entity entity, String accessorFieldName, Object value) {
+        try {
+            Field accessorField = findField(entity.getClass(), accessorFieldName);
+            if (accessorField == null) return false;
+            accessorField.setAccessible(true);
+            Object accessor = accessorField.get(null);
+            entity.getEntityData().set((net.minecraft.network.syncher.EntityDataAccessor) accessor, value);
+            return true;
+        } catch (Throwable error) {
+            warnOnce("Cobblemon entity data sync failed: " + accessorFieldName + "=" + value, error);
+            return false;
+        }
     }
 
     private static void applyCobblemonAspects(Entity entity, Object pokemon, String variantKey) {

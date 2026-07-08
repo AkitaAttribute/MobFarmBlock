@@ -250,7 +250,9 @@ public final class CobblemonIntegration {
         int max = range == null ? min : range[1];
         int maxSelectableTimes = rawMaxSelectable.flatMap(CobblemonIntegration::coerceInt).orElse(1);
         if (maxSelectableTimes > 1) max = Math.max(max, max * maxSelectableTimes);
-        DropRule rule = new DropRule(item.get(), Math.max(0.0D, Math.min(1.0D, chance)), Math.max(1, min), Math.max(Math.max(1, min), max), false, 0.0D, 0);
+        int normalizedMin = Math.max(0, min);
+        int normalizedMax = Math.max(normalizedMin, max);
+        DropRule rule = new DropRule(item.get(), Math.max(0.0D, Math.min(1.0D, chance)), normalizedMin, normalizedMax, false, 0.0D, 0);
         MobFarmBlockMod.LOGGER.debug("Cobblemon drop entry converted: entryClass={} entry={} rawItem={} rawChance={} rawQuantity={} rawRange={} rawMaxSelectable={} -> item={} chance={} min={} max={}",
                 entry.getClass().getName(), entry, rawItem.map(String::valueOf).orElse("unavailable"), rawPercentage.map(String::valueOf).orElse("unavailable"),
                 rawQuantity.map(String::valueOf).orElse("unavailable"), rawRange.map(String::valueOf).orElse("unavailable"), rawMaxSelectable.map(String::valueOf).orElse("unavailable"),
