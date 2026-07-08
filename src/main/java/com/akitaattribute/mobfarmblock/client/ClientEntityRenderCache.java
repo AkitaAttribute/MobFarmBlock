@@ -22,6 +22,7 @@ import net.minecraft.world.entity.animal.Sheep;
 import net.minecraft.world.item.DyeColor;
 
 public final class ClientEntityRenderCache {
+    private static final String EXISTING_POKEMON_ENTITY_STATE = "ExistingPokemonEntityState";
     private static final Map<String, Entity> CACHE = new HashMap<>();
     private static final java.util.Set<String> WARNED = new java.util.HashSet<>();
     private static final Map<String, String> SUCCESSFUL_COBBLEMON_METHODS = new HashMap<>();
@@ -71,34 +72,34 @@ public final class ClientEntityRenderCache {
     private static String applyCobblemonSpecies(Entity entity, StoredMob stored) {
         Optional<Object> pokemon = readPokemon(entity);
         if (pokemon.isEmpty()) { announceCobblemonAttempt(stored, "unavailable:no_pokemon_object", false, validationFor(entity, stored)); warnOnce("Cobblemon dummy has no readable pokemon object for " + stored.speciesId); return null; }
-        ValidationResult initial = validationFor(entity, stored);
-        announceCobblemonAttempt(stored, "ExistingPokemonEntityState", false, initial);
-        if (initial.valid()) return "ExistingPokemonEntityState";
         String key = cobblemonMethodKey(stored);
         String preferred = SUCCESSFUL_COBBLEMON_METHODS.get(key);
-        if (preferred != null) {
-            boolean applied = tryCobblemonMethod(entity, pokemon.get(), stored, preferred);
-            ValidationResult validation = validationFor(entity, stored);
-            announceCobblemonAttempt(stored, preferred + " (cached)", applied, validation);
-            if (validation.valid()) return preferred;
-            SUCCESSFUL_COBBLEMON_METHODS.remove(key);
-            warnOnce("Previously successful Cobblemon render method failed and will be rediscovered: " + preferred);
-        }
-        for (String method : cobblemonMethods()) {
-            if (method.equals(preferred)) continue;
+        for (String method : orderedCobblemonMethods(preferred)) {
             boolean applied = tryCobblemonMethod(entity, pokemon.get(), stored, method);
             ValidationResult validation = validationFor(entity, stored);
-            announceCobblemonAttempt(stored, method, applied, validation);
+            announceCobblemonAttempt(stored, method + (method.equals(preferred) ? " (cached)" : ""), applied, validation);
             if (validation.valid()) {
                 SUCCESSFUL_COBBLEMON_METHODS.put(key, method);
                 return method;
+            }
+            if (method.equals(preferred)) {
+                SUCCESSFUL_COBBLEMON_METHODS.remove(key);
+                warnOnce("Previously successful Cobblemon render method failed and will be rediscovered: " + preferred);
             }
         }
         warnOnce("Could not apply Cobblemon species " + stored.speciesId + " to dummy; rendering generic placeholder");
         return null;
     }
 
-    private static java.util.List<String> cobblemonMethods() {
+    private static java.util.List<String> orderedCobblemonMethods(String preferred) {
+        java.util.List<String> methods = new java.util.ArrayList<>();
+        methods.add(EXISTING_POKEMON_ENTITY_STATE);
+        if (preferred != null && !preferred.equals(EXISTING_POKEMON_ENTITY_STATE)) methods.add(preferred);
+        for (String method : mutationCobblemonMethods()) if (!methods.contains(method)) methods.add(method);
+        return methods;
+    }
+
+    private static java.util.List<String> mutationCobblemonMethods() {
         return java.util.List.of(
                 "PokemonProperties:com.cobblemon.mod.common.api.pokemon.PokemonProperties",
                 "PokemonProperties:com.cobblemon.mod.common.pokemon.PokemonProperties",
@@ -106,6 +107,7 @@ public final class ClientEntityRenderCache {
     }
 
     private static boolean tryCobblemonMethod(Entity entity, Object existingPokemon, StoredMob stored, String method) {
+        if (EXISTING_POKEMON_ENTITY_STATE.equals(method)) return false;
         if (method.startsWith("PokemonProperties:")) return tryPokemonPropertiesClass(entity, stored.speciesId, stored.display.variantKey(), method.substring("PokemonProperties:".length()));
         if ("PokemonObject:setSpecies".equals(method)) {
             if (trySetSpeciesOnPokemon(existingPokemon, stored.speciesId)) {
