@@ -24,15 +24,12 @@ import net.minecraft.world.item.DyeColor;
 public final class ClientEntityRenderCache {
     private static final Map<String, Entity> CACHE = new HashMap<>();
     private static final java.util.Set<String> WARNED = new java.util.HashSet<>();
-    private static final Map<String, Long> FAILED_UNTIL = new HashMap<>();
     private static final Map<String, String> SUCCESSFUL_COBBLEMON_METHODS = new HashMap<>();
     private static final java.util.Set<String> ANNOUNCED_COBBLEMON_METHODS = new java.util.HashSet<>();
 
     public static Entity getOrCreate(StoredMob stored) {
         if (stored == null || stored.isEmpty() || Minecraft.getInstance().level == null) return null;
         String key = stored.mobId + "|" + stored.speciesId + "|" + stored.display.variantKey() + "|" + stored.display.colorKey() + "|" + stored.display.baby();
-        long now = Minecraft.getInstance().level == null ? 0L : Minecraft.getInstance().level.getGameTime();
-        if (FAILED_UNTIL.getOrDefault(key, 0L) > now) return null;
         Entity cached = CACHE.get(key);
         if (cached != null) { freezeForRender(cached); return cached; }
         EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(stored.mobId);
@@ -45,7 +42,7 @@ public final class ClientEntityRenderCache {
             warnOnce("dummy entity could not be created: " + stored.mobId);
             return null;
         }
-        if (!applyDisplay(entity, stored)) { FAILED_UNTIL.put(key, now + 20L); return null; }
+        if (!applyDisplay(entity, stored)) return null;
         CACHE.put(key, entity);
         return entity;
     }
@@ -56,8 +53,7 @@ public final class ClientEntityRenderCache {
         if (entity instanceof AgeableMob ageable) ageable.setBaby(stored.display.baby());
         if ("cobblemon:pokemon".equals(stored.mobId.toString()) && stored.speciesId != null) {
             String method = applyCobblemonSpecies(entity, stored);
-            if (!validateCobblemonSpecies(entity, stored)) return false;
-            announceCobblemonMethod(stored, method);
+            if (method == null) return false;
         }
         return true;
     }
@@ -74,22 +70,32 @@ public final class ClientEntityRenderCache {
 
     private static String applyCobblemonSpecies(Entity entity, StoredMob stored) {
         Optional<Object> pokemon = readPokemon(entity);
-        if (pokemon.isEmpty()) { warnOnce("Cobblemon dummy has no readable pokemon object for " + stored.speciesId); return "unavailable:no_pokemon_object"; }
+        if (pokemon.isEmpty()) { announceCobblemonAttempt(stored, "unavailable:no_pokemon_object", false, validationFor(entity, stored)); warnOnce("Cobblemon dummy has no readable pokemon object for " + stored.speciesId); return null; }
+        ValidationResult initial = validationFor(entity, stored);
+        announceCobblemonAttempt(stored, "ExistingPokemonEntityState", false, initial);
+        if (initial.valid()) return "ExistingPokemonEntityState";
         String key = cobblemonMethodKey(stored);
         String preferred = SUCCESSFUL_COBBLEMON_METHODS.get(key);
         if (preferred != null) {
-            if (tryCobblemonMethod(entity, pokemon.get(), stored, preferred)) return preferred;
+            boolean applied = tryCobblemonMethod(entity, pokemon.get(), stored, preferred);
+            ValidationResult validation = validationFor(entity, stored);
+            announceCobblemonAttempt(stored, preferred + " (cached)", applied, validation);
+            if (validation.valid()) return preferred;
             SUCCESSFUL_COBBLEMON_METHODS.remove(key);
             warnOnce("Previously successful Cobblemon render method failed and will be rediscovered: " + preferred);
         }
         for (String method : cobblemonMethods()) {
-            if (tryCobblemonMethod(entity, pokemon.get(), stored, method)) {
+            if (method.equals(preferred)) continue;
+            boolean applied = tryCobblemonMethod(entity, pokemon.get(), stored, method);
+            ValidationResult validation = validationFor(entity, stored);
+            announceCobblemonAttempt(stored, method, applied, validation);
+            if (validation.valid()) {
                 SUCCESSFUL_COBBLEMON_METHODS.put(key, method);
                 return method;
             }
         }
         warnOnce("Could not apply Cobblemon species " + stored.speciesId + " to dummy; rendering generic placeholder");
-        return "unresolved";
+        return null;
     }
 
     private static java.util.List<String> cobblemonMethods() {
@@ -131,10 +137,16 @@ public final class ClientEntityRenderCache {
 
     private static String cobblemonMethodKey(StoredMob stored) { return stored.speciesId + "|" + stored.display.variantKey(); }
 
-    private static void announceCobblemonMethod(StoredMob stored, String method) {
-        String key = cobblemonMethodKey(stored) + "|" + method;
+    private static void announceCobblemonAttempt(StoredMob stored, String method, boolean applied, ValidationResult validation) {
+        String key = cobblemonMethodKey(stored) + "|" + method + "|" + applied + "|" + validation.valid();
         if (!ANNOUNCED_COBBLEMON_METHODS.add(key)) return;
-        String message = "Mob Farm Block Debug: Cobblemon render method for " + stored.speciesId + " is " + method;
+        String message = "Mob Farm Block Debug: Cobblemon render method " + method
+                + " for " + stored.speciesId
+                + " applied=" + applied
+                + " valid=" + validation.valid()
+                + " readBack=" + validation.readBack()
+                + " aspects=" + validation.aspects()
+                + " renderable=" + validation.renderable();
         MobFarmBlockMod.LOGGER.info(message);
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player != null) minecraft.player.displayClientMessage(Component.literal(message), false);
@@ -232,7 +244,7 @@ public final class ClientEntityRenderCache {
         invoke(entity, "updateAspects");
     }
 
-    private static boolean validateCobblemonSpecies(Entity entity, StoredMob stored) {
+    private static ValidationResult validationFor(Entity entity, StoredMob stored) {
         Optional<Object> pokemon = readPokemon(entity);
         Optional<ResourceLocation> readBack = pokemon.flatMap(ClientEntityRenderCache::readPokemonSpeciesId)
                 .or(() -> invoke(entity, "getExposedSpecies").flatMap(ClientEntityRenderCache::coerceResourceLocation));
@@ -240,15 +252,13 @@ public final class ClientEntityRenderCache {
                 .or(() -> invoke(entity, "getExposedAspects"));
         Optional<Object> renderable = pokemon.flatMap(p -> invoke(p, "asRenderablePokemon"));
         boolean valid = readBack.isPresent() && readBack.get().equals(stored.speciesId);
-        if (!valid) {
-            warnOnce("Cobblemon dummy validation failed. storedSpecies=" + stored.speciesId + " readBackSpecies=" + readBack.map(Object::toString).orElse("unavailable")
-                    + " variantKey=" + stored.display.variantKey() + " aspects=" + aspects.map(Object::toString).orElse("unavailable")
-                    + " renderable=" + renderable.map(Object::toString).orElse("unavailable"));
-        } else {
+        if (valid) {
             MobFarmBlockMod.LOGGER.debug("Cobblemon dummy validated: storedSpecies={} readBackSpecies={} aspects={} renderable={}", stored.speciesId, readBack.get(), aspects.map(Object::toString).orElse("unavailable"), renderable.map(Object::toString).orElse("unavailable"));
         }
-        return valid;
+        return new ValidationResult(valid, readBack.map(Object::toString).orElse("unavailable"), aspects.map(Object::toString).orElse("unavailable"), renderable.map(Object::toString).orElse("unavailable"));
     }
+
+    private record ValidationResult(boolean valid, String readBack, String aspects, String renderable) {}
 
     private static Optional<ResourceLocation> readPokemonSpeciesId(Object pokemon) {
         return invoke(pokemon, "getSpecies").or(() -> readField(pokemon, "species")).flatMap(ClientEntityRenderCache::coerceResourceLocation);
