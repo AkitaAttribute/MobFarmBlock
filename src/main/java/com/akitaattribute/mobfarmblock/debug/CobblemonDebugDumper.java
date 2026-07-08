@@ -21,8 +21,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 
 public final class CobblemonDebugDumper {
-    private static final int MAX_DEPTH = 4;
-    private static final int MAX_MEMBERS = 50;
+    private static final int MAX_DEPTH = 6;
+    private static final int MAX_MEMBERS = 100;
 
     public static void writeEntityDump(Player player, Entity entity, StoredMob stored, String action) {
         if (player == null || stored == null || !MobFarmConfig.DEBUG_CHAT_MESSAGES.get() || !MobFarmConfig.DEBUG_COBBLEMON_JSON_DUMP.get()) return;
@@ -48,6 +48,7 @@ public final class CobblemonDebugDumper {
         prop(out, "detectedKind", String.valueOf(stored.kind), true); prop(out, "storedMobId", stored.mobId.toString(), true);
         prop(out, "storedSpeciesId", stored.speciesId == null ? null : stored.speciesId.toString(), true); prop(out, "storedDisplay", stored.display.toString(), true);
         prop(out, "storedDropProfileSource", stored.dropProfileSource, true); prop(out, "storedDropRuleCount", stored.dropProfile.drops().size(), true);
+        out.append("  \"knownCobblemonPaths\": ").append(entity == null ? "null" : knownPaths(entity)).append(",\n");
         out.append("  \"entityBreakdown\": ").append(entity == null ? "null" : breakdown(entity, 0, new IdentityHashMap<>())).append('\n').append('}').append('\n');
         return out.toString();
     }
@@ -75,8 +76,62 @@ public final class CobblemonDebugDumper {
         return out.append("}}").toString();
     }
 
+    private static String knownPaths(Entity entity) {
+        StringBuilder out = new StringBuilder("{");
+        IdentityHashMap<Object, Boolean> seen = new IdentityHashMap<>();
+        Object pokemon = readPath(out, "entity.pokemon", entity, "getPokemon", "pokemon");
+        if (pokemon != null) {
+            Object species = readPath(out, "pokemon.getSpecies", pokemon, "getSpecies", "species");
+            Object form = readPath(out, "pokemon.getForm", pokemon, "getForm", "form");
+            readPath(out, "pokemon.getAspects", pokemon, "getAspects", "aspects");
+            Object renderable = readPath(out, "pokemon.asRenderablePokemon", pokemon, "asRenderablePokemon");
+            if (species != null) { readPath(out, "species.getResourceIdentifier", species, "getResourceIdentifier", "resourceIdentifier"); readPath(out, "species.drops", species, "getDrops", "drops"); }
+            if (form != null) { readPath(out, "form.drops", form, "getDrops", "drops", "_drops"); readPath(out, "form.getBaseScale", form, "getBaseScale", "baseScale"); readPath(out, "form.showdownId", form, "showdownId", "getShowdownId", "formOnlyShowdownId"); }
+            if (renderable != null) { readPath(out, "renderablePokemon.getSpecies", renderable, "getSpecies", "species"); readPath(out, "renderablePokemon.getAspects", renderable, "getAspects", "aspects"); }
+        }
+        return out.append("}").toString();
+    }
+
+    private static Object readPath(StringBuilder out, String label, Object target, String... names) {
+        for (String name : names) {
+            try {
+                Object value = invokeNoArg(target, name);
+                appendJsonMember(out, label, value);
+                return value;
+            } catch (Throwable ignored) {
+                try {
+                    Field field = target.getClass().getDeclaredField(name);
+                    field.setAccessible(true);
+                    Object value = field.get(target);
+                    appendJsonMember(out, label, value);
+                    return value;
+                } catch (Throwable error) {
+                    appendJsonMember(out, label + "." + name + ".error", error.toString());
+                }
+            }
+        }
+        return null;
+    }
+
+    private static Object invokeNoArg(Object target, String name) throws Exception {
+        Method method = target.getClass().getMethod(name);
+        method.setAccessible(true);
+        return method.invoke(target);
+    }
+
+    private static void appendJsonMember(StringBuilder out, String name, Object value) {
+        if (out.length() > 1) out.append(',');
+        out.append(quote(name)).append(':').append(breakdown(value, 0, new IdentityHashMap<>()));
+    }
+
     private static boolean isInteresting(String name, Object value) { return simple(value) || isInterestingName(name); }
-    private static boolean isInterestingName(String name) { String n = name.toLowerCase(); return n.contains("pokemon") || n.contains("species") || n.contains("form") || n.contains("aspect") || n.contains("variant") || n.contains("id") || n.contains("texture"); }
+    private static boolean isInterestingName(String name) {
+        String n = name.toLowerCase();
+        return n.contains("pokemon") || n.contains("species") || n.contains("form") || n.contains("aspect") || n.contains("variant") || n.contains("id") || n.contains("texture")
+                || n.contains("drop") || n.contains("loot") || n.contains("table") || n.contains("entry") || n.contains("entries") || n.contains("item") || n.contains("percentage")
+                || n.contains("chance") || n.contains("quantity") || n.contains("range") || n.contains("selectable") || n.contains("weight") || n.contains("reward")
+                || n.contains("render") || n.contains("renderable") || n.contains("model") || n.contains("scale") || n.contains("showdown");
+    }
     private static boolean simple(Object value) { return value instanceof String || value instanceof Number || value instanceof Boolean || value instanceof Enum<?> || value instanceof ResourceLocation || value instanceof java.util.UUID; }
     private static void prop(StringBuilder out, String name, Object value, boolean comma) { out.append("  ").append(quote(name)).append(": ").append(value instanceof Number ? value : quote(value == null ? "null" : String.valueOf(value))).append(comma ? ",\n" : "\n"); }
     private static String quote(String text) { return "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\""; }

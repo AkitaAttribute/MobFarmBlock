@@ -2,15 +2,23 @@ package com.akitaattribute.mobfarmblock.integration;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.mob.DisplaySnapshot;
 import com.akitaattribute.mobfarmblock.mob.DropProfile;
+import com.akitaattribute.mobfarmblock.mob.DropRule;
+import com.akitaattribute.mobfarmblock.mob.XpProfile;
 
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.entity.Entity;
 
 /** Optional Cobblemon integration using guarded reflection only. */
@@ -134,7 +142,152 @@ public final class CobblemonIntegration {
         if (WARNED.add(key)) MobFarmBlockMod.LOGGER.debug("Cobblemon reflection failed for {}: {}", key, error.toString());
     }
 
-    public static Optional<DropProfile> resolveBattleDropProfile(Entity entity) { return Optional.empty(); }
+    public static Optional<String> getDisplayKey(Entity entity) {
+        Optional<Object> pokemon = getPokemonObject(entity);
+        if (pokemon.isEmpty()) return getSpeciesId(entity).map(ResourceLocation::toString);
+        StringBuilder key = new StringBuilder();
+        getSpeciesId(entity).ifPresent(id -> key.append(id));
+        getFormObject(pokemon.get()).ifPresent(form -> {
+            appendObjectValue(key, "form", value(form, "showdownId", "getShowdownId", "formOnlyShowdownId", "getFormOnlyShowdownId"));
+            appendObjectValue(key, "baseScale", value(form, "getBaseScale", "baseScale"));
+        });
+        appendObjectValue(key, "aspects", value(pokemon.get(), "getAspects", "aspects"));
+        return key.isEmpty() ? Optional.empty() : Optional.of(key.toString());
+    }
+
+    private static void appendObjectValue(StringBuilder key, String name, Optional<Object> value) {
+        value.ifPresent(object -> {
+            if (!key.isEmpty()) key.append('|');
+            key.append(name).append('=').append(object);
+        });
+    }
+
+    public static Optional<DropProfile> resolveBattleDropProfile(Entity entity) {
+        if (!isPokemonEntity(entity)) return Optional.empty();
+        Optional<Object> pokemon = getPokemonObject(entity);
+        if (pokemon.isEmpty()) return Optional.of(DropProfile.EMPTY);
+        List<DropRule> formRules = pokemon.flatMap(CobblemonIntegration::getFormObject)
+                .flatMap(form -> dropTableFrom(form, "getDrops", "drops", "_drops"))
+                .map(table -> rulesFromDropTable(table, pokemon.get()))
+                .orElse(List.of());
+        if (!formRules.isEmpty()) return Optional.of(new DropProfile(List.copyOf(formRules), XpProfile.NONE));
+        List<DropRule> speciesRules = extractSpeciesObject(pokemon.get())
+                .flatMap(species -> dropTableFrom(species, "getDrops", "drops"))
+                .map(table -> rulesFromDropTable(table, pokemon.get()))
+                .orElse(List.of());
+        return Optional.of(new DropProfile(List.copyOf(speciesRules), XpProfile.NONE));
+    }
+
+    public static Optional<Object> getPokemonObject(Entity entity) {
+        if (entity == null) return Optional.empty();
+        return firstPresent(reflectNoArg(entity, "getPokemon"), reflectNoArg(entity, "pokemon"), readField(entity, "pokemon"));
+    }
+
+    public static Optional<Object> getFormObject(Object pokemon) {
+        return firstPresent(reflectNoArg(pokemon, "getForm"), reflectNoArg(pokemon, "form"), readField(pokemon, "form"));
+    }
+
+    public static Optional<Object> extractSpeciesObject(Object pokemon) {
+        return firstPresent(reflectNoArg(pokemon, "getSpecies"), reflectNoArg(pokemon, "species"), readField(pokemon, "species"));
+    }
+
+    private static Optional<Object> dropTableFrom(Object target, String... names) {
+        for (String name : names) {
+            Optional<Object> method = reflectNoArg(target, name);
+            if (method.isPresent()) return method;
+            Optional<Object> field = readField(target, name);
+            if (field.isPresent()) return field;
+        }
+        return Optional.empty();
+    }
+
+    private static List<DropRule> rulesFromDropTable(Object table, Object pokemon) {
+        List<DropRule> rules = new ArrayList<>();
+        for (Object entry : extractDropEntries(table, pokemon)) {
+            dropRuleFromEntry(entry).ifPresent(rules::add);
+        }
+        return rules;
+    }
+
+    private static List<?> extractDropEntries(Object table, Object pokemon) {
+        if (table == null) return List.of();
+        if (table instanceof Collection<?> collection) return List.copyOf(collection);
+        for (String name : new String[] {"getEntries", "entries", "getDrops", "drops"}) {
+            Optional<Object> value = reflectNoArg(table, name).or(() -> readField(table, name));
+            if (value.isPresent()) {
+                Object result = value.get();
+                if (result instanceof Collection<?> collection) return List.copyOf(collection);
+                if (result.getClass().isArray()) return List.of((Object[]) result);
+            }
+        }
+        for (Method method : table.getClass().getMethods()) {
+            if (!"getDrops".equals(method.getName()) || method.getParameterCount() != 2) continue;
+            try {
+                Object result = method.invoke(table, 1, pokemon);
+                if (result instanceof Collection<?> collection) return List.copyOf(collection);
+            } catch (Throwable error) {
+                warnOnce("drops:" + table.getClass().getName() + ".getDrops", error);
+            }
+        }
+        return List.of();
+    }
+
+    private static Optional<DropRule> dropRuleFromEntry(Object entry) {
+        Optional<ResourceLocation> item = firstPresent(
+                value(entry, "getItem", "item").flatMap(CobblemonIntegration::coerceItemId),
+                value(entry, "getItemId", "itemId").flatMap(CobblemonIntegration::coerceItemId),
+                value(entry, "itemStack", "stack").flatMap(CobblemonIntegration::coerceItemId)
+        );
+        if (item.isEmpty()) return Optional.empty();
+        double percentage = value(entry, "getPercentage", "percentage", "getChance", "chance").flatMap(CobblemonIntegration::coerceDouble).orElse(100.0D);
+        double chance = percentage > 1.0D ? percentage / 100.0D : percentage;
+        int[] range = value(entry, "getQuantityRange", "quantityRange", "range").map(CobblemonIntegration::coerceRange).orElse(null);
+        int min = range == null ? value(entry, "getQuantity", "quantity").flatMap(CobblemonIntegration::coerceInt).orElse(1) : range[0];
+        int max = range == null ? min : range[1];
+        int maxSelectableTimes = value(entry, "getMaxSelectableTimes", "maxSelectableTimes").flatMap(CobblemonIntegration::coerceInt).orElse(1);
+        if (maxSelectableTimes > 1) max = Math.max(max, max * maxSelectableTimes);
+        return Optional.of(new DropRule(item.get(), Math.max(0.0D, Math.min(1.0D, chance)), Math.max(0, min), Math.max(Math.max(0, min), max), false, 0.0D, 0));
+    }
+
+    private static Optional<Object> value(Object target, String... names) {
+        for (String name : names) {
+            Optional<Object> method = reflectNoArg(target, name);
+            if (method.isPresent()) return method;
+            Optional<Object> field = readField(target, name);
+            if (field.isPresent()) return field;
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<ResourceLocation> coerceItemId(Object value) {
+        if (value instanceof ItemStack stack) return Optional.of(BuiltInRegistries.ITEM.getKey(stack.getItem()));
+        if (value instanceof Item item) return Optional.of(BuiltInRegistries.ITEM.getKey(item));
+        return coerceResourceLocation(value);
+    }
+
+    private static Optional<Double> coerceDouble(Object value) {
+        if (value instanceof Number number) return Optional.of(number.doubleValue());
+        try { return Optional.of(Double.parseDouble(String.valueOf(value))); } catch (Throwable ignored) { return Optional.empty(); }
+    }
+
+    private static Optional<Integer> coerceInt(Object value) {
+        if (value instanceof Number number) return Optional.of(number.intValue());
+        try { return Optional.of(Integer.parseInt(String.valueOf(value))); } catch (Throwable ignored) { return Optional.empty(); }
+    }
+
+    private static int[] coerceRange(Object value) {
+        if (value instanceof Collection<?> collection && !collection.isEmpty()) {
+            List<Integer> ints = collection.stream().map(CobblemonIntegration::coerceInt).filter(Optional::isPresent).map(Optional::get).toList();
+            if (!ints.isEmpty()) return new int[] {ints.get(0), ints.get(ints.size() - 1)};
+        }
+        String text = String.valueOf(value).replace("..", "-").replace(" ", "");
+        String[] parts = text.split("-");
+        if (parts.length >= 2) {
+            try { return new int[] {Integer.parseInt(parts[0].replaceAll("\\D", "")), Integer.parseInt(parts[1].replaceAll("\\D", ""))}; } catch (Throwable ignored) {}
+        }
+        return new int[] {1, 1};
+    }
+
     public static Optional<DisplaySnapshot> resolveDisplay(Entity entity) { return Optional.empty(); }
     private CobblemonIntegration() {}
 }

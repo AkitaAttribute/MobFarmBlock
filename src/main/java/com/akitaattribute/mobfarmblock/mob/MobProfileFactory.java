@@ -24,11 +24,23 @@ public final class MobProfileFactory {
         MobKind kind = detectKind(entity, mobId);
         DisplaySnapshot display = resolveDisplay(entity);
         ResourceLocation species = CobblemonIntegration.getSpeciesId(entity).or(() -> PixelmonIntegration.getSpeciesId(entity)).orElse(null);
-        DropProfile drops = CobblemonIntegration.resolveBattleDropProfile(entity).or(() -> PixelmonIntegration.resolveBattleDropProfile(entity)).orElse(null);
-        String source = drops != null ? (kind == MobKind.COBBLEMON ? "cobblemon" : kind == MobKind.PIXELMON ? "pixelmon" : "integration") : "vanilla";
-        if (drops == null) {
-            drops = DropProfileRegistry.get(mobId);
-            if (drops.drops().isEmpty() && drops.xp().maxXp() <= 0) source = "empty";
+        if (kind == MobKind.COBBLEMON && species != null) {
+            String variant = CobblemonIntegration.getDisplayKey(entity).orElse(species.toString());
+            display = new DisplaySnapshot(display.entityTypeId(), display.textureId(), variant, display.colorKey(), display.baby(), display.scale());
+        }
+        DropProfile drops = null;
+        String source = "vanilla";
+        if (kind == MobKind.COBBLEMON) {
+            Optional<DropProfile> cobblemonDrops = CobblemonIntegration.resolveBattleDropProfile(entity);
+            drops = cobblemonDrops.orElse(DropProfile.EMPTY);
+            source = drops.drops().isEmpty() ? "cobblemon:unresolved_or_empty_drop_table" : "cobblemon:drop_table_reflection";
+        } else {
+            drops = PixelmonIntegration.resolveBattleDropProfile(entity).orElse(null);
+            source = drops != null ? (kind == MobKind.PIXELMON ? "pixelmon" : "integration") : "vanilla";
+            if (drops == null) {
+                drops = DropProfileRegistry.get(mobId);
+                if (drops.drops().isEmpty() && drops.xp().maxXp() <= 0) source = "empty";
+            }
         }
         return new StoredMob(mobId, kind, 1, display, initialState(mobId, display), drops,
                 builtInInteractions(mobId), new HashMap<>(), species, source);
@@ -69,6 +81,7 @@ public final class MobProfileFactory {
     private static CompoundTag initialState(ResourceLocation mobId, DisplaySnapshot display) {
         CompoundTag state = new CompoundTag();
         if ("minecraft:sheep".equals(mobId.toString())) { state.putString("sheepColor", display.colorKey().isBlank() ? "white" : display.colorKey()); state.putLong("nextWoolReadyAt", 0L); }
+        if (!display.variantKey().isBlank()) state.putString("displayVariantKey", display.variantKey());
         return state;
     }
 

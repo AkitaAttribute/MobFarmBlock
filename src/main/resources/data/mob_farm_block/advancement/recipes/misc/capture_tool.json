@@ -1,0 +1,33 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_any_glass_pane": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "items": "#mob_farm_block:any_glass_pane"
+          }
+        ]
+      }
+    },
+    "has_the_recipe": {
+      "trigger": "minecraft:recipe_unlocked",
+      "conditions": {
+        "recipe": "mob_farm_block:capture_tool"
+      }
+    }
+  },
+  "requirements": [
+    [
+      "has_any_glass_pane",
+      "has_the_recipe"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "mob_farm_block:capture_tool"
+    ]
+  },
+  "sends_telemetry_event": false
+}
