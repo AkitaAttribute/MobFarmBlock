@@ -1,0 +1,9 @@
+.gradle/
+build/
+out/
+*.log
+*.jar
+*.png
+*.jpg
+*.jpeg
+*.webp
