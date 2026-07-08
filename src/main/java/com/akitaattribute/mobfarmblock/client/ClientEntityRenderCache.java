@@ -10,6 +10,7 @@ import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.AgeableMob;
@@ -24,6 +25,8 @@ public final class ClientEntityRenderCache {
     private static final Map<String, Entity> CACHE = new HashMap<>();
     private static final java.util.Set<String> WARNED = new java.util.HashSet<>();
     private static final Map<String, Long> FAILED_UNTIL = new HashMap<>();
+    private static final Map<String, String> SUCCESSFUL_COBBLEMON_METHODS = new HashMap<>();
+    private static final java.util.Set<String> ANNOUNCED_COBBLEMON_METHODS = new java.util.HashSet<>();
 
     public static Entity getOrCreate(StoredMob stored) {
         if (stored == null || stored.isEmpty() || Minecraft.getInstance().level == null) return null;
@@ -52,8 +55,9 @@ public final class ClientEntityRenderCache {
         if (entity instanceof Sheep sheep && !stored.display.colorKey().isBlank()) sheep.setColor(DyeColor.byName(stored.display.colorKey(), DyeColor.WHITE));
         if (entity instanceof AgeableMob ageable) ageable.setBaby(stored.display.baby());
         if ("cobblemon:pokemon".equals(stored.mobId.toString()) && stored.speciesId != null) {
-            applyCobblemonSpecies(entity, stored);
+            String method = applyCobblemonSpecies(entity, stored);
             if (!validateCobblemonSpecies(entity, stored)) return false;
+            announceCobblemonMethod(stored, method);
         }
         return true;
     }
@@ -68,29 +72,72 @@ public final class ClientEntityRenderCache {
         }
     }
 
-    private static void applyCobblemonSpecies(Entity entity, StoredMob stored) {
+    private static String applyCobblemonSpecies(Entity entity, StoredMob stored) {
         Optional<Object> pokemon = readPokemon(entity);
-        if (pokemon.isEmpty()) { warnOnce("Cobblemon dummy has no readable pokemon object for " + stored.speciesId); return; }
-        if (tryPokemonProperties(entity, stored.speciesId, stored.display.variantKey())) return;
-        if (trySetSpeciesOnPokemon(pokemon.get(), stored.speciesId)) { applyCobblemonAspects(entity, pokemon.get(), stored.display.variantKey()); syncCobblemonEntityData(entity, stored.speciesId, pokemon.get(), stored.display.variantKey()); return; }
+        if (pokemon.isEmpty()) { warnOnce("Cobblemon dummy has no readable pokemon object for " + stored.speciesId); return "unavailable:no_pokemon_object"; }
+        String key = cobblemonMethodKey(stored);
+        String preferred = SUCCESSFUL_COBBLEMON_METHODS.get(key);
+        if (preferred != null) {
+            if (tryCobblemonMethod(entity, pokemon.get(), stored, preferred)) return preferred;
+            SUCCESSFUL_COBBLEMON_METHODS.remove(key);
+            warnOnce("Previously successful Cobblemon render method failed and will be rediscovered: " + preferred);
+        }
+        for (String method : cobblemonMethods()) {
+            if (tryCobblemonMethod(entity, pokemon.get(), stored, method)) {
+                SUCCESSFUL_COBBLEMON_METHODS.put(key, method);
+                return method;
+            }
+        }
         warnOnce("Could not apply Cobblemon species " + stored.speciesId + " to dummy; rendering generic placeholder");
+        return "unresolved";
     }
 
-    private static boolean tryPokemonProperties(Entity entity, ResourceLocation speciesId, String variantKey) {
-        String[] classNames = {"com.cobblemon.mod.common.api.pokemon.PokemonProperties", "com.cobblemon.mod.common.pokemon.PokemonProperties"};
-        for (String className : classNames) {
-            try {
-                Class<?> propertiesClass = Class.forName(className);
-                Object props = invokeStatic(propertiesClass, "parse", pokemonPropertiesText(speciesId, variantKey)).or(() -> invokeStatic(propertiesClass, "parse", speciesId.getPath())).or(() -> invokeStatic(propertiesClass, "parse", speciesId.toString())).orElse(null);
-                if (props == null) continue;
-                Object pokemon = invoke(props, "create").orElse(null);
-                if (pokemon == null) continue;
-                if (invoke(entity, "setPokemon", pokemon).isPresent() || setField(entity, "pokemon", pokemon)) { applyCobblemonAspects(entity, pokemon, variantKey); syncCobblemonEntityData(entity, speciesId, pokemon, variantKey); return true; }
-            } catch (Throwable error) {
-                warnOnce("Cobblemon PokemonProperties failed: " + className, error);
+    private static java.util.List<String> cobblemonMethods() {
+        return java.util.List.of(
+                "PokemonProperties:com.cobblemon.mod.common.api.pokemon.PokemonProperties",
+                "PokemonProperties:com.cobblemon.mod.common.pokemon.PokemonProperties",
+                "PokemonObject:setSpecies");
+    }
+
+    private static boolean tryCobblemonMethod(Entity entity, Object existingPokemon, StoredMob stored, String method) {
+        if (method.startsWith("PokemonProperties:")) return tryPokemonPropertiesClass(entity, stored.speciesId, stored.display.variantKey(), method.substring("PokemonProperties:".length()));
+        if ("PokemonObject:setSpecies".equals(method)) {
+            if (trySetSpeciesOnPokemon(existingPokemon, stored.speciesId)) {
+                applyCobblemonAspects(entity, existingPokemon, stored.display.variantKey());
+                syncCobblemonEntityData(entity, stored.speciesId, existingPokemon, stored.display.variantKey());
+                return true;
             }
         }
         return false;
+    }
+
+    private static boolean tryPokemonPropertiesClass(Entity entity, ResourceLocation speciesId, String variantKey, String className) {
+        try {
+            Class<?> propertiesClass = Class.forName(className);
+            Object props = invokeStatic(propertiesClass, "parse", pokemonPropertiesText(speciesId, variantKey)).or(() -> invokeStatic(propertiesClass, "parse", speciesId.getPath())).or(() -> invokeStatic(propertiesClass, "parse", speciesId.toString())).orElse(null);
+            if (props == null) return false;
+            Object pokemon = invoke(props, "create").orElse(null);
+            if (pokemon == null) return false;
+            if (invoke(entity, "setPokemon", pokemon).isPresent() || setField(entity, "pokemon", pokemon)) {
+                applyCobblemonAspects(entity, pokemon, variantKey);
+                syncCobblemonEntityData(entity, speciesId, pokemon, variantKey);
+                return true;
+            }
+        } catch (Throwable error) {
+            warnOnce("Cobblemon PokemonProperties failed: " + className, error);
+        }
+        return false;
+    }
+
+    private static String cobblemonMethodKey(StoredMob stored) { return stored.speciesId + "|" + stored.display.variantKey(); }
+
+    private static void announceCobblemonMethod(StoredMob stored, String method) {
+        String key = cobblemonMethodKey(stored) + "|" + method;
+        if (!ANNOUNCED_COBBLEMON_METHODS.add(key)) return;
+        String message = "Mob Farm Block Debug: Cobblemon render method for " + stored.speciesId + " is " + method;
+        MobFarmBlockMod.LOGGER.info(message);
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player != null) minecraft.player.displayClientMessage(Component.literal(message), false);
     }
 
     private static boolean trySetSpeciesOnPokemon(Object pokemon, ResourceLocation speciesId) {
