@@ -72,7 +72,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         for (HoverLine line : lines.subList(0, Math.min(lines.size(), 4))) {
             poseStack.pushPose();
             poseStack.translate(-62.0F, y - 3.0F, 0.0F);
-            poseStack.scale(12.0F, 12.0F, 12.0F);
+            poseStack.scale(-12.0F, -12.0F, 12.0F);
             minecraft.getItemRenderer().renderStatic(line.icon(), ItemDisplayContext.GUI, LightTexture.FULL_BRIGHT, 0, poseStack, buffer, minecraft.level, 0);
             poseStack.popPose();
             font.drawInBatch(line.text(), -42.0F, y, line.color(), false, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, 0x99000000, LightTexture.FULL_BRIGHT);

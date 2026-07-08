@@ -84,7 +84,7 @@ public final class InteractionMethodRegistry {
         long cooldown = definition.cooldownTicks() > 0 ? definition.cooldownTicks() : 6000L;
         if (!state.getBoolean("breedingCycleActive") || now >= state.getLong("breedingReadyAt")) {
             state.putLong("breedingBaseCount", context.stored().count);
-            state.putInt("breedingFedCount", 0);
+            state.putLong("breedingFedCount", 0L);
             state.putLong("breedingReadyAt", now + cooldown);
             state.putBoolean("breedingCycleActive", true);
             MobFarmDebug.breeding(context.player(), "- cycle started\n- base count: " + context.stored().count + "\n- ready at game time: " + (now + cooldown));

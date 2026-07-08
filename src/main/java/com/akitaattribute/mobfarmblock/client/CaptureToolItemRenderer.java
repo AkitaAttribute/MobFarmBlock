@@ -44,8 +44,8 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
 
         poseStack.pushPose();
         if (slotContext) {
-            poseStack.translate(0.5D, 0.48D, 0.78D);
-            float scale = entityScale(entity, stored, 0.34F, 0.82F);
+            poseStack.translate(0.5D, 0.22D, 0.78D);
+            float scale = entityScale(entity, stored, 0.30F, 0.72F);
             poseStack.scale(scale, scale, scale);
             poseStack.mulPose(Axis.XP.rotationDegrees(18.0F));
             poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));

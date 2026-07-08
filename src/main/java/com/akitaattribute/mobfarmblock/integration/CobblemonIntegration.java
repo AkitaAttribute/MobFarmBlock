@@ -151,6 +151,9 @@ public final class CobblemonIntegration {
             appendObjectValue(key, "form", value(form, "showdownId", "getShowdownId", "formOnlyShowdownId", "getFormOnlyShowdownId"));
             appendObjectValue(key, "baseScale", value(form, "getBaseScale", "baseScale"));
         });
+        appendObjectValue(key, "level", value(pokemon.get(), "getLevel", "level"));
+        appendObjectValue(key, "shiny", value(pokemon.get(), "getShiny", "isShiny", "shiny"));
+        appendObjectValue(key, "gender", value(pokemon.get(), "getGender", "gender"));
         appendObjectValue(key, "aspects", value(pokemon.get(), "getAspects", "aspects"));
         return key.isEmpty() ? Optional.empty() : Optional.of(key.toString());
     }

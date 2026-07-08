@@ -99,6 +99,12 @@ public final class ClientEntityRenderCache {
             for (String aspect : parseAspects(variantKey)) text.append(' ').append(aspect);
             String form = parseVariantValue(variantKey, "form");
             if (!form.isBlank()) text.append(' ').append(form);
+            String level = parseVariantValue(variantKey, "level");
+            if (!level.isBlank()) text.append(" level=").append(level);
+            String shiny = parseVariantValue(variantKey, "shiny");
+            if ("true".equalsIgnoreCase(shiny)) text.append(" shiny");
+            String gender = parseVariantValue(variantKey, "gender");
+            if (!gender.isBlank()) text.append(' ').append(gender.toLowerCase(java.util.Locale.ROOT));
         }
         return text.toString();
     }
