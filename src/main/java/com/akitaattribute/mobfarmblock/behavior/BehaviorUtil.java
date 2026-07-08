@@ -1,6 +1,7 @@
 package com.akitaattribute.mobfarmblock.behavior;
 
 import com.akitaattribute.mobfarmblock.mob.DropRule;
+import com.akitaattribute.mobfarmblock.debug.MobFarmDebug;
 import com.akitaattribute.mobfarmblock.mob.XpProfile;
 
 import net.minecraft.core.Holder;
@@ -25,8 +26,18 @@ final class BehaviorUtil {
         if (context.stored().isEmpty()) return AttackResult.PASS;
         context.stored().count--;
         int lootingLevel = getLootingLevel(context);
-        for (DropRule rule : context.stored().dropProfile.drops()) rollDrop(context, rule, lootingLevel);
-        awardXp(context);
+        StringBuilder rolled = new StringBuilder();
+        for (DropRule rule : context.stored().dropProfile.drops()) rollDrop(context, rule, lootingLevel, rolled);
+        int xp = awardXp(context);
+        MobFarmDebug.send(context.player(), net.minecraft.network.chat.Component.literal("Mob Farm Block Debug:\nProcessed mob"
+                + "\n- mob id: " + context.stored().mobId
+                + "\n- kind: " + context.stored().kind
+                + "\n- species id: " + (context.stored().speciesId == null ? "unavailable" : context.stored().speciesId)
+                + "\n- drop profile source: " + context.stored().dropProfileSource
+                + "\n- drop rule count: " + context.stored().dropProfile.drops().size()
+                + "\n- xp range: " + context.stored().dropProfile.xp().minXp() + "-" + context.stored().dropProfile.xp().maxXp()
+                + "\n- xp rolled: " + xp
+                + "\n- rolled drops: " + (rolled.isEmpty() ? "none" : rolled)));
         return AttackResult.SUCCESS;
     }
 
@@ -48,7 +59,7 @@ final class BehaviorUtil {
         return remaining;
     }
 
-    private static void rollDrop(MobFarmContext context, DropRule rule, int lootingLevel) {
+    private static void rollDrop(MobFarmContext context, DropRule rule, int lootingLevel, StringBuilder rolled) {
         double chance = rule.chance();
         if (rule.affectedByLooting()) chance += lootingLevel * rule.lootingChanceBonus();
         chance = Math.max(0.0, Math.min(1.0, chance));
@@ -57,18 +68,23 @@ final class BehaviorUtil {
         if (rule.affectedByLooting() && lootingLevel > 0 && rule.lootingMaxBonus() > 0) {
             count += context.random().nextInt(lootingLevel * rule.lootingMaxBonus() + 1);
         }
-        if (count > 0) output(context, new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId()), count));
+        if (count > 0) {
+            if (!rolled.isEmpty()) rolled.append(", ");
+            rolled.append(rule.itemId()).append(" x").append(count);
+            output(context, new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId()), count));
+        }
     }
 
     private static int randomBetween(MobFarmContext context, int min, int max) {
         return max <= min ? min : min + context.random().nextInt(max - min + 1);
     }
 
-    private static void awardXp(MobFarmContext context) {
+    private static int awardXp(MobFarmContext context) {
         XpProfile xp = context.stored().dropProfile.xp();
-        if (xp.maxXp() <= 0 || !(context.level() instanceof ServerLevel serverLevel)) return;
+        if (xp.maxXp() <= 0 || !(context.level() instanceof ServerLevel serverLevel)) return 0;
         int amount = randomBetween(context, xp.minXp(), xp.maxXp());
         if (amount > 0) ExperienceOrb.award(serverLevel, Vec3.atCenterOf(context.pos()), amount);
+        return amount;
     }
 
     private static int getLootingLevel(MobFarmContext context) {

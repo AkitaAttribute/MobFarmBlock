@@ -22,7 +22,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         poseStack.translate(0.5D, 0.58D, 0.5D);
         poseStack.scale(0.32F, 0.32F, 0.32F);
         poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
-        Minecraft.getInstance().getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, partialTick, poseStack, buffer, packedLight);
+        Minecraft.getInstance().getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, partialTick, poseStack, buffer, 0x00F000F0);
         poseStack.popPose();
     }
 }

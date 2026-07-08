@@ -43,9 +43,19 @@ public class StoredMob {
 
     public boolean isSameType(StoredMob other) {
         if (other == null || !mobId.equals(other.mobId) || kind != other.kind) return false;
-        if (speciesId != null && other.speciesId != null) return speciesId.equals(other.speciesId);
-        if (!display.variantKey().isBlank() && !other.display.variantKey().isBlank()) return display.variantKey().equals(other.display.variantKey());
+        if (kind == MobKind.COBBLEMON && "cobblemon:pokemon".equals(mobId.toString())) {
+            if (speciesId != null && other.speciesId != null) return speciesId.equals(other.speciesId);
+            if (speciesId != null || other.speciesId != null) return false;
+            String variant = display == null ? "" : display.variantKey();
+            String otherVariant = other.display == null ? "" : other.display.variantKey();
+            if (!variant.isBlank() && !otherVariant.isBlank()) return variant.equals(otherVariant);
+            return false;
+        }
         return true;
+    }
+
+    public boolean isUnknownCobblemonPokemon() {
+        return kind == MobKind.COBBLEMON && "cobblemon:pokemon".equals(mobId.toString()) && speciesId == null;
     }
 
     public boolean ready(ResourceLocation action, long now) { return now >= readyAtTicks.getOrDefault(action, 0L); }

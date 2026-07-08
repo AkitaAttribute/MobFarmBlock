@@ -5,6 +5,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.animal.Sheep;
+import java.lang.reflect.Method;
 import net.minecraft.core.registries.BuiltInRegistries;
 
 /** Display-only identity. It intentionally excludes UUID, position, AI, equipment, and full entity NBT. */
@@ -28,14 +29,40 @@ public record DisplaySnapshot(
     public static DisplaySnapshot forEntity(LivingEntity entity) {
         ResourceLocation entityId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
         String colorKey = entity instanceof Sheep sheep ? sheep.getColor().getName() : "";
+        String variantKey = variantKey(entity);
         return new DisplaySnapshot(
                 entityId,
                 defaultTexture(entityId),
-                "",
+                variantKey,
                 colorKey,
                 entity.isBaby(),
                 entity.isBaby() ? 0.5F : 1.0F
         );
+    }
+
+    private static String variantKey(LivingEntity entity) {
+        StringBuilder key = new StringBuilder();
+        appendNoArg(key, entity, "getVariant");
+        appendNoArg(key, entity, "getVariantHolder");
+        appendNoArg(key, entity, "getRabbitType");
+        appendNoArg(key, entity, "getMushroomType");
+        appendNoArg(key, entity, "getVariantAndMarkings");
+        appendNoArg(key, entity, "getTypeVariant");
+        appendNoArg(key, entity, "getVillagerData");
+        return key.toString();
+    }
+
+    private static void appendNoArg(StringBuilder key, Object target, String name) {
+        try {
+            Method method = target.getClass().getMethod(name);
+            if (method.getParameterCount() != 0) return;
+            Object value = method.invoke(target);
+            if (value != null) {
+                if (!key.isEmpty()) key.append('|');
+                key.append(name).append('=').append(value);
+            }
+        } catch (ReflectiveOperationException ignored) {
+        }
     }
 
     public static ResourceLocation defaultTexture(ResourceLocation entityId) {

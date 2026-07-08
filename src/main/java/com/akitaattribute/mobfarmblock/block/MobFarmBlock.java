@@ -4,9 +4,12 @@ import com.akitaattribute.mobfarmblock.behavior.AttackResult;
 import com.akitaattribute.mobfarmblock.behavior.BehaviorRegistry;
 import com.akitaattribute.mobfarmblock.behavior.MobFarmContext;
 import com.akitaattribute.mobfarmblock.item.CaptureToolItem;
+import com.akitaattribute.mobfarmblock.item.MobFarmBlockItemData;
 import com.akitaattribute.mobfarmblock.debug.MobFarmDebug;
+import com.akitaattribute.mobfarmblock.debug.CobblemonDebugDumper;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
 import com.akitaattribute.mobfarmblock.registry.ModItems;
+import com.akitaattribute.mobfarmblock.registry.ModBlocks;
 import com.mojang.serialization.MapCodec;
 
 import net.minecraft.core.BlockPos;
@@ -16,6 +19,9 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.ItemInteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -24,7 +30,6 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.RenderShape;
-import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 
@@ -57,7 +62,8 @@ public class MobFarmBlock extends BaseEntityBlock {
         if (result.success()) {
             CaptureToolItem.clearStoredMob(stack);
             player.displayClientMessage(Component.translatable("block.mob_farm_block.mob_farm_block.inserted"), true);
-            MobFarmDebug.insertionSuccess(player, incoming, result.previous(), result.current(), result.merged());
+            CobblemonDebugDumper.writeEntityDump(player, null, incoming, "insert");
+            if (!"cobblemon:pokemon".equals(incoming.mobId.toString())) MobFarmDebug.insertionSuccess(player, incoming, result.previous(), result.current(), result.merged());
             return ItemInteractionResult.SUCCESS;
         }
         player.displayClientMessage(Component.translatable("block.mob_farm_block.mob_farm_block.different_mob"), true);
@@ -71,5 +77,26 @@ public class MobFarmBlock extends BaseEntityBlock {
         if (stored.isEmpty()) return;
         AttackResult result = BehaviorRegistry.get(stored.mobId).attack(new MobFarmContext(level, pos, player, player.getMainHandItem(), stored, level.random));
         if (result == AttackResult.SUCCESS) blockEntity.setStored(stored);
+    }
+
+    @Override public void setPlacedBy(Level level, BlockPos pos, BlockState state, LivingEntity placer, ItemStack stack) {
+        super.setPlacedBy(level, pos, state, placer, stack);
+        if (!level.isClientSide && MobFarmBlockItemData.hasStoredMob(stack) && level.getBlockEntity(pos) instanceof MobFarmBlockEntity blockEntity) {
+            StoredMob stored = MobFarmBlockItemData.getStoredMob(stack);
+            if (stored != null) {
+                blockEntity.setStored(stored);
+                blockEntity.resetCooldownsOnPlacement(level.getGameTime());
+            }
+        }
+    }
+
+    @Override public BlockState playerWillDestroy(Level level, BlockPos pos, BlockState state, Player player) {
+        if (!level.isClientSide && level.getBlockEntity(pos) instanceof MobFarmBlockEntity blockEntity) {
+            ItemStack drop = new ItemStack(ModBlocks.MOB_FARM_BLOCK_ITEM.get());
+            if (!blockEntity.getStored().isEmpty()) MobFarmBlockItemData.setStoredMob(drop, blockEntity.getStored());
+            popResource(level, pos, drop);
+            level.setBlock(pos, Blocks.AIR.defaultBlockState(), 35);
+        }
+        return super.playerWillDestroy(level, pos, state, player);
     }
 }

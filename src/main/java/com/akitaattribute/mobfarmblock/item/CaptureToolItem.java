@@ -2,6 +2,7 @@ package com.akitaattribute.mobfarmblock.item;
 
 import com.akitaattribute.mobfarmblock.mob.MobProfileFactory;
 import com.akitaattribute.mobfarmblock.debug.MobFarmDebug;
+import com.akitaattribute.mobfarmblock.debug.CobblemonDebugDumper;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
 
 import net.minecraft.core.component.DataComponents;
@@ -39,7 +40,8 @@ public class CaptureToolItem extends Item {
         setStoredMob(stack, stored);
         target.remove(Entity.RemovalReason.DISCARDED);
         player.displayClientMessage(Component.translatable("item.mob_farm_block.capture_tool.captured"), true);
-        MobFarmDebug.captureSuccess(player, target, stored);
+        CobblemonDebugDumper.writeEntityDump(player, target, stored, "capture");
+        if (!"cobblemon:pokemon".equals(stored.mobId.toString())) MobFarmDebug.captureSuccess(player, target, stored);
         return InteractionResult.SUCCESS;
     }
 
