@@ -26,9 +26,7 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
                 || displayContext == ItemDisplayContext.THIRD_PERSON_RIGHT_HAND || displayContext == ItemDisplayContext.THIRD_PERSON_LEFT_HAND;
         poseStack.pushPose();
         if (slotContext) {
-            poseStack.translate(0.5D, 0.5D, 0.5D);
-            poseStack.scale(0.78F, 0.78F, 0.78F);
-            poseStack.translate(-0.5D, -0.5D, -0.5D);
+            // Render the base item at the model's normal centered GUI size.
         } else if (handContext) {
             poseStack.translate(0.5D, 0.5D, 0.5D);
             poseStack.scale(1.15F, 1.15F, 1.15F);
@@ -44,10 +42,10 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
 
         poseStack.pushPose();
         if (slotContext) {
-            poseStack.translate(0.5D, 0.22D, 0.78D);
-            float scale = entityScale(entity, stored, 0.30F, 0.72F);
+            float scale = entityScale(entity, stored, 0.62F, 0.80F);
+            poseStack.translate(0.5D, 0.52D, 0.95D);
             poseStack.scale(scale, scale, scale);
-            poseStack.mulPose(Axis.XP.rotationDegrees(18.0F));
+            poseStack.translate(0.0D, -entity.getBbHeight() * 0.5D, 0.0D);
             poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
         } else {
             poseStack.translate(0.5D, 0.62D, 0.5D);
@@ -65,9 +63,8 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
         float displayScale = stored.display.scale() > 0 ? stored.display.scale() : 1.0F;
         float height = Math.max(entity.getBbHeight(), 0.75F) * displayScale;
         float width = Math.max(entity.getBbWidth(), 0.5F) * displayScale;
-        float bounding = Math.max(height, width * 1.35F);
-        float fit = base * maxHeight / bounding;
-        float natural = base / Math.max(0.75F, displayScale);
-        return Math.max(base * 0.45F, Math.min(natural, fit));
+        float bounding = Math.max(height, width);
+        float fit = base * maxHeight / Math.max(0.1F, bounding);
+        return Math.max(0.22F, Math.min(0.62F, fit));
     }
 }

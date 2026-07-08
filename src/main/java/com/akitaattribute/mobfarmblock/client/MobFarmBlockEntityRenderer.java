@@ -63,20 +63,20 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         List<HoverLine> lines = hoverLines(blockEntity.getStored(), blockEntity.getLevel() == null ? 0L : blockEntity.getLevel().getGameTime());
         if (lines.isEmpty()) return;
         poseStack.pushPose();
-        poseStack.translate(0.5D, 1.30D, 0.5D);
+        poseStack.translate(0.5D, 1.45D, 0.5D);
         poseStack.mulPose(minecraft.getEntityRenderDispatcher().cameraOrientation());
-        poseStack.translate(0.0D, 0.0D, 0.03D);
-        poseStack.scale(-0.010F, -0.010F, 0.010F);
+        poseStack.translate(0.0D, 0.0D, 0.08D);
+        poseStack.scale(-0.025F, -0.025F, 0.025F);
         Font font = minecraft.font;
         int y = 0;
         for (HoverLine line : lines.subList(0, Math.min(lines.size(), 4))) {
             poseStack.pushPose();
             poseStack.translate(-62.0F, y - 3.0F, 0.0F);
-            poseStack.scale(-12.0F, -12.0F, 12.0F);
+            poseStack.scale(-8.0F, -8.0F, 8.0F);
             minecraft.getItemRenderer().renderStatic(line.icon(), ItemDisplayContext.GUI, LightTexture.FULL_BRIGHT, 0, poseStack, buffer, minecraft.level, 0);
             poseStack.popPose();
-            font.drawInBatch(line.text(), -42.0F, y, line.color(), true, poseStack.last().pose(), buffer, Font.DisplayMode.SEE_THROUGH, 0xAA000000, LightTexture.FULL_BRIGHT);
-            y += 14;
+            font.drawInBatch(line.text(), -42.0F, y, line.color(), true, poseStack.last().pose(), buffer, Font.DisplayMode.SEE_THROUGH, 0xFF000000, LightTexture.FULL_BRIGHT);
+            y += 12;
         }
         poseStack.popPose();
     }
