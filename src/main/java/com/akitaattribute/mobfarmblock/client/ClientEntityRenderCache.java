@@ -73,7 +73,21 @@ public final class ClientEntityRenderCache {
         if (entity instanceof Sheep sheep && !stored.display.colorKey().isBlank()) sheep.setColor(DyeColor.byName(stored.display.colorKey(), DyeColor.WHITE));
         if (entity instanceof AgeableMob ageable) ageable.setBaby(stored.display.baby());
         if ("cobblemon:pokemon".equals(stored.mobId.toString()) && stored.speciesId != null) {
-            if (stored.cobblemonRenderSnapshot != null) return applyCobblemonSnapshot(entity, stored);
+            if (stored.cobblemonRenderSnapshot != null) {
+                if (applyCobblemonSnapshot(entity, stored)) return true;
+                // Do not let the newer snapshot path suppress rendering entirely. If the
+                // snapshot cannot be applied in this Cobblemon runtime, fall back to the
+                // legacy validated dummy strategy that is known to render older stored
+                // pens. This keeps newly captured Pokemon visible while the native
+                // snapshot path is refined.
+                Entity fallback = BuiltInRegistries.ENTITY_TYPE.get(stored.mobId).create(Minecraft.getInstance().level);
+                if (fallback == null) return false;
+                freezeForRender(fallback);
+                String method = applyCobblemonSpecies(fallback, stored);
+                if (method == null) return false;
+                copyRenderState(entity, fallback);
+                return true;
+            }
             String method = applyCobblemonSpecies(entity, stored);
             if (method == null) return false;
         }
@@ -86,6 +100,17 @@ public final class ClientEntityRenderCache {
         if (pokemon.isEmpty()) {
             warnOnce("Cobblemon snapshot render failed because dummy has no Pokemon object: " + snapshot.speciesId());
             return false;
+        }
+
+        // First, do no harm. A freshly-created Cobblemon PokemonEntity can already
+        // contain the correct render-facing Pokemon state. The legacy path checks
+        // this before mutating; the snapshot path must do the same or it can corrupt
+        // an already-valid dummy and make new captures render blank.
+        ValidationResult existingValidation = validationFor(entity, stored);
+        if (snapshotValidationPasses(snapshot, existingValidation)) {
+            MobFarmBlockMod.LOGGER.debug("Cobblemon snapshot existing-state render validated for {} readBack={} aspects={} renderable={}",
+                    snapshot.speciesId(), existingValidation.readBack(), existingValidation.aspects(), existingValidation.renderable());
+            return true;
         }
 
         // Fast path: mutate the real Pokemon object that the dummy PokemonEntity already owns.
@@ -161,6 +186,20 @@ public final class ClientEntityRenderCache {
             living.setPose(Pose.STANDING);
             living.walkAnimation.setSpeed(0.0F); living.walkAnimation.update(0.0F, 1.0F);
         }
+    }
+
+    private static void copyRenderState(Entity target, Entity source) {
+        // We intentionally copy only the Cobblemon Pokemon/render-facing state and
+        // basic visual state. The cache keeps the original target object, so callers
+        // do not need a second getOrCreate path.
+        Optional<Object> sourcePokemon = readPokemon(source);
+        if (sourcePokemon.isPresent()) {
+            invoke(target, "setPokemon", sourcePokemon.get());
+            setField(target, "pokemon", sourcePokemon.get());
+        }
+        target.getEntityData().assignValues(source.getEntityData().getNonDefaultValues());
+        target.refreshDimensions();
+        freezeForRender(target);
     }
 
     private static String applyCobblemonSpecies(Entity entity, StoredMob stored) {
