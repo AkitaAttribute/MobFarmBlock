@@ -105,13 +105,15 @@ final class BehaviorUtil {
 
     private static boolean isWeapon(ItemStack stack) {
         if (stack.isEmpty()) return false;
-        return stack.is(itemTag("swords"))
-                || stack.is(itemTag("axes"))
-                || stack.is(itemTag("enchantable/weapon"));
+        return stack.is(itemTag("minecraft", "swords"))
+                || stack.is(itemTag("minecraft", "axes"))
+                || stack.is(itemTag("minecraft", "enchantable/weapon"))
+                || stack.is(itemTag("neoforge", "weapon"))
+                || stack.is(itemTag("forge", "weapon"));
     }
 
-    private static TagKey<Item> itemTag(String path) {
-        return TagKey.create(BuiltInRegistries.ITEM.key(), ResourceLocation.fromNamespaceAndPath("minecraft", path));
+    private static TagKey<Item> itemTag(String namespace, String path) {
+        return TagKey.create(BuiltInRegistries.ITEM.key(), ResourceLocation.fromNamespaceAndPath(namespace, path));
     }
 
     private static RollResult rollDrop(MobFarmContext context, DropRule rule, int lootingLevel) {
