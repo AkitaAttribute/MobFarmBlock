@@ -12,14 +12,18 @@ import com.akitaattribute.mobfarmblock.mob.InteractionDefinition;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
 import com.mojang.blaze3d.platform.Lighting;
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -29,6 +33,7 @@ import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
+import org.joml.Matrix4f;
 
 public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBlockEntity> {
     private static final int TEXT_WHITE = 0xFFFFFF;
@@ -116,18 +121,44 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     }
 
     private static void renderLookItem(ItemStack stack, int x, int y, PoseStack poseStack, MultiBufferSource buffer, Minecraft minecraft) {
+        try {
+            BakedModel model = minecraft.getItemRenderer().getModel(stack, minecraft.level, minecraft.player, 0);
+            if (!model.isGui3d()) {
+                renderFlatSpriteIcon(model.getParticleIcon(), x, y, poseStack, buffer);
+                return;
+            }
+        } catch (Throwable ignored) {
+            // Fall through to the normal renderer when model lookup is not available.
+        }
+
         poseStack.pushPose();
         poseStack.translate(x + 8.0D, y + 8.0D, 0.0D);
         poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
         poseStack.scale(10.0F, 10.0F, 10.0F);
-        // Render the actual GUI item model again, but force flat GUI lighting around
-        // the call.  The previous sprite-only version fixed shading but made block
-        // items look like awkward flat quads; this keeps the 3D GUI item shape while
-        // avoiding the extra world-style side darkness in the Look UI.
         Lighting.setupForFlatItems();
         minecraft.getItemRenderer().renderStatic(stack, ItemDisplayContext.GUI, LightTexture.FULL_BRIGHT, net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY, poseStack, buffer, minecraft.level, 0);
         Lighting.setupFor3DItems();
         poseStack.popPose();
+    }
+
+    private static void renderFlatSpriteIcon(TextureAtlasSprite sprite, int x, int y, PoseStack poseStack, MultiBufferSource buffer) {
+        poseStack.pushPose();
+        poseStack.translate(x + 1.0D, y + 1.0D, 0.0D);
+        renderSpriteQuad(sprite, 0.0F, 0.0F, 14.0F, 14.0F, poseStack, buffer);
+        poseStack.popPose();
+    }
+
+    private static void renderSpriteQuad(TextureAtlasSprite sprite, float x, float y, float width, float height, PoseStack poseStack, MultiBufferSource buffer) {
+        Matrix4f matrix = poseStack.last().pose();
+        VertexConsumer consumer = buffer.getBuffer(RenderType.text(sprite.atlasLocation()));
+        float u0 = sprite.getU0();
+        float u1 = sprite.getU1();
+        float v0 = sprite.getV0();
+        float v1 = sprite.getV1();
+        consumer.addVertex(matrix, x, y + height, 0.0F).setColor(255, 255, 255, 255).setUv(u0, v1).setLight(LightTexture.FULL_BRIGHT);
+        consumer.addVertex(matrix, x + width, y + height, 0.0F).setColor(255, 255, 255, 255).setUv(u1, v1).setLight(LightTexture.FULL_BRIGHT);
+        consumer.addVertex(matrix, x + width, y, 0.0F).setColor(255, 255, 255, 255).setUv(u1, v0).setLight(LightTexture.FULL_BRIGHT);
+        consumer.addVertex(matrix, x, y, 0.0F).setColor(255, 255, 255, 255).setUv(u0, v0).setLight(LightTexture.FULL_BRIGHT);
     }
 
     private static int rowWidth(Font font, LookRow row) {
