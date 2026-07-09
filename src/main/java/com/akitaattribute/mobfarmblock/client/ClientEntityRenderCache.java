@@ -82,17 +82,75 @@ public final class ClientEntityRenderCache {
 
     private static boolean applyCobblemonSnapshot(Entity entity, StoredMob stored) {
         CobblemonRenderSnapshot snapshot = stored.cobblemonRenderSnapshot;
-        boolean applied = tryPokemonPropertiesText(entity, snapshot.speciesId(), snapshot.propertiesText().isBlank() ? snapshotPropertiesText(snapshot) : snapshot.propertiesText(), pokemonPropertiesClass());
         Optional<Object> pokemon = readPokemon(entity);
-        pokemon.ifPresent(value -> syncCobblemonEntityData(entity, snapshot.speciesId(), value, snapshot.aspects()));
-        ValidationResult validation = validationFor(entity, stored);
-        boolean aspectsValid = snapshot.aspects() == null || snapshot.aspects().isEmpty() || snapshot.aspects().stream().allMatch(aspect -> validation.aspects().contains(aspect));
-        boolean valid = applied && validation.valid() && aspectsValid;
-        if (!valid) MobFarmBlockMod.LOGGER.info("Mob Farm Block Debug: Cobblemon snapshot render failed for {} applied={} valid={} readBack={} aspects={} expectedAspects={} renderable={} capturedRenderable={} payloadFormat={}",
-                snapshot.speciesId(), applied, false, validation.readBack(), validation.aspects(), snapshot.aspects(), validation.renderable(), snapshot.renderableDebug(), snapshot.pokemonPayloadFormat());
-        else MobFarmBlockMod.LOGGER.debug("Cobblemon snapshot render validated for {} readBack={} aspects={} payloadFormat={}",
-                snapshot.speciesId(), validation.readBack(), validation.aspects(), snapshot.pokemonPayloadFormat());
+        if (pokemon.isEmpty()) {
+            warnOnce("Cobblemon snapshot render failed because dummy has no Pokemon object: " + snapshot.speciesId());
+            return false;
+        }
+
+        // Fast path: mutate the real Pokemon object that the dummy PokemonEntity already owns.
+        // This uses the species/aspects captured from the live entity instead of waiting for a
+        // freshly-created generic cobblemon:pokemon to randomly/existing-state match the target.
+        boolean directApplied = applySnapshotToPokemonObject(entity, pokemon.get(), snapshot);
+        ValidationResult directValidation = validationFor(entity, stored);
+        if (directApplied && snapshotValidationPasses(snapshot, directValidation)) {
+            MobFarmBlockMod.LOGGER.debug("Cobblemon snapshot direct render validated for {} readBack={} aspects={} renderable={}",
+                    snapshot.speciesId(), directValidation.readBack(), directValidation.aspects(), directValidation.renderable());
+            return true;
+        }
+
+        // Compatibility fallback only. Some Cobblemon versions expose PokemonProperties but not
+        // mutable Pokemon fields/setters. Keep it after direct snapshot application so new captures
+        // do not depend on the old strategy search.
+        boolean propertiesApplied = tryPokemonPropertiesText(entity, snapshot.speciesId(), snapshot.propertiesText().isBlank() ? snapshotPropertiesText(snapshot) : snapshot.propertiesText(), pokemonPropertiesClass());
+        Optional<Object> rebuiltPokemon = readPokemon(entity);
+        rebuiltPokemon.ifPresent(value -> {
+            applySnapshotToPokemonObject(entity, value, snapshot);
+            syncCobblemonEntityData(entity, snapshot.speciesId(), value, snapshot.aspects());
+        });
+        ValidationResult propertiesValidation = validationFor(entity, stored);
+        boolean valid = propertiesApplied && snapshotValidationPasses(snapshot, propertiesValidation);
+        if (!valid) MobFarmBlockMod.LOGGER.info("Mob Farm Block Debug: Cobblemon snapshot render failed for {} directApplied={} directValid={} propertiesApplied={} propertiesValid={} readBack={} aspects={} expectedAspects={} renderable={} capturedRenderable={} payloadFormat={}",
+                snapshot.speciesId(), directApplied, directValidation.valid(), propertiesApplied, propertiesValidation.valid(), propertiesValidation.readBack(), propertiesValidation.aspects(), snapshot.aspects(), propertiesValidation.renderable(), snapshot.renderableDebug(), snapshot.pokemonPayloadFormat());
+        else MobFarmBlockMod.LOGGER.debug("Cobblemon snapshot properties render validated for {} readBack={} aspects={} payloadFormat={}",
+                snapshot.speciesId(), propertiesValidation.readBack(), propertiesValidation.aspects(), snapshot.pokemonPayloadFormat());
         return valid;
+    }
+
+    private static boolean applySnapshotToPokemonObject(Entity entity, Object pokemon, CobblemonRenderSnapshot snapshot) {
+        boolean changed = false;
+        Optional<Object> species = findSpeciesObject(snapshot.speciesId());
+        if (species.isPresent()) {
+            changed |= invoke(pokemon, "setSpecies", species.get()).isPresent();
+            changed |= setField(pokemon, "species", species.get());
+            changed |= invoke(entity, "setSpecies", species.get()).isPresent();
+            changed |= setField(entity, "species", species.get());
+        }
+        if (snapshot.aspects() != null && !snapshot.aspects().isEmpty()) {
+            changed |= setCobblemonAspects(entity, pokemon, snapshot.aspects());
+        }
+        if (snapshot.level() > 0) {
+            changed |= invoke(pokemon, "setLevel", snapshot.level()).isPresent();
+            changed |= setField(pokemon, "level", snapshot.level());
+        }
+        changed |= invoke(pokemon, "setShiny", snapshot.shiny()).isPresent();
+        changed |= setField(pokemon, "shiny", snapshot.shiny());
+        if (snapshot.gender() != null && !snapshot.gender().isBlank()) changed |= setCobblemonGender(pokemon, snapshot.gender());
+        if (snapshot.scaleModifier() > 0) {
+            changed |= invoke(pokemon, "setScaleModifier", snapshot.scaleModifier()).isPresent();
+            changed |= setField(pokemon, "scaleModifier", snapshot.scaleModifier());
+            setEntityData(entity, "SCALE_MODIFIER", snapshot.scaleModifier());
+        }
+        syncCobblemonEntityData(entity, snapshot.speciesId(), pokemon, snapshot.aspects() == null ? java.util.List.of() : snapshot.aspects());
+        invoke(entity, "refreshDimensions");
+        return changed;
+    }
+
+    private static boolean snapshotValidationPasses(CobblemonRenderSnapshot snapshot, ValidationResult validation) {
+        boolean speciesValid = validation.valid();
+        boolean aspectsValid = snapshot.aspects() == null || snapshot.aspects().isEmpty()
+                || snapshot.aspects().stream().allMatch(aspect -> validation.aspects().contains(aspect) || validation.renderable().contains(aspect));
+        return speciesValid && aspectsValid;
     }
 
     public static void freezeForRender(Entity entity) {
@@ -266,14 +324,24 @@ public final class ClientEntityRenderCache {
     }
 
     private static Optional<Object> findSpeciesObject(ResourceLocation speciesId) {
-        String[] classNames = {"com.cobblemon.mod.common.CobblemonSpecies", "com.cobblemon.mod.common.api.pokemon.CobblemonSpecies"};
+        String[] classNames = {
+                "com.cobblemon.mod.common.api.pokemon.PokemonSpecies",
+                "com.cobblemon.mod.common.pokemon.PokemonSpecies",
+                "com.cobblemon.mod.common.CobblemonSpecies",
+                "com.cobblemon.mod.common.api.pokemon.CobblemonSpecies"
+        };
         for (String className : classNames) {
             try {
                 Class<?> type = Class.forName(className);
-                for (String method : new String[] {"getByIdentifier", "getById", "get", "getSpecies"}) {
-                    Optional<Object> species = invokeStatic(type, method, speciesId).or(() -> invokeStatic(type, method, speciesId.toString())).or(() -> invokeStatic(type, method, speciesId.getPath()));
+                for (String method : new String[] {"getByIdentifier", "getById", "get", "getSpecies", "getByName", "getByPokedexNumber"}) {
+                    Optional<Object> species = invokeStaticOrSingleton(type, method, speciesId)
+                            .or(() -> invokeStaticOrSingleton(type, method, speciesId.toString()))
+                            .or(() -> invokeStaticOrSingleton(type, method, speciesId.getPath()));
                     if (species.isPresent()) return species;
                 }
+                Optional<Object> speciesMap = readStaticOrSingletonField(type, "species").or(() -> readStaticOrSingletonField(type, "BY_IDENTIFIER"));
+                Optional<Object> fromMap = speciesMap.flatMap(map -> lookupInMap(map, speciesId));
+                if (fromMap.isPresent()) return fromMap;
             } catch (Throwable error) {
                 warnOnce("Cobblemon species lookup failed: " + className, error);
             }
@@ -311,12 +379,39 @@ public final class ClientEntityRenderCache {
     private static void applyCobblemonAspects(Entity entity, Object pokemon, String variantKey) {
         java.util.List<String> aspects = parseAspects(variantKey);
         if (aspects.isEmpty()) return;
-        invoke(pokemon, "setAspects", aspects);
-        setField(pokemon, "aspects", aspects);
-        invoke(entity, "setAspects", aspects);
-        setField(entity, "aspects", aspects);
+        setCobblemonAspects(entity, pokemon, aspects);
+    }
+
+    private static boolean setCobblemonAspects(Entity entity, Object pokemon, java.util.List<String> aspects) {
+        java.util.LinkedHashSet<String> aspectSet = new java.util.LinkedHashSet<>(aspects);
+        boolean changed = false;
+        changed |= invoke(pokemon, "setAspects", aspectSet).isPresent();
+        changed |= invoke(pokemon, "setAspects", aspects).isPresent();
+        changed |= setField(pokemon, "aspects", aspectSet) || setField(pokemon, "aspects", aspects);
+        changed |= invoke(entity, "setAspects", aspectSet).isPresent();
+        changed |= invoke(entity, "setAspects", aspects).isPresent();
+        changed |= setField(entity, "aspects", aspectSet) || setField(entity, "aspects", aspects);
         invoke(pokemon, "updateAspects");
         invoke(entity, "updateAspects");
+        return changed;
+    }
+
+    private static boolean setCobblemonGender(Object pokemon, String genderText) {
+        boolean changed = false;
+        changed |= invoke(pokemon, "setGender", genderText).isPresent();
+        changed |= setField(pokemon, "gender", genderText);
+        Optional<Object> currentGender = invoke(pokemon, "getGender").or(() -> readField(pokemon, "gender"));
+        if (currentGender.isPresent() && currentGender.get().getClass().isEnum()) {
+            try {
+                @SuppressWarnings({"unchecked", "rawtypes"})
+                Object gender = Enum.valueOf((Class<Enum>) currentGender.get().getClass(), genderText.toUpperCase(java.util.Locale.ROOT));
+                changed |= invoke(pokemon, "setGender", gender).isPresent();
+                changed |= setField(pokemon, "gender", gender);
+            } catch (Throwable error) {
+                warnOnce("Cobblemon gender enum conversion failed: " + genderText, error);
+            }
+        }
+        return changed;
     }
 
     private static ValidationResult validationFor(Entity entity, StoredMob stored) {
@@ -353,7 +448,7 @@ public final class ClientEntityRenderCache {
 
     private static Optional<Object> invoke(Object target, String name, Object... args) {
         try {
-            Method method = findMethod(target.getClass(), name, args.length);
+            Method method = findMethod(target.getClass(), name, args);
             if (method == null) return Optional.empty();
             method.setAccessible(true);
             return Optional.ofNullable(method.invoke(target, args));
@@ -362,11 +457,56 @@ public final class ClientEntityRenderCache {
 
     private static Optional<Object> invokeStatic(Class<?> type, String name, Object... args) {
         try {
-            Method method = findMethod(type, name, args.length);
+            Method method = findMethod(type, name, args);
             if (method == null) return Optional.empty();
             method.setAccessible(true);
             return Optional.ofNullable(method.invoke(null, args));
         } catch (Throwable error) { warnOnce("invokeStatic:" + type.getName() + "." + name, error); return Optional.empty(); }
+    }
+
+    private static Optional<Object> invokeStaticOrSingleton(Class<?> type, String name, Object... args) {
+        Optional<Object> direct = invokeStatic(type, name, args);
+        if (direct.isPresent()) return direct;
+        return singletonObjects(type).stream().map(singleton -> invoke(singleton, name, args)).filter(Optional::isPresent).map(Optional::get).findFirst();
+    }
+
+    private static java.util.List<Object> singletonObjects(Class<?> type) {
+        java.util.List<Object> singletons = new java.util.ArrayList<>();
+        for (String fieldName : java.util.List.of("INSTANCE", "Companion")) {
+            try {
+                Field field = type.getDeclaredField(fieldName);
+                field.setAccessible(true);
+                Object value = field.get(null);
+                if (value != null) singletons.add(value);
+            } catch (Throwable ignored) {}
+        }
+        return singletons;
+    }
+
+    private static Optional<Object> readStaticOrSingletonField(Class<?> type, String name) {
+        try {
+            Field field = findField(type, name);
+            if (field != null) {
+                field.setAccessible(true);
+                Object value = java.lang.reflect.Modifier.isStatic(field.getModifiers()) ? field.get(null) : null;
+                if (value != null) return Optional.of(value);
+            }
+        } catch (Throwable error) { warnOnce("staticField:" + type.getName() + "." + name, error); }
+        for (Object singleton : singletonObjects(type)) {
+            Optional<Object> value = readField(singleton, name);
+            if (value.isPresent()) return value;
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<Object> lookupInMap(Object mapObject, ResourceLocation speciesId) {
+        if (mapObject instanceof java.util.Map<?, ?> map) {
+            Object value = map.get(speciesId);
+            if (value == null) value = map.get(speciesId.toString());
+            if (value == null) value = map.get(speciesId.getPath());
+            return Optional.ofNullable(value);
+        }
+        return invoke(mapObject, "get", speciesId).or(() -> invoke(mapObject, "get", speciesId.toString())).or(() -> invoke(mapObject, "get", speciesId.getPath()));
     }
 
     private static Optional<Object> readField(Object target, String name) {
@@ -379,9 +519,39 @@ public final class ClientEntityRenderCache {
         catch (Throwable error) { warnOnce("setField:" + target.getClass().getName() + "." + name, error); return false; }
     }
 
-    private static Method findMethod(Class<?> type, String name, int arity) {
-        for (Class<?> c = type; c != null; c = c.getSuperclass()) for (Method m : c.getDeclaredMethods()) if (m.getName().equals(name) && m.getParameterCount() == arity) return m;
-        return null;
+    private static Method findMethod(Class<?> type, String name, Object... args) {
+        Method fallback = null;
+        for (Class<?> c = type; c != null; c = c.getSuperclass()) {
+            for (Method m : c.getDeclaredMethods()) {
+                if (!m.getName().equals(name) || m.getParameterCount() != args.length) continue;
+                if (parametersCompatible(m.getParameterTypes(), args)) return m;
+                if (fallback == null) fallback = m;
+            }
+        }
+        return fallback;
+    }
+
+    private static boolean parametersCompatible(Class<?>[] parameterTypes, Object[] args) {
+        for (int i = 0; i < parameterTypes.length; i++) {
+            if (args[i] == null) continue;
+            Class<?> parameter = wrapPrimitive(parameterTypes[i]);
+            Class<?> actual = wrapPrimitive(args[i].getClass());
+            if (!parameter.isAssignableFrom(actual)) return false;
+        }
+        return true;
+    }
+
+    private static Class<?> wrapPrimitive(Class<?> type) {
+        if (!type.isPrimitive()) return type;
+        if (type == int.class) return Integer.class;
+        if (type == long.class) return Long.class;
+        if (type == float.class) return Float.class;
+        if (type == double.class) return Double.class;
+        if (type == boolean.class) return Boolean.class;
+        if (type == byte.class) return Byte.class;
+        if (type == short.class) return Short.class;
+        if (type == char.class) return Character.class;
+        return type;
     }
     private static Field findField(Class<?> type, String name) { for (Class<?> c = type; c != null; c = c.getSuperclass()) try { return c.getDeclaredField(name); } catch (NoSuchFieldException ignored) {} return null; }
     private static void warnOnce(String message) { if (WARNED.add(message)) MobFarmBlockMod.LOGGER.debug("Mob Farm Block render fallback: {}", message); }
