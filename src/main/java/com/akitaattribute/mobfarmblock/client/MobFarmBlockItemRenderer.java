@@ -1,0 +1,66 @@
+package com.akitaattribute.mobfarmblock.client;
+
+import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
+import com.akitaattribute.mobfarmblock.item.MobFarmBlockItemData;
+import com.akitaattribute.mobfarmblock.mob.StoredMob;
+import com.akitaattribute.mobfarmblock.registry.ModBlocks;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.math.Axis;
+
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.model.geom.EntityModelSet;
+import net.minecraft.client.renderer.BlockEntityWithoutLevelRenderer;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.item.ItemDisplayContext;
+import net.minecraft.world.item.ItemStack;
+
+public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
+    private static final java.util.Set<String> WARNED_RENDER_FAILURES = new java.util.HashSet<>();
+
+    public MobFarmBlockItemRenderer(BlockEntityRenderDispatcher dispatcher, EntityModelSet modelSet) { super(dispatcher, modelSet); }
+
+    @Override
+    public void renderByItem(ItemStack stack, ItemDisplayContext displayContext, PoseStack poseStack, MultiBufferSource buffer, int packedLight, int packedOverlay) {
+        Minecraft minecraft = Minecraft.getInstance();
+        minecraft.getBlockRenderer().renderSingleBlock(ModBlocks.MOB_FARM_BLOCK.get().defaultBlockState(), poseStack, buffer, packedLight, packedOverlay);
+
+        boolean slotContext = displayContext == ItemDisplayContext.GUI || displayContext == ItemDisplayContext.FIXED;
+        if (!MobFarmBlockItemData.hasStoredMob(stack) || !slotContext) return;
+        StoredMob stored = MobFarmBlockItemData.getStoredMob(stack);
+        Entity entity = safeGetRenderEntity(stored);
+        if (entity == null) return;
+
+        poseStack.pushPose();
+        float scale = entityScale(entity, stored);
+        poseStack.translate(0.5D, 0.82D, 0.92D);
+        poseStack.scale(scale, scale, scale);
+        poseStack.translate(0.0D, -entity.getBbHeight() * 0.45D, 0.0D);
+        poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
+        ClientEntityRenderCache.freezeForRender(entity);
+        minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, 0.0F, poseStack, buffer, 0x00F000F0);
+        poseStack.popPose();
+    }
+
+    private static Entity safeGetRenderEntity(StoredMob stored) {
+        try {
+            return ClientEntityRenderCache.getOrCreate(stored);
+        } catch (Throwable error) {
+            String key = stored == null ? "unknown" : stored.mobId + "|" + stored.speciesId + "|" + stored.display.variantKey();
+            if (WARNED_RENDER_FAILURES.add(key)) {
+                MobFarmBlockMod.LOGGER.error("Mob Farm Block item mob overlay render failed for {}; skipping overlay so item rendering cannot crash", key, error);
+            }
+            return null;
+        }
+    }
+
+    private static float entityScale(Entity entity, StoredMob stored) {
+        float displayScale = stored.display.scale() > 0 ? stored.display.scale() : 1.0F;
+        float height = Math.max(entity.getBbHeight(), 0.35F) * displayScale;
+        float width = Math.max(entity.getBbWidth(), 0.35F) * displayScale;
+        float bounding = Math.max(height, width);
+        float fit = 0.72F / Math.max(0.1F, bounding);
+        return Math.max(0.26F, Math.min(0.82F, fit));
+    }
+}
