@@ -8,10 +8,10 @@ The Capture Tool captures compact mob profiles, and the Mob Farm Block stores th
 
 ### Pen Block
 
-- [ ] Pen block should break quickly, roughly like a dirt block by hand, regardless of tool or empty hand.
-- [ ] Crouching while breaking/punching the pen block should not process/kill the contained mob.
-- [ ] Large/tall mobs should shrink while the player is looking at the pen so the look UI remains visible.
-- [ ] Spider pen rendering should be stabilized if possible.
+- [x] Pen block should break quickly, roughly like a dirt block by hand, regardless of tool or empty hand.
+- [x] Crouching while breaking/punching the pen block should not process/kill the contained mob.
+- [x] Large/tall mobs should shrink while the player is looking at the pen so the look UI remains visible.
+- [x] Stored mob rendering should be stabilized so captured mobs do not visibly spazz, jitter, or animate wildly in the pen.
 
 ### Look UI
 
@@ -29,24 +29,17 @@ The Capture Tool captures compact mob profiles, and the Mob Farm Block stores th
 
 - [ ] Capture Tool item rendering should be centered, readable, and finished-quality in inventory/hotbar.
 - [ ] Capture Tool in-hand rendering should clearly show the player is holding the tool, even when empty.
-- [ ] Filled Capture Tool should show the captured mob/model/icon in a usable way.
-- [ ] Capture Tool rendering should not rely on generated PNGs or binary assets.
+- [ ] Filled Capture Tool should show the captured mob/model/icon in a clearly visible way. Current status: functional, but the yellow/visibility treatment needs improvement.
+- [x] Capture Tool rendering should not rely on generated PNGs or binary assets.
 
 ### Cobblemon Rendering
 
-- [ ] Cobblemon captured species should render as the actual captured species in both the Capture Tool and pen.
-- [ ] Cobblemon rendering should use stored `speciesId`, form, and aspects correctly.
-- [ ] Cobblemon rendering should not silently show a generic/default/wrong Pokémon as if it were correct.
+- [x] Cobblemon captured Pokémon should render as the actual captured Pokémon in both the Capture Tool and pen.
 
 ### Cobblemon Drops and Debugging
 
-- [ ] Cobblemon drop resolution should use Cobblemon runtime drop-table data/API/reflection, not vanilla entity loot tables.
-- [ ] Cobblemon drops should preserve real item IDs, chances, and quantities from runtime data.
-- [ ] Cobblemon drop debug should list all resolved drop rules in the JSON debug log.
-- [ ] Cobblemon processing debug should show per-rule rolls, success/failure, quantity, output target, and no-output reason.
-- [ ] Cobblemon debug dumps should include enough drop-table information to compare against runtime Cobblemon data.
-- [ ] Cobblemon debug dumper should avoid invoking mutating methods during reflection.
-- [ ] Cobblemon quantity ranges such as `0–1` should preserve a real minimum of `0`.
+- [x] Cobblemon drop resolution should produce consistent, correct-looking drops from runtime Cobblemon data.
+- [ ] Cobblemon debug output/logging can be reduced or removed once the Look UI is working.
 
 ### Breeding
 
@@ -66,10 +59,10 @@ The Capture Tool captures compact mob profiles, and the Mob Farm Block stores th
 
 ### Config and Optional Integrations
 
-- [ ] Debug/config options should be visible/editable from the NeoForge/Forge Mods config UI.
+- [ ] Debug/config options should be visible/editable from the NeoForge/Forge Mods config UI. Current status: visible in the config UI, but behavior is untested.
 - [ ] Debug/config options should include `debugChatMessages` and `debugCobblemonJsonDump`.
-- [ ] JEI should remain optional; the mod should run without JEI installed.
+- [ ] JEI should remain optional; the mod should run without JEI installed. Current status: runs without JEI installed; JEI behavior is untested.
 
 ### Repository Hygiene
 
-- [ ] No binary files should be committed: no `.png`, `.jpg`, `.jpeg`, `.webp`, `.jar`, or `.class`.
+- [x] No binary files should be committed: no `.png`, `.jpg`, `.jpeg`, `.webp`, `.jar`, or `.class`.
