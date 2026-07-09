@@ -24,6 +24,7 @@ public final class InteractionMethodRegistry {
     public static final ResourceLocation BREED = MobFarmBlockMod.id("breed");
     public static final ResourceLocation MILK = MobFarmBlockMod.id("milk");
     public static final ResourceLocation SHEAR = MobFarmBlockMod.id("shear");
+    public static final ResourceLocation HARVEST = MobFarmBlockMod.id("harvest");
     public static final ResourceLocation DYE = MobFarmBlockMod.id("dye");
     public static final ResourceLocation EGG = MobFarmBlockMod.id("egg");
     public static final ResourceLocation OUTPUT_ITEM = MobFarmBlockMod.id("output_item");
@@ -33,6 +34,7 @@ public final class InteractionMethodRegistry {
         register(BREED, InteractionMethodRegistry::breed);
         register(MILK, InteractionMethodRegistry::milk);
         register(SHEAR, InteractionMethodRegistry::shear);
+        register(HARVEST, InteractionMethodRegistry::harvest);
         register(DYE, InteractionMethodRegistry::dye);
         register(EGG, InteractionMethodRegistry::egg);
         register(OUTPUT_ITEM, InteractionMethodRegistry::outputItem);
@@ -146,14 +148,35 @@ public final class InteractionMethodRegistry {
         int max = Math.max(min, definition.maxCount());
         if (min == 1 && max == 1 && definition.outputItem().isEmpty()) max = 3;
 
-        long total = 0L;
-        for (long i = 0; i < context.stored().count; i++) total += randomBetween(context, min, max);
+        long total = scaledRoll(context, min, max);
         outputLargeStack(context, outputItem, total);
         context.heldItem().hurtAndBreak(1, context.player(), net.minecraft.world.entity.EquipmentSlot.MAINHAND);
         long cooldown = definition.cooldownTicks() > 0 ? definition.cooldownTicks() : 6000L;
         state.putLong("nextWoolReadyAt", now + cooldown);
         context.stored().setCooldown(action, now, cooldown);
         return InteractionResult.SUCCESS;
+    }
+
+    private static InteractionResult harvest(MobFarmContext context, InteractionDefinition definition) {
+        if (definition.outputItem().isEmpty()) return InteractionResult.PASS;
+        long now = context.level().getGameTime();
+        ResourceLocation action = definition.methodId();
+        if (!context.stored().ready(action, now)) return InteractionResult.PASS;
+
+        int min = Math.max(1, definition.minCount());
+        int max = Math.max(min, definition.maxCount());
+        long total = scaledRoll(context, min, max);
+        outputLargeStack(context, BuiltInRegistries.ITEM.get(definition.outputItem().get()), total);
+        if ("true".equalsIgnoreCase(definition.parameters().getOrDefault("consume", "false"))) context.heldItem().shrink(1);
+        if ("true".equalsIgnoreCase(definition.parameters().getOrDefault("damageTool", "false"))) context.heldItem().hurtAndBreak(1, context.player(), net.minecraft.world.entity.EquipmentSlot.MAINHAND);
+        if (definition.cooldownTicks() > 0) context.stored().setCooldown(action, now, definition.cooldownTicks());
+        return InteractionResult.SUCCESS;
+    }
+
+    private static long scaledRoll(MobFarmContext context, int min, int max) {
+        long total = 0L;
+        for (long i = 0; i < context.stored().count; i++) total += randomBetween(context, min, max);
+        return total;
     }
 
     private static void outputLargeStack(MobFarmContext context, Item item, long amount) {
@@ -183,13 +206,14 @@ public final class InteractionMethodRegistry {
         long now = context.level().getGameTime();
         ResourceLocation action = MobFarmBlockMod.id("egg");
         if (!context.stored().ready(action, now)) return InteractionResult.PASS;
-        BehaviorUtil.output(context, new ItemStack(Items.EGG));
+        outputLargeStack(context, Items.EGG, Math.max(1L, context.stored().count));
         context.stored().setCooldown(action, now, definition.cooldownTicks() > 0 ? definition.cooldownTicks() : 6000L);
         return InteractionResult.SUCCESS;
     }
 
     private static InteractionResult outputItem(MobFarmContext context, InteractionDefinition definition) {
         if (definition.outputItem().isEmpty()) return InteractionResult.PASS;
+        if ((definition.item().isPresent() || definition.itemTag().isPresent()) && !context.heldItem().isEmpty()) context.heldItem().shrink(1);
         BehaviorUtil.output(context, new ItemStack(BuiltInRegistries.ITEM.get(definition.outputItem().get()), Math.max(1, definition.minCount())));
         return InteractionResult.SUCCESS;
     }
