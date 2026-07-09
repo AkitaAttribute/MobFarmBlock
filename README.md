@@ -15,15 +15,15 @@ The Capture Tool captures compact mob profiles, and the Mob Farm Block stores th
 
 ### Look UI
 
-- [ ] Add a look/hover UI above the pen block when the player is directly looking at the pen within normal reach distance.
-- [ ] The look UI should show possible output item icons.
-- [ ] The look UI should show `Ready!` when an output/action is ready.
-- [ ] The look UI should show a remaining timer when an output/action is not ready.
-- [ ] The look UI timer should be calculated only when rendered, using absolute `readyAt` timestamps, not by decrementing a permanently ticking timer.
-- [ ] The look UI should stay visually anchored above the pen/entity, not float far away.
-- [ ] The look UI should be readable, with icons and text aligned like a proper overlay.
-- [ ] The look UI should show drop chance percentages next to item icons in green, such as `100%`, `2.5%`, or `3%`.
-- [ ] The look UI should show feeding/breeding state when a breeding cycle is active.
+- [x] Add a look/hover UI above the pen block when the player is directly looking at the pen within normal reach distance.
+- [x] The look UI should show possible output item icons.
+- [x] The look UI should show `Ready!` when an output/action is ready.
+- [x] The look UI should show a remaining timer when an output/action is not ready.
+- [x] The look UI timer should be calculated only when rendered, using absolute `readyAt` timestamps, not by decrementing a permanently ticking timer.
+- [x] The look UI should stay visually anchored above the pen/entity, not float far away.
+- [x] The look UI should be readable, with icons and text aligned like a proper overlay.
+- [x] The look UI should show drop chance percentages next to item icons in green, such as `100%`, `2.5%`, or `3%`.
+- [x] The look UI should show feeding/breeding state when a breeding cycle is active.
 
 ### Capture Tool
 
@@ -43,12 +43,12 @@ The Capture Tool captures compact mob profiles, and the Mob Farm Block stores th
 
 ### Breeding
 
-- [ ] Breeding should require two feed items per offspring.
-- [ ] Breeding with one stored animal should be rejected.
-- [ ] Breeding capacity should be based on `floor(baseCount / 2)` at cycle start.
-- [ ] Newly created offspring should not count toward the current breeding cycle.
-- [ ] The breeding cycle base count should remain locked until the current cycle completes.
-- [ ] If the stored mob count is depleted before the breeding timer completes, pending breeding should not later repopulate an empty pen.
+- [x] Breeding should require two feed items per offspring.
+- [x] Breeding with one stored animal should be rejected.
+- [x] Breeding capacity should be based on `floor(baseCount / 2)` at cycle start.
+- [x] Newly created offspring should not count toward the current breeding cycle.
+- [x] The breeding cycle base count should remain locked until the current cycle completes.
+- [x] If the stored mob count is depleted before the breeding timer completes, pending breeding should not later repopulate an empty pen.
 
 ### Recipes and Recipe Book
 
