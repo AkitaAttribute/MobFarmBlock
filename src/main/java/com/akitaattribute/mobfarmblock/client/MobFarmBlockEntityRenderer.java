@@ -1,7 +1,9 @@
 package com.akitaattribute.mobfarmblock.client;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
@@ -28,6 +30,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.animal.Sheep;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
@@ -44,6 +48,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     private static final int COMPACT_COLUMNS = 4;
     private static final int EXPANDED_COLUMNS = 2;
     private static final int MIN_COMPACT_COLUMN_WIDTH = 30;
+    private static final Map<String, Sheep> SHEEP_RENDER_CACHE = new HashMap<>();
 
     public MobFarmBlockEntityRenderer(BlockEntityRendererProvider.Context context) {}
 
@@ -53,7 +58,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         if (stored.isEmpty()) return;
         Minecraft minecraft = Minecraft.getInstance();
         boolean inspected = isInspected(minecraft, blockEntity.getBlockPos());
-        Entity entity = ClientEntityRenderCache.getOrCreate(stored);
+        Entity entity = renderEntity(stored, minecraft);
         if (entity != null) {
             poseStack.pushPose();
             poseStack.translate(0.5D, 0.58D, 0.5D);
@@ -66,6 +71,28 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
             poseStack.popPose();
         }
         if (inspected) renderLookUi(blockEntity, entity, poseStack, buffer, minecraft);
+    }
+
+    private static Entity renderEntity(StoredMob stored, Minecraft minecraft) {
+        if ("minecraft:sheep".equals(stored.mobId.toString())) return sheepRenderEntity(stored, minecraft);
+        return ClientEntityRenderCache.getOrCreate(stored);
+    }
+
+    private static Entity sheepRenderEntity(StoredMob stored, Minecraft minecraft) {
+        if (minecraft.level == null) return null;
+        long now = minecraft.level.getGameTime();
+        long readyAt = Math.max(stored.state.getLong("nextWoolReadyAt"), stored.readyAtTicks.getOrDefault(MobFarmBlockMod.id("shear"), 0L));
+        boolean sheared = now < readyAt;
+        String colorName = stored.state.getString("sheepColor");
+        if (colorName.isBlank()) colorName = stored.display.colorKey().isBlank() ? "white" : stored.display.colorKey();
+        boolean baby = stored.display.baby();
+        String key = colorName + "|" + baby + "|" + sheared;
+        Sheep sheep = SHEEP_RENDER_CACHE.computeIfAbsent(key, ignored -> EntityType.SHEEP.create(minecraft.level));
+        if (sheep == null) return ClientEntityRenderCache.getOrCreate(stored);
+        sheep.setColor(DyeColor.byName(colorName, DyeColor.WHITE));
+        sheep.setBaby(baby);
+        sheep.setSheared(sheared);
+        return sheep;
     }
 
     private static boolean isInspected(Minecraft minecraft, BlockPos pos) {
@@ -240,7 +267,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         }
 
         if ("minecraft:sheep".equals(stored.mobId.toString())) {
-            long readyAt = stored.state.getLong("nextWoolReadyAt");
+            long readyAt = Math.max(stored.state.getLong("nextWoolReadyAt"), stored.readyAtTicks.getOrDefault(MobFarmBlockMod.id("shear"), 0L));
             DyeColor color = DyeColor.byName(stored.state.getString("sheepColor"), DyeColor.WHITE);
             ItemStack wool = new ItemStack(com.akitaattribute.mobfarmblock.behavior.SheepBehavior.woolForColor(color));
             rows.add(statusRow(wool, wool.getHoverName().getString(), now, readyAt));
@@ -264,7 +291,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
 
     private static Optional<LookRow> firstTimedOutput(StoredMob stored, long now) {
         if ("minecraft:sheep".equals(stored.mobId.toString())) {
-            long readyAt = stored.state.getLong("nextWoolReadyAt");
+            long readyAt = Math.max(stored.state.getLong("nextWoolReadyAt"), stored.readyAtTicks.getOrDefault(MobFarmBlockMod.id("shear"), 0L));
             DyeColor color = DyeColor.byName(stored.state.getString("sheepColor"), DyeColor.WHITE);
             ItemStack wool = new ItemStack(com.akitaattribute.mobfarmblock.behavior.SheepBehavior.woolForColor(color));
             return Optional.of(statusRow(wool, wool.getHoverName().getString(), now, readyAt));
@@ -288,14 +315,17 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     }
 
     private static LookRow breedRow(StoredMob stored, long now) {
-        if (!stored.state.getBoolean("breedingCycleActive")) {
+        if (!stored.state.getBoolean("breedingCycleActive") || now >= stored.state.getLong("breedingReadyAt")) {
             return new LookRow(new ItemStack(net.minecraft.world.item.Items.WHEAT), "Breeding", TEXT_WHITE, stored.count >= 2 ? "Ready" : "Need 2", stored.count >= 2 ? TEXT_GREEN : TEXT_YELLOW);
         }
         long base = stored.state.getLong("breedingBaseCount");
-        long fed = stored.state.getLong("breedingFedCount");
-        long maxFeed = (base / 2L) * 2L;
+        long produced = stored.state.contains("breedingProducedCount") ? stored.state.getLong("breedingProducedCount") : stored.state.getLong("breedingFedCount") / 2L;
+        long pending = stored.state.contains("breedingPendingFeedCount") ? stored.state.getLong("breedingPendingFeedCount") : stored.state.getLong("breedingFedCount") % 2L;
+        long capacity = Math.min(base, stored.count) / 2L;
+        long maxFeed = Math.max(0L, capacity * 2L);
+        long usedFeed = produced * 2L + pending;
         long readyAt = stored.state.getLong("breedingReadyAt");
-        return new LookRow(new ItemStack(net.minecraft.world.item.Items.WHEAT), "Breeding " + fed + "/" + maxFeed, TEXT_WHITE, status(now, readyAt), now >= readyAt ? TEXT_GREEN : TEXT_YELLOW);
+        return new LookRow(new ItemStack(net.minecraft.world.item.Items.WHEAT), "Breeding " + usedFeed + "/" + maxFeed, TEXT_WHITE, status(now, readyAt), now >= readyAt ? TEXT_GREEN : TEXT_YELLOW);
     }
 
     private static LookRow statusRow(ItemStack icon, String label, long now, long readyAt) {
