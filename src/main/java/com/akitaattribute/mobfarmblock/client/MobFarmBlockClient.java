@@ -35,6 +35,19 @@ public final class MobFarmBlockClient {
                 return renderer;
             }
         }, ModItems.CAPTURE_TOOL.get());
+
+        event.registerItem(new IClientItemExtensions() {
+            private MobFarmBlockItemRenderer renderer;
+
+            @Override
+            public BlockEntityWithoutLevelRenderer getCustomRenderer() {
+                if (renderer == null) {
+                    Minecraft minecraft = Minecraft.getInstance();
+                    renderer = new MobFarmBlockItemRenderer(minecraft.getBlockEntityRenderDispatcher(), minecraft.getEntityModels());
+                }
+                return renderer;
+            }
+        }, ModBlocks.MOB_FARM_BLOCK_ITEM.get());
     }
 
     private MobFarmBlockClient() {}
