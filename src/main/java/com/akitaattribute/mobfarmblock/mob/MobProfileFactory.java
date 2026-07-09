@@ -76,14 +76,14 @@ public final class MobProfileFactory {
     private static InteractionDefinition shearMethod() { return new InteractionDefinition(MobFarmBlockMod.id("shear"), Optional.empty(), Optional.empty(), Optional.empty(), 6000L, 1, 3, Optional.empty(), Map.of()); }
     private static InteractionDefinition shearOutput(String output, int min, int max, long cooldown) { return new InteractionDefinition(MobFarmBlockMod.id("shear"), Optional.empty(), Optional.empty(), Optional.of(ResourceLocation.parse(output)), cooldown, min, max, Optional.empty(), Map.of()); }
     private static InteractionDefinition harvestTool(String item, String output, long cooldown) { return new InteractionDefinition(MobFarmBlockMod.id("harvest"), Optional.of(ResourceLocation.parse(item)), Optional.empty(), Optional.of(ResourceLocation.parse(output)), cooldown, 1, 1, Optional.empty(), Map.of()); }
-    private static InteractionDefinition containerOutput(ResourceLocation method, String item, String output) { return new InteractionDefinition(method, Optional.of(ResourceLocation.parse(item)), Optional.empty(), Optional.of(ResourceLocation.parse(output)), 0L, 1, 1, Optional.empty(), Map.of("consume", "true")); }
-    private static InteractionDefinition beeHarvest(String item, String output, int min, int max, boolean consume, boolean damageTool) {
+    private static InteractionDefinition containerOutput(ResourceLocation method, String item, String output) { return new InteractionDefinition(method, Optional.of(ResourceLocation.parse(item)), Optional.empty(), Optional.of(ResourceLocation.parse(output)), 0L, 1, 1, Optional.empty(), Map.of("fillContainer", "true")); }
+    private static InteractionDefinition beeHarvest(String item, String output, int min, int max, boolean fillContainer, boolean damageTool) {
         return new InteractionDefinition(MobFarmBlockMod.id("harvest"), Optional.of(ResourceLocation.parse(item)), Optional.empty(), Optional.of(ResourceLocation.parse(output)), 3600L, min, max, Optional.empty(), Map.of(
                 "baseCooldownTicks", "3600",
                 "cooldownReductionPerMobTicks", "200",
                 "cooldownReductionFreeCount", "1",
                 "scaleWithCount", "false",
-                "consume", Boolean.toString(consume),
+                "fillContainer", Boolean.toString(fillContainer),
                 "damageTool", Boolean.toString(damageTool)
         ));
     }
