@@ -12,7 +12,6 @@ import com.akitaattribute.mobfarmblock.config.MobFarmConfig;
 import com.akitaattribute.mobfarmblock.mob.DropRule;
 import com.akitaattribute.mobfarmblock.mob.InteractionDefinition;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
-import com.mojang.blaze3d.platform.Lighting;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
@@ -214,9 +213,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         poseStack.translate(x + 8.0D, y + 8.0D, 0.0D);
         poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
         poseStack.scale(10.0F, 10.0F, 10.0F);
-        Lighting.setupForFlatItems();
         minecraft.getItemRenderer().renderStatic(stack, ItemDisplayContext.GUI, LightTexture.FULL_BRIGHT, net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY, poseStack, buffer, minecraft.level, 0);
-        Lighting.setupFor3DItems();
         poseStack.popPose();
     }
 
