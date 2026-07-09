@@ -110,18 +110,18 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     }
 
     private static void drawLookText(Font font, String text, float x, float y, int color, PoseStack poseStack, MultiBufferSource buffer) {
-        // Use a normal full-bright font pass with transparent per-glyph background.
-        // SEE_THROUGH plus a nonzero background makes separate glyph/row quads fight
-        // visually with the entity/world behind the overlay, producing the uneven
-        // nametag shading seen during testing.
-        font.drawInBatch(text, x + 1.0F, y + 1.0F, 0x202020, false, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, NO_TEXT_BACKGROUND, LightTexture.FULL_BRIGHT);
+        // Single text pass only. A second shadow/outline pass made the blocky font
+        // look duplicated at this scale, especially against bright snow/ice.
         font.drawInBatch(text, x, y, color, false, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, NO_TEXT_BACKGROUND, LightTexture.FULL_BRIGHT);
     }
 
     private static void renderFlatItem(ItemStack stack, int x, int y, PoseStack poseStack, MultiBufferSource buffer, Minecraft minecraft) {
         poseStack.pushPose();
         poseStack.translate(x + 8.0D, y + 8.0D, 0.0D);
-        poseStack.scale(10.0F, 10.0F, 10.0F);
+        // The nametag panel flips the Y axis so font coordinates increase downward.
+        // Counter-flip item rendering back to a normal GUI orientation so icons are
+        // not upside-down and item lighting/tinting is not distorted.
+        poseStack.scale(10.0F, -10.0F, 10.0F);
         minecraft.getItemRenderer().renderStatic(stack, net.minecraft.world.item.ItemDisplayContext.GUI, LightTexture.FULL_BRIGHT, 0, poseStack, buffer, minecraft.level, 0);
         poseStack.popPose();
     }
