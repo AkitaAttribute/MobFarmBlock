@@ -52,10 +52,10 @@ The Capture Tool captures compact mob profiles, and the Mob Farm Block stores th
 
 ### Recipes and Recipe Book
 
-- [ ] Recipes should work for both Capture Tool and Mob Farm Block.
-- [ ] Recipes should appear in the vanilla recipe book.
-- [ ] Capture Tool recipe should accept any vanilla glass pane color.
-- [ ] Mob Farm Block recipe should accept any vanilla fence.
+- [x] Recipes should work for both Capture Tool and Mob Farm Block.
+- [x] Recipes should appear in the vanilla recipe book.
+- [x] Capture Tool recipe should accept any vanilla glass pane color.
+- [x] Mob Farm Block recipe should accept any vanilla fence.
 
 ### Config and Optional Integrations
 
