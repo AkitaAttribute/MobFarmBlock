@@ -41,7 +41,8 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     private static final int TEXT_YELLOW = 0xFFFF55;
     private static final int TEXT_GRAY = 0xC0C0C0;
     private static final int NO_TEXT_BACKGROUND = 0x00000000;
-    private static final int MAX_ROWS = 7;
+    private static final int MAX_EXPANDED_ROWS = 7;
+    private static final int MAX_COMPACT_ROWS = 5;
 
     public MobFarmBlockEntityRenderer(BlockEntityRendererProvider.Context context) {}
 
@@ -81,15 +82,17 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     private static void renderNametagLookUi(MobFarmBlockEntity blockEntity, Entity entity, PoseStack poseStack, MultiBufferSource buffer, Minecraft minecraft) {
         StoredMob stored = blockEntity.getStored();
         long now = blockEntity.getLevel() == null ? 0L : blockEntity.getLevel().getGameTime();
-        List<LookRow> rows = lookRows(stored, now);
+        boolean expanded = minecraft.player != null && minecraft.player.isShiftKeyDown();
+        List<LookRow> rows = expanded ? expandedRows(stored, now) : compactRows(stored, now);
         if (rows.isEmpty()) return;
 
         Font font = minecraft.font;
-        int rowCount = Math.min(rows.size(), MAX_ROWS);
-        int width = font.width(mobLabel(stored));
-        for (int i = 0; i < rowCount; i++) width = Math.max(width, rowWidth(font, rows.get(i)));
-        width = Math.max(width + 14, 72);
-        int height = 12 + rowCount * 13;
+        int rowLimit = expanded ? MAX_EXPANDED_ROWS : MAX_COMPACT_ROWS;
+        int rowCount = Math.min(rows.size(), rowLimit);
+        int width = expanded ? font.width(mobLabel(stored)) : font.width("x" + stored.count);
+        for (int i = 0; i < rowCount; i++) width = Math.max(width, rowWidth(font, rows.get(i), expanded));
+        width = Math.max(width + 8, expanded ? 72 : 34);
+        int height = (expanded ? 12 : 8) + rowCount * (expanded ? 13 : 12);
 
         poseStack.pushPose();
         double y = 1.35D + Math.min(0.55D, entity == null ? 0.0D : entity.getBbHeight() * 0.18D);
@@ -99,19 +102,25 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
 
         int left = -width / 2;
         int top = -height / 2;
-        drawLookText(font, mobLabel(stored), -font.width(mobLabel(stored)) / 2.0F, top + 3, TEXT_WHITE, poseStack, buffer);
+        String title = expanded ? mobLabel(stored) : "x" + stored.count;
+        drawLookText(font, title, -font.width(title) / 2.0F, top + 2, TEXT_WHITE, poseStack, buffer);
 
-        int rowY = top + 15;
+        int rowY = top + (expanded ? 15 : 12);
         for (int i = 0; i < rowCount; i++) {
             LookRow row = rows.get(i);
-            int textX = left + 16;
-            if (!row.icon().isEmpty()) renderLookItem(row.icon(), left + 1, rowY - 2, poseStack, buffer, minecraft);
-            drawLookText(font, row.label(), textX, rowY, row.labelColor(), poseStack, buffer);
-            if (!row.value().isBlank()) {
-                int valueWidth = font.width(row.value());
-                drawLookText(font, row.value(), left + width - valueWidth - 4, rowY, row.valueColor(), poseStack, buffer);
+            if (!row.icon().isEmpty()) renderLookItem(row.icon(), left + 1, rowY - 3, poseStack, buffer, minecraft);
+            if (expanded) {
+                int textX = left + 16;
+                drawLookText(font, row.label(), textX, rowY, row.labelColor(), poseStack, buffer);
+                if (!row.value().isBlank()) {
+                    int valueWidth = font.width(row.value());
+                    drawLookText(font, row.value(), left + width - valueWidth - 4, rowY, row.valueColor(), poseStack, buffer);
+                }
+            } else {
+                String value = row.value().isBlank() ? row.label() : row.value();
+                drawLookText(font, value, left + 18, rowY, row.valueColor(), poseStack, buffer);
             }
-            rowY += 13;
+            rowY += expanded ? 13 : 12;
         }
         poseStack.popPose();
     }
@@ -161,13 +170,28 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         consumer.addVertex(matrix, x, y, 0.0F).setColor(255, 255, 255, 255).setUv(u0, v0).setLight(LightTexture.FULL_BRIGHT);
     }
 
-    private static int rowWidth(Font font, LookRow row) {
+    private static int rowWidth(Font font, LookRow row, boolean expanded) {
         int icon = row.icon().isEmpty() ? 0 : 16;
+        if (!expanded) return icon + font.width(row.value().isBlank() ? row.label() : row.value()) + 4;
         int value = row.value().isBlank() ? 0 : font.width(row.value()) + 6;
         return icon + font.width(row.label()) + value + 8;
     }
 
-    private static List<LookRow> lookRows(StoredMob stored, long now) {
+    private static List<LookRow> compactRows(StoredMob stored, long now) {
+        List<LookRow> rows = new ArrayList<>();
+        for (DropRule rule : stored.dropProfile.drops()) {
+            ItemStack icon = new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId()));
+            rows.add(new LookRow(icon, icon.getHoverName().getString(), TEXT_WHITE, chanceText(rule.chance()), TEXT_GREEN));
+            if (rows.size() >= 2) break;
+        }
+        Optional<LookRow> timed = firstTimedOutput(stored, now);
+        timed.ifPresent(rows::add);
+        if (hasBreedDefinition(stored)) rows.add(breedRow(stored, now));
+        if (rows.isEmpty()) rows.add(new LookRow(ItemStack.EMPTY, "No outputs", TEXT_GRAY, "", TEXT_GRAY));
+        return rows;
+    }
+
+    private static List<LookRow> expandedRows(StoredMob stored, long now) {
         List<LookRow> rows = new ArrayList<>();
         int shownDrops = 0;
         for (DropRule rule : stored.dropProfile.drops()) {
@@ -185,13 +209,9 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
 
         for (InteractionDefinition definition : stored.interactionProfile.definitions()) {
             ResourceLocation method = definition.methodId();
-            if (method.equals(MobFarmBlockMod.id("egg"))) {
-                rows.add(statusRow(new ItemStack(net.minecraft.world.item.Items.EGG), "Egg", now, stored.readyAtTicks.getOrDefault(method, 0L)));
-            }
-            if (method.equals(MobFarmBlockMod.id("milk"))) {
-                rows.add(new LookRow(new ItemStack(net.minecraft.world.item.Items.MILK_BUCKET), "Milk", TEXT_WHITE, "Ready", TEXT_GREEN));
-            }
-            if (method.equals(MobFarmBlockMod.id("breed"))) addBreedRow(rows, stored, now);
+            if (method.equals(MobFarmBlockMod.id("egg"))) rows.add(statusRow(new ItemStack(net.minecraft.world.item.Items.EGG), "Egg", now, stored.readyAtTicks.getOrDefault(method, 0L)));
+            if (method.equals(MobFarmBlockMod.id("milk"))) rows.add(new LookRow(new ItemStack(net.minecraft.world.item.Items.MILK_BUCKET), "Milk", TEXT_WHITE, "Ready", TEXT_GREEN));
+            if (method.equals(MobFarmBlockMod.id("breed"))) rows.add(breedRow(stored, now));
             Optional<ResourceLocation> output = definition.outputItem();
             output.ifPresent(item -> {
                 ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(item));
@@ -203,16 +223,40 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         return rows;
     }
 
-    private static void addBreedRow(List<LookRow> rows, StoredMob stored, long now) {
+    private static Optional<LookRow> firstTimedOutput(StoredMob stored, long now) {
+        if ("minecraft:sheep".equals(stored.mobId.toString())) {
+            long readyAt = stored.state.getLong("nextWoolReadyAt");
+            DyeColor color = DyeColor.byName(stored.state.getString("sheepColor"), DyeColor.WHITE);
+            ItemStack wool = new ItemStack(com.akitaattribute.mobfarmblock.behavior.SheepBehavior.woolForColor(color));
+            return Optional.of(statusRow(wool, wool.getHoverName().getString(), now, readyAt));
+        }
+        for (InteractionDefinition definition : stored.interactionProfile.definitions()) {
+            ResourceLocation method = definition.methodId();
+            if (method.equals(MobFarmBlockMod.id("egg"))) return Optional.of(statusRow(new ItemStack(net.minecraft.world.item.Items.EGG), "Egg", now, stored.readyAtTicks.getOrDefault(method, 0L)));
+            if (method.equals(MobFarmBlockMod.id("milk"))) return Optional.of(new LookRow(new ItemStack(net.minecraft.world.item.Items.MILK_BUCKET), "Milk", TEXT_WHITE, "Ready", TEXT_GREEN));
+            if (method.equals(MobFarmBlockMod.id("breed"))) continue;
+            if (definition.outputItem().isPresent()) {
+                ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(definition.outputItem().get()));
+                return Optional.of(statusRow(stack, stack.getHoverName().getString(), now, stored.readyAtTicks.getOrDefault(method, 0L)));
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static boolean hasBreedDefinition(StoredMob stored) {
+        for (InteractionDefinition definition : stored.interactionProfile.definitions()) if (definition.methodId().equals(MobFarmBlockMod.id("breed"))) return true;
+        return false;
+    }
+
+    private static LookRow breedRow(StoredMob stored, long now) {
         if (!stored.state.getBoolean("breedingCycleActive")) {
-            rows.add(new LookRow(new ItemStack(net.minecraft.world.item.Items.WHEAT), "Breeding", TEXT_WHITE, stored.count >= 2 ? "Ready" : "Need 2", stored.count >= 2 ? TEXT_GREEN : TEXT_YELLOW));
-            return;
+            return new LookRow(new ItemStack(net.minecraft.world.item.Items.WHEAT), "Breeding", TEXT_WHITE, stored.count >= 2 ? "Ready" : "Need 2", stored.count >= 2 ? TEXT_GREEN : TEXT_YELLOW);
         }
         long base = stored.state.getLong("breedingBaseCount");
         long fed = stored.state.getLong("breedingFedCount");
         long maxFeed = (base / 2L) * 2L;
         long readyAt = stored.state.getLong("breedingReadyAt");
-        rows.add(new LookRow(new ItemStack(net.minecraft.world.item.Items.WHEAT), "Breeding " + fed + "/" + maxFeed, TEXT_WHITE, status(now, readyAt), now >= readyAt ? TEXT_GREEN : TEXT_YELLOW));
+        return new LookRow(new ItemStack(net.minecraft.world.item.Items.WHEAT), "Breeding " + fed + "/" + maxFeed, TEXT_WHITE, status(now, readyAt), now >= readyAt ? TEXT_GREEN : TEXT_YELLOW);
     }
 
     private static LookRow statusRow(ItemStack icon, String label, long now, long readyAt) {
