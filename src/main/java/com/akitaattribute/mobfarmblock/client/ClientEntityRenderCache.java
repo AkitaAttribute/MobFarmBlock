@@ -73,18 +73,20 @@ public final class ClientEntityRenderCache {
     }
 
     private static boolean applyCobblemonDisplay(Entity entity, StoredMob stored) {
+        // New captures should use the snapshot first.  Existing-state validation is
+        // only a cheap exit for already-correct dummies, not the primary strategy.
+        if (stored.cobblemonRenderSnapshot != null && applyCobblemonSnapshot(entity, stored)) return true;
+
         ValidationResult existing = validationFor(entity, stored);
         if (existing.valid()) {
             MobFarmBlockMod.LOGGER.debug("Cobblemon existing render state validated for {} aspects={} renderable={}", stored.speciesId, existing.aspects(), existing.renderable());
             return true;
         }
 
-        if (stored.cobblemonRenderSnapshot != null && applyCobblemonSnapshot(entity, stored)) return true;
-
         if (tryPokemonPropertiesText(entity, stored.speciesId, pokemonPropertiesText(stored.speciesId, stored.display.variantKey()), pokemonPropertiesClass())) {
             readPokemon(entity).ifPresent(pokemon -> {
                 applyCobblemonAspects(entity, pokemon, stored.display.variantKey());
-                syncCobblemonEntityData(entity, stored.speciesId, pokemon, parseAspects(stored.display.variantKey()));
+                completeCobblemonRenderSync(entity, pokemon, stored.speciesId, parseAspects(stored.display.variantKey()), parseVariantInt(stored.display.variantKey(), "level", 1), 1.0F);
             });
             ValidationResult validation = validationFor(entity, stored);
             if (validation.valid()) return true;
@@ -110,12 +112,12 @@ public final class ClientEntityRenderCache {
             return true;
         }
 
-        String propertiesText = snapshot.propertiesText().isBlank() ? snapshotPropertiesText(snapshot) : snapshot.propertiesText();
+        String propertiesText = cleanSnapshotPropertiesText(snapshot);
         boolean propertiesApplied = tryPokemonPropertiesText(entity, snapshot.speciesId(), propertiesText, pokemonPropertiesClass());
         Optional<Object> rebuiltPokemon = readPokemon(entity);
         rebuiltPokemon.ifPresent(value -> {
             applySnapshotToPokemonObject(entity, value, snapshot);
-            syncCobblemonEntityData(entity, snapshot.speciesId(), value, snapshot.aspects());
+            completeCobblemonRenderSync(entity, value, snapshot.speciesId(), snapshot.aspects(), snapshot.level(), snapshot.scaleModifier());
         });
         ValidationResult propertiesValidation = validationFor(entity, stored);
         if (propertiesApplied && snapshotValidationPasses(snapshot, propertiesValidation)) {
@@ -123,8 +125,8 @@ public final class ClientEntityRenderCache {
             return true;
         }
 
-        MobFarmBlockMod.LOGGER.info("Mob Farm Block Debug: Cobblemon snapshot render failed for {} directApplied={} directValid={} propertiesApplied={} propertiesValid={} readBack={} aspects={} expectedAspects={} renderable={} capturedRenderable={} payloadFormat={}",
-                snapshot.speciesId(), directApplied, directValidation.valid(), propertiesApplied, propertiesValidation.valid(), propertiesValidation.readBack(), propertiesValidation.aspects(), snapshot.aspects(), propertiesValidation.renderable(), snapshot.renderableDebug(), snapshot.pokemonPayloadFormat());
+        MobFarmBlockMod.LOGGER.info("Mob Farm Block Debug: Cobblemon snapshot render failed for {} directApplied={} directValid={} propertiesText='{}' propertiesApplied={} propertiesValid={} readBack={} aspects={} expectedAspects={} renderable={} capturedRenderable={} payloadFormat={}",
+                snapshot.speciesId(), directApplied, directValidation.valid(), propertiesText, propertiesApplied, propertiesValidation.valid(), propertiesValidation.readBack(), propertiesValidation.aspects(), snapshot.aspects(), propertiesValidation.renderable(), snapshot.renderableDebug(), snapshot.pokemonPayloadFormat());
         return false;
     }
 
@@ -134,8 +136,6 @@ public final class ClientEntityRenderCache {
         if (species.isPresent()) {
             changed |= invoke(pokemon, "setSpecies", species.get()).isPresent();
             changed |= setField(pokemon, "species", species.get());
-            changed |= invoke(entity, "setSpecies", species.get()).isPresent();
-            changed |= setField(entity, "species", species.get());
         }
         if (snapshot.aspects() != null && !snapshot.aspects().isEmpty()) changed |= setCobblemonAspects(entity, pokemon, snapshot.aspects());
         if (snapshot.level() > 0) {
@@ -148,10 +148,27 @@ public final class ClientEntityRenderCache {
         if (snapshot.scaleModifier() > 0) {
             changed |= invoke(pokemon, "setScaleModifier", snapshot.scaleModifier()).isPresent();
             changed |= setField(pokemon, "scaleModifier", snapshot.scaleModifier());
-            setEntityData(entity, "SCALE_MODIFIER", snapshot.scaleModifier());
         }
-        syncCobblemonEntityData(entity, snapshot.speciesId(), pokemon, snapshot.aspects() == null ? java.util.List.of() : snapshot.aspects());
+        changed |= completeCobblemonRenderSync(entity, pokemon, snapshot.speciesId(), snapshot.aspects(), snapshot.level(), snapshot.scaleModifier());
+        return changed;
+    }
+
+    private static boolean completeCobblemonRenderSync(Entity entity, Object pokemon, ResourceLocation speciesId, java.util.List<String> aspects, int level, float scaleModifier) {
+        boolean changed = false;
+        // Reassigning the Pokemon object through the PokemonEntity setter is important:
+        // Cobblemon's setter updates the client delegate, dimensions, and render-facing
+        // state.  Directly changing Pokemon fields alone can validate eventually but
+        // leave the renderer stale for several frames.
+        changed |= invoke(entity, "setPokemon", pokemon).isPresent();
+        changed |= setField(entity, "pokemon", pokemon);
+        java.util.LinkedHashSet<String> aspectSet = new java.util.LinkedHashSet<>(aspects == null ? java.util.List.of() : aspects);
+        setEntityData(entity, "SPECIES", speciesId.getPath());
+        if (!aspectSet.isEmpty()) setEntityData(entity, "ASPECTS", aspectSet);
+        if (level > 0) setEntityData(entity, "LABEL_LEVEL", level);
+        if (scaleModifier > 0) setEntityData(entity, "SCALE_MODIFIER", scaleModifier);
+        readField(entity, "delegate").ifPresent(delegate -> invoke(delegate, "changePokemon", pokemon));
         invoke(entity, "refreshDimensions");
+        freezeForRender(entity);
         return changed;
     }
 
@@ -204,30 +221,41 @@ public final class ClientEntityRenderCache {
         return null;
     }
 
-    private static String snapshotPropertiesText(CobblemonRenderSnapshot snapshot) {
+    private static String cleanSnapshotPropertiesText(CobblemonRenderSnapshot snapshot) {
+        // The captured debug string may contain duplicate gender/aspect tokens and a
+        // display-only form such as sentretnormal.  PokemonProperties is more reliable
+        // when it receives the species plus simple aspects; exact form/aspects are
+        // applied to the resulting Pokemon object afterward.
         StringBuilder text = new StringBuilder(snapshot.speciesId().getPath());
-        if (snapshot.aspects() != null) for (String aspect : snapshot.aspects()) if (aspect != null && !aspect.isBlank()) text.append(' ').append(aspect);
-        if (snapshot.form() != null && !snapshot.form().isBlank()) text.append(' ').append(snapshot.form());
+        java.util.LinkedHashSet<String> tokens = new java.util.LinkedHashSet<>();
+        if (snapshot.aspects() != null) for (String aspect : snapshot.aspects()) if (aspect != null && !aspect.isBlank()) tokens.add(aspect.toLowerCase(java.util.Locale.ROOT));
+        if (snapshot.shiny()) tokens.add("shiny");
+        if (snapshot.gender() != null && !snapshot.gender().isBlank()) tokens.add(snapshot.gender().toLowerCase(java.util.Locale.ROOT));
+        for (String token : tokens) text.append(' ').append(token);
         if (snapshot.level() > 0) text.append(" level=").append(snapshot.level());
-        if (snapshot.shiny()) text.append(" shiny");
-        if (snapshot.gender() != null && !snapshot.gender().isBlank()) text.append(' ').append(snapshot.gender().toLowerCase(java.util.Locale.ROOT));
         return text.toString();
     }
 
     private static String pokemonPropertiesText(ResourceLocation speciesId, String variantKey) {
         StringBuilder text = new StringBuilder(speciesId.getPath());
         if (variantKey != null) {
-            for (String aspect : parseAspects(variantKey)) text.append(' ').append(aspect);
-            String form = parseVariantValue(variantKey, "form");
-            if (!form.isBlank()) text.append(' ').append(form);
+            java.util.LinkedHashSet<String> tokens = new java.util.LinkedHashSet<>();
+            for (String aspect : parseAspects(variantKey)) tokens.add(aspect.toLowerCase(java.util.Locale.ROOT));
+            String shiny = parseVariantValue(variantKey, "shiny");
+            if ("true".equalsIgnoreCase(shiny)) tokens.add("shiny");
+            String gender = parseVariantValue(variantKey, "gender");
+            if (!gender.isBlank()) tokens.add(gender.toLowerCase(java.util.Locale.ROOT));
+            for (String token : tokens) text.append(' ').append(token);
             String level = parseVariantValue(variantKey, "level");
             if (!level.isBlank()) text.append(" level=").append(level);
-            String shiny = parseVariantValue(variantKey, "shiny");
-            if ("true".equalsIgnoreCase(shiny)) text.append(" shiny");
-            String gender = parseVariantValue(variantKey, "gender");
-            if (!gender.isBlank()) text.append(' ').append(gender.toLowerCase(java.util.Locale.ROOT));
         }
         return text.toString();
+    }
+
+    private static int parseVariantInt(String variantKey, String key, int fallback) {
+        String text = parseVariantValue(variantKey, key);
+        if (text.isBlank()) return fallback;
+        try { return Integer.parseInt(text); } catch (NumberFormatException ignored) { return fallback; }
     }
 
     private static java.util.List<String> parseAspects(String variantKey) {
@@ -275,11 +303,9 @@ public final class ClientEntityRenderCache {
     }
 
     private static void syncCobblemonEntityData(Entity entity, ResourceLocation speciesId, Object pokemon, java.util.List<String> aspects) {
-        Optional<Object> species = readField(pokemon, "species").or(() -> invoke(pokemon, "getSpecies"));
-        setEntityData(entity, "SPECIES", species.orElse(speciesId));
-        setEntityData(entity, "SPECIES", speciesId);
+        java.util.LinkedHashSet<String> aspectSet = new java.util.LinkedHashSet<>(aspects == null ? java.util.List.of() : aspects);
         setEntityData(entity, "SPECIES", speciesId.getPath());
-        if (!aspects.isEmpty()) setEntityData(entity, "ASPECTS", new java.util.LinkedHashSet<>(aspects));
+        if (!aspectSet.isEmpty()) setEntityData(entity, "ASPECTS", aspectSet);
         invoke(entity, "refreshDimensions");
     }
 
@@ -306,19 +332,19 @@ public final class ClientEntityRenderCache {
     private static boolean setCobblemonAspects(Entity entity, Object pokemon, java.util.List<String> aspects) {
         java.util.LinkedHashSet<String> aspectSet = new java.util.LinkedHashSet<>(aspects);
         boolean changed = false;
-        changed |= invoke(pokemon, "setAspects", aspectSet).isPresent();
+        changed |= invoke(pokemon, "setForcedAspects", aspectSet).isPresent();
+        changed |= setField(pokemon, "forcedAspects", aspectSet);
+        invoke(pokemon, "updateAspects");
         changed |= setField(pokemon, "aspects", aspectSet);
         changed |= invoke(entity, "setAspects", aspectSet).isPresent();
         changed |= setField(entity, "aspects", aspectSet);
-        invoke(pokemon, "updateAspects");
+        setEntityData(entity, "ASPECTS", aspectSet);
         invoke(entity, "updateAspects");
         return changed;
     }
 
     private static boolean setCobblemonGender(Object pokemon, String genderText) {
         boolean changed = false;
-        changed |= invoke(pokemon, "setGender", genderText).isPresent();
-        changed |= setField(pokemon, "gender", genderText);
         Optional<Object> currentGender = invoke(pokemon, "getGender").or(() -> readField(pokemon, "gender"));
         if (currentGender.isPresent() && currentGender.get().getClass().isEnum()) {
             try {
@@ -326,10 +352,13 @@ public final class ClientEntityRenderCache {
                 Object gender = Enum.valueOf((Class<Enum>) currentGender.get().getClass(), genderText.toUpperCase(java.util.Locale.ROOT));
                 changed |= invoke(pokemon, "setGender", gender).isPresent();
                 changed |= setField(pokemon, "gender", gender);
+                return changed;
             } catch (Throwable error) {
                 warnOnce("Cobblemon gender enum conversion failed: " + genderText, error);
             }
         }
+        changed |= invoke(pokemon, "setGender", genderText).isPresent();
+        changed |= setField(pokemon, "gender", genderText);
         return changed;
     }
 
