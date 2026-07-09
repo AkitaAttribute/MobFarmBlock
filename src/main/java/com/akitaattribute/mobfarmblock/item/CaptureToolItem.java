@@ -26,22 +26,30 @@ public class CaptureToolItem extends Item {
 
     @Override public InteractionResult interactLivingEntity(ItemStack stack, Player player, LivingEntity target, InteractionHand hand) {
         if (player.level().isClientSide) return InteractionResult.SUCCESS;
-        if (hasStoredMob(stack)) {
-            player.displayClientMessage(Component.translatable("item.mob_farm_block.capture_tool.filled"), true);
-            MobFarmDebug.captureRejected(player, target, "capture tool already filled");
-            return InteractionResult.FAIL;
-        }
         if (!canCapture(target)) {
             player.displayClientMessage(Component.translatable("item.mob_farm_block.capture_tool.invalid"), true);
             MobFarmDebug.captureRejected(player, target, rejectionReason(target));
             return InteractionResult.FAIL;
         }
-        StoredMob stored = MobProfileFactory.fromEntity(target);
-        setStoredMob(stack, stored);
+
+        StoredMob captured = MobProfileFactory.fromEntity(target);
+        StoredMob existing = getStoredMob(stack);
+        if (existing != null && !existing.isEmpty()) {
+            if (captured.isUnknownCobblemonPokemon() || existing.isUnknownCobblemonPokemon() || !existing.isSameType(captured)) {
+                player.displayClientMessage(Component.translatable("item.mob_farm_block.capture_tool.filled"), true);
+                MobFarmDebug.captureRejected(player, target, "capture tool contains a different mob");
+                return InteractionResult.FAIL;
+            }
+            existing.count += captured.count;
+            setStoredMob(stack, existing);
+        } else {
+            setStoredMob(stack, captured);
+        }
+
         target.remove(Entity.RemovalReason.DISCARDED);
         player.displayClientMessage(Component.translatable("item.mob_farm_block.capture_tool.captured"), true);
-        CobblemonDebugDumper.writeEntityDump(player, target, stored, "capture");
-        if (!"cobblemon:pokemon".equals(stored.mobId.toString())) MobFarmDebug.captureSuccess(player, target, stored);
+        CobblemonDebugDumper.writeEntityDump(player, target, captured, "capture");
+        if (!"cobblemon:pokemon".equals(captured.mobId.toString())) MobFarmDebug.captureSuccess(player, target, captured);
         return InteractionResult.SUCCESS;
     }
 
