@@ -54,12 +54,6 @@ public final class InteractionMethodRegistry {
             return;
         }
         if (state.getBoolean("breedingCycleActive") && now >= state.getLong("breedingReadyAt")) {
-            long baseCount = state.getLong("breedingBaseCount");
-            long fed = state.getLong("breedingFedCount");
-            long completedBreedings = fed / 2L;
-            long availableOriginalPairs = Math.min(baseCount, context.stored().count) / 2L;
-            long offspring = Math.min(completedBreedings, availableOriginalPairs);
-            context.stored().count += offspring;
             clearBreeding(state, context.stored().count);
         }
     }
@@ -85,32 +79,49 @@ public final class InteractionMethodRegistry {
         if (!state.getBoolean("breedingCycleActive") || now >= state.getLong("breedingReadyAt")) {
             state.putLong("breedingBaseCount", context.stored().count);
             state.putLong("breedingFedCount", 0L);
+            state.putLong("breedingPendingFeedCount", 0L);
+            state.putLong("breedingProducedCount", 0L);
             state.putLong("breedingReadyAt", now + cooldown);
             state.putBoolean("breedingCycleActive", true);
             MobFarmDebug.breeding(context.player(), "- cycle started\n- base count: " + context.stored().count + "\n- ready at game time: " + (now + cooldown));
         }
+
         long baseCount = state.getLong("breedingBaseCount");
-        long fedCount = state.getLong("breedingFedCount");
-        long maxBreedings = baseCount / 2L;
-        long maxFeedItems = maxBreedings * 2L;
-        if (baseCount < 2L) {
+        long pendingFeed = state.contains("breedingPendingFeedCount") ? state.getLong("breedingPendingFeedCount") : state.getLong("breedingFedCount") % 2L;
+        long produced = state.contains("breedingProducedCount") ? state.getLong("breedingProducedCount") : state.getLong("breedingFedCount") / 2L;
+        long effectiveCapacity = Math.min(baseCount, context.stored().count) / 2L;
+        long remainingOffspring = Math.max(0L, effectiveCapacity - produced);
+        long remainingFeedItems = remainingOffspring * 2L - pendingFeed;
+
+        if (baseCount < 2L || context.stored().count < 2L) {
             clearBreeding(state, context.stored().count);
-            MobFarmDebug.breeding(context.player(), "- feed rejected reason: not enough parents\n- base count: " + baseCount);
+            MobFarmDebug.breeding(context.player(), "- feed rejected reason: not enough parents\n- base count: " + baseCount + "\n- current count: " + context.stored().count);
             return InteractionResult.FAIL;
         }
-        if (fedCount >= maxFeedItems) {
-            MobFarmDebug.breeding(context.player(), "- feed rejected reason: cycle full\n- base count: " + baseCount + "\n- max breedings: " + maxBreedings + "\n- max feed items: " + maxFeedItems + "\n- current fed count: " + fedCount);
+        if (remainingFeedItems <= 0L) {
+            MobFarmDebug.breeding(context.player(), "- feed rejected reason: cycle full\n- base count: " + baseCount + "\n- current count: " + context.stored().count + "\n- effective capacity: " + effectiveCapacity + "\n- produced this cycle: " + produced + "\n- pending feed: " + pendingFeed);
             return InteractionResult.FAIL;
         }
+
         context.heldItem().shrink(1);
-        state.putLong("breedingFedCount", fedCount + 1L);
-        MobFarmDebug.breeding(context.player(), "- feed accepted\n- base count: " + baseCount + "\n- max breedings: " + maxBreedings + "\n- max feed items: " + maxFeedItems + "\n- current fed count: " + (fedCount + 1L) + "\n- completed breedings: " + ((fedCount + 1L) / 2L) + "\n- ready at game time: " + state.getLong("breedingReadyAt"));
+        pendingFeed++;
+        if (pendingFeed >= 2L) {
+            pendingFeed -= 2L;
+            produced++;
+            context.stored().count++;
+        }
+        state.putLong("breedingPendingFeedCount", pendingFeed);
+        state.putLong("breedingProducedCount", produced);
+        state.putLong("breedingFedCount", produced * 2L + pendingFeed);
+        MobFarmDebug.breeding(context.player(), "- feed accepted\n- base count: " + baseCount + "\n- current count: " + context.stored().count + "\n- effective capacity: " + effectiveCapacity + "\n- produced this cycle: " + produced + "\n- pending feed: " + pendingFeed + "\n- remaining feed items: " + Math.max(0L, effectiveCapacity * 2L - produced * 2L - pendingFeed) + "\n- ready at game time: " + state.getLong("breedingReadyAt"));
         return InteractionResult.SUCCESS;
     }
 
     private static void clearBreeding(CompoundTag state, long baseCount) {
         state.putBoolean("breedingCycleActive", false);
         state.putLong("breedingFedCount", 0L);
+        state.putLong("breedingPendingFeedCount", 0L);
+        state.putLong("breedingProducedCount", 0L);
         state.putLong("breedingBaseCount", baseCount);
         state.putLong("breedingReadyAt", 0L);
     }
@@ -124,11 +135,39 @@ public final class InteractionMethodRegistry {
     private static InteractionResult shear(MobFarmContext context, InteractionDefinition definition) {
         CompoundTag state = context.stored().state;
         long now = context.level().getGameTime();
-        if (now < state.getLong("nextWoolReadyAt")) return InteractionResult.PASS;
-        BehaviorUtil.output(context, new ItemStack(SheepBehavior.woolForColor(DyeColor.byName(state.getString("sheepColor"), DyeColor.WHITE))));
+        ResourceLocation action = SHEAR;
+        long readyAt = Math.max(state.getLong("nextWoolReadyAt"), context.stored().readyAtTicks.getOrDefault(action, 0L));
+        if (now < readyAt) return InteractionResult.PASS;
+
+        Item outputItem = definition.outputItem()
+                .map(BuiltInRegistries.ITEM::get)
+                .orElseGet(() -> SheepBehavior.woolForColor(DyeColor.byName(state.getString("sheepColor"), DyeColor.WHITE)));
+        int min = Math.max(1, definition.minCount());
+        int max = Math.max(min, definition.maxCount());
+        if (min == 1 && max == 1 && definition.outputItem().isEmpty()) max = 3;
+
+        long total = 0L;
+        for (long i = 0; i < context.stored().count; i++) total += randomBetween(context, min, max);
+        outputLargeStack(context, outputItem, total);
         context.heldItem().hurtAndBreak(1, context.player(), net.minecraft.world.entity.EquipmentSlot.MAINHAND);
-        state.putLong("nextWoolReadyAt", now + 12000L);
+        long cooldown = definition.cooldownTicks() > 0 ? definition.cooldownTicks() : 6000L;
+        state.putLong("nextWoolReadyAt", now + cooldown);
+        context.stored().setCooldown(action, now, cooldown);
         return InteractionResult.SUCCESS;
+    }
+
+    private static void outputLargeStack(MobFarmContext context, Item item, long amount) {
+        int maxStackSize = Math.max(1, item.getDefaultInstance().getMaxStackSize());
+        long remaining = Math.max(0L, amount);
+        while (remaining > 0L) {
+            int batch = (int) Math.min(maxStackSize, remaining);
+            BehaviorUtil.output(context, new ItemStack(item, batch));
+            remaining -= batch;
+        }
+    }
+
+    private static int randomBetween(MobFarmContext context, int min, int max) {
+        return max <= min ? min : min + context.random().nextInt(max - min + 1);
     }
 
     private static InteractionResult dye(MobFarmContext context, InteractionDefinition definition) {
