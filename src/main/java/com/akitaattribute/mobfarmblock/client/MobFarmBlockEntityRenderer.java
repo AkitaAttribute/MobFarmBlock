@@ -42,7 +42,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     private static final int TEXT_GRAY = 0xC0C0C0;
     private static final int NO_TEXT_BACKGROUND = 0x00000000;
     private static final int MAX_EXPANDED_ROWS = 7;
-    private static final int MAX_COMPACT_ROWS = 5;
+    private static final int MAX_COMPACT_ROWS = 7;
 
     public MobFarmBlockEntityRenderer(BlockEntityRendererProvider.Context context) {}
 
@@ -180,13 +180,13 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     private static List<LookRow> compactRows(StoredMob stored, long now) {
         List<LookRow> rows = new ArrayList<>();
         for (DropRule rule : stored.dropProfile.drops()) {
+            if (rows.size() >= MAX_COMPACT_ROWS) break;
             ItemStack icon = new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId()));
             rows.add(new LookRow(icon, icon.getHoverName().getString(), TEXT_WHITE, chanceText(rule.chance()), TEXT_GREEN));
-            if (rows.size() >= 2) break;
         }
         Optional<LookRow> timed = firstTimedOutput(stored, now);
-        timed.ifPresent(rows::add);
-        if (hasBreedDefinition(stored)) rows.add(breedRow(stored, now));
+        if (rows.size() < MAX_COMPACT_ROWS) timed.ifPresent(rows::add);
+        if (rows.size() < MAX_COMPACT_ROWS && hasBreedDefinition(stored)) rows.add(breedRow(stored, now));
         if (rows.isEmpty()) rows.add(new LookRow(ItemStack.EMPTY, "No outputs", TEXT_GRAY, "", TEXT_GRAY));
         return rows;
     }
