@@ -165,12 +165,31 @@ public final class InteractionMethodRegistry {
 
         int min = Math.max(1, definition.minCount());
         int max = Math.max(min, definition.maxCount());
-        long total = scaledRoll(context, min, max);
+        boolean scaleWithCount = !"false".equalsIgnoreCase(definition.parameters().getOrDefault("scaleWithCount", "true"));
+        long total = scaleWithCount ? scaledRoll(context, min, max) : randomBetween(context, min, max);
         outputLargeStack(context, BuiltInRegistries.ITEM.get(definition.outputItem().get()), total);
         if ("true".equalsIgnoreCase(definition.parameters().getOrDefault("consume", "false"))) context.heldItem().shrink(1);
         if ("true".equalsIgnoreCase(definition.parameters().getOrDefault("damageTool", "false"))) context.heldItem().hurtAndBreak(1, context.player(), net.minecraft.world.entity.EquipmentSlot.MAINHAND);
-        if (definition.cooldownTicks() > 0) context.stored().setCooldown(action, now, definition.cooldownTicks());
+        long cooldown = harvestCooldown(context, definition);
+        if (cooldown > 20L) context.stored().setCooldown(action, now, cooldown);
         return InteractionResult.SUCCESS;
+    }
+
+    private static long harvestCooldown(MobFarmContext context, InteractionDefinition definition) {
+        long base = longParameter(definition, "baseCooldownTicks", definition.cooldownTicks());
+        long reduction = longParameter(definition, "cooldownReductionPerMobTicks", 0L);
+        long freeCount = longParameter(definition, "cooldownReductionFreeCount", 1L);
+        long effectiveCount = Math.max(0L, context.stored().count - freeCount);
+        return Math.max(0L, base - effectiveCount * reduction);
+    }
+
+    private static long longParameter(InteractionDefinition definition, String key, long fallback) {
+        try {
+            String value = definition.parameters().get(key);
+            return value == null || value.isBlank() ? fallback : Long.parseLong(value);
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
     }
 
     private static long scaledRoll(MobFarmContext context, int min, int max) {
