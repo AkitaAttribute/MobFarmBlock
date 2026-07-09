@@ -6,6 +6,7 @@ import java.util.Optional;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.block.MobFarmBlockEntity;
+import com.akitaattribute.mobfarmblock.config.MobFarmConfig;
 import com.akitaattribute.mobfarmblock.mob.DropRule;
 import com.akitaattribute.mobfarmblock.mob.InteractionDefinition;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
@@ -32,7 +33,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     private static final int TEXT_GREEN = 0x55FF55;
     private static final int TEXT_YELLOW = 0xFFFF55;
     private static final int TEXT_GRAY = 0xC0C0C0;
-    private static final int BACKGROUND = 0xB0000000;
+    private static final int NO_TEXT_BACKGROUND = 0x00000000;
     private static final int MAX_ROWS = 7;
 
     public MobFarmBlockEntityRenderer(BlockEntityRendererProvider.Context context) {}
@@ -65,6 +66,12 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     }
 
     private static void renderLookUi(MobFarmBlockEntity blockEntity, Entity entity, PoseStack poseStack, MultiBufferSource buffer, Minecraft minecraft) {
+        if (MobFarmConfig.LOOK_UI_STYLE.get() == MobFarmConfig.LookUiStyle.NAMETAG) {
+            renderNametagLookUi(blockEntity, entity, poseStack, buffer, minecraft);
+        }
+    }
+
+    private static void renderNametagLookUi(MobFarmBlockEntity blockEntity, Entity entity, PoseStack poseStack, MultiBufferSource buffer, Minecraft minecraft) {
         StoredMob stored = blockEntity.getStored();
         long now = blockEntity.getLevel() == null ? 0L : blockEntity.getLevel().getGameTime();
         List<LookRow> rows = lookRows(stored, now);
@@ -85,21 +92,30 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
 
         int left = -width / 2;
         int top = -height / 2;
-        font.drawInBatch(mobLabel(stored), -font.width(mobLabel(stored)) / 2.0F, top + 3, TEXT_WHITE, false, poseStack.last().pose(), buffer, Font.DisplayMode.SEE_THROUGH, BACKGROUND, LightTexture.FULL_BRIGHT);
+        drawLookText(font, mobLabel(stored), -font.width(mobLabel(stored)) / 2.0F, top + 3, TEXT_WHITE, poseStack, buffer);
 
         int rowY = top + 15;
         for (int i = 0; i < rowCount; i++) {
             LookRow row = rows.get(i);
             int textX = left + 16;
             if (!row.icon().isEmpty()) renderFlatItem(row.icon(), left + 1, rowY - 2, poseStack, buffer, minecraft);
-            font.drawInBatch(row.label(), textX, rowY, row.labelColor(), false, poseStack.last().pose(), buffer, Font.DisplayMode.SEE_THROUGH, BACKGROUND, LightTexture.FULL_BRIGHT);
+            drawLookText(font, row.label(), textX, rowY, row.labelColor(), poseStack, buffer);
             if (!row.value().isBlank()) {
                 int valueWidth = font.width(row.value());
-                font.drawInBatch(row.value(), left + width - valueWidth - 4, rowY, row.valueColor(), false, poseStack.last().pose(), buffer, Font.DisplayMode.SEE_THROUGH, BACKGROUND, LightTexture.FULL_BRIGHT);
+                drawLookText(font, row.value(), left + width - valueWidth - 4, rowY, row.valueColor(), poseStack, buffer);
             }
             rowY += 13;
         }
         poseStack.popPose();
+    }
+
+    private static void drawLookText(Font font, String text, float x, float y, int color, PoseStack poseStack, MultiBufferSource buffer) {
+        // Use a normal full-bright font pass with transparent per-glyph background.
+        // SEE_THROUGH plus a nonzero background makes separate glyph/row quads fight
+        // visually with the entity/world behind the overlay, producing the uneven
+        // nametag shading seen during testing.
+        font.drawInBatch(text, x + 1.0F, y + 1.0F, 0x202020, false, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, NO_TEXT_BACKGROUND, LightTexture.FULL_BRIGHT);
+        font.drawInBatch(text, x, y, color, false, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, NO_TEXT_BACKGROUND, LightTexture.FULL_BRIGHT);
     }
 
     private static void renderFlatItem(ItemStack stack, int x, int y, PoseStack poseStack, MultiBufferSource buffer, Minecraft minecraft) {
