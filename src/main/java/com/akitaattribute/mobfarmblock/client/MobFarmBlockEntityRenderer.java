@@ -228,7 +228,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         }
         firstTimedOutput(stored, now).ifPresent(rows::add);
         if (hasBreedDefinition(stored)) rows.add(breedRow(stored, now));
-        if (rows.isEmpty()) rows.add(new LookRow(ItemStack.EMPTY, "No outputs", TEXT_GRAY, "", TEXT_GRAY));
+        if (rows.isEmpty()) rows.add(new LookRow(ItemStack.EMPTY, "No Drops", TEXT_GRAY, "", TEXT_GRAY));
         return rows;
     }
 
@@ -258,7 +258,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
             });
         }
 
-        if (rows.isEmpty()) rows.add(new LookRow(ItemStack.EMPTY, "No outputs configured", TEXT_GRAY, "", TEXT_GRAY));
+        if (rows.isEmpty()) rows.add(new LookRow(ItemStack.EMPTY, "No Drops", TEXT_GRAY, "", TEXT_GRAY));
         return rows;
     }
 
