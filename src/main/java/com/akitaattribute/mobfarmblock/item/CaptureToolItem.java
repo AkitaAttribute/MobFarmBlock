@@ -42,6 +42,11 @@ public class CaptureToolItem extends Item {
             }
             existing.count += captured.count;
             setStoredMob(stack, existing);
+        } else if (stack.getCount() > 1) {
+            stack.shrink(1);
+            ItemStack filled = new ItemStack(this);
+            setStoredMob(filled, captured);
+            if (!player.getInventory().add(filled)) player.drop(filled, false);
         } else {
             setStoredMob(stack, captured);
         }
