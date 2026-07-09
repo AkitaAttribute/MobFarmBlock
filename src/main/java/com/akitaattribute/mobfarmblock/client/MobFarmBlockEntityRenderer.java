@@ -24,6 +24,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -110,19 +111,20 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     }
 
     private static void drawLookText(Font font, String text, float x, float y, int color, PoseStack poseStack, MultiBufferSource buffer) {
-        // Single text pass only. A second shadow/outline pass made the blocky font
-        // look duplicated at this scale, especially against bright snow/ice.
         font.drawInBatch(text, x, y, color, false, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, NO_TEXT_BACKGROUND, LightTexture.FULL_BRIGHT);
     }
 
     private static void renderFlatItem(ItemStack stack, int x, int y, PoseStack poseStack, MultiBufferSource buffer, Minecraft minecraft) {
         poseStack.pushPose();
         poseStack.translate(x + 8.0D, y + 8.0D, 0.0D);
-        // The nametag panel flips the Y axis so font coordinates increase downward.
-        // Counter-flip item rendering back to a normal GUI orientation so icons are
-        // not upside-down and item lighting/tinting is not distorted.
-        poseStack.scale(10.0F, -10.0F, 10.0F);
-        minecraft.getItemRenderer().renderStatic(stack, net.minecraft.world.item.ItemDisplayContext.GUI, LightTexture.FULL_BRIGHT, 0, poseStack, buffer, minecraft.level, 0);
+        // The surrounding nametag transform already flips Y for font coordinates.
+        // Use the GUI context with a positive local scale and rotate it back upright
+        // instead of applying another negative scale.  Negative item scales invert
+        // block-item normals and can make cube-like items such as wool/clay render as
+        // the wrong tinted face, which appeared as red/pink regardless of item color.
+        poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
+        poseStack.scale(10.0F, 10.0F, 10.0F);
+        minecraft.getItemRenderer().renderStatic(stack, ItemDisplayContext.GUI, LightTexture.FULL_BRIGHT, net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY, poseStack, buffer, minecraft.level, 0);
         poseStack.popPose();
     }
 
