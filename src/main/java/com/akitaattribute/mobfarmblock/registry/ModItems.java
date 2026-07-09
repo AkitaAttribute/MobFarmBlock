@@ -13,7 +13,7 @@ public final class ModItems {
 
     public static final DeferredHolder<Item, CaptureToolItem> CAPTURE_TOOL = ITEMS.register(
             "capture_tool",
-            () -> new CaptureToolItem(new Item.Properties().stacksTo(1))
+            () -> new CaptureToolItem(new Item.Properties())
     );
 
     private ModItems() {
