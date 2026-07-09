@@ -66,7 +66,7 @@ public final class MobProfileFactory {
         if ("minecraft:chicken".equals(id)) return new InteractionProfile(List.of(breedTag("mob_farm_block:chicken_breeding_items"), method(MobFarmBlockMod.id("egg"))));
         if ("minecraft:pig".equals(id)) return new InteractionProfile(List.of(breedTag("mob_farm_block:pig_breeding_items")));
         if ("minecraft:turtle".equals(id)) return new InteractionProfile(List.of(breedItem("minecraft:seagrass"), harvestTool("minecraft:bucket", "minecraft:turtle_egg", 6000L)));
-        if ("minecraft:bee".equals(id)) return new InteractionProfile(List.of(breedTag("minecraft:flowers"), beeHarvest("minecraft:glass_bottle", "minecraft:honey_bottle", 1, 1, true, false), beeHarvest("minecraft:shears", "minecraft:honeycomb", 3, 3, false, true)));
+        if ("minecraft:bee".equals(id)) return new InteractionProfile(List.of(breedItem("minecraft:poppy"), beeHarvest("minecraft:glass_bottle", "minecraft:honey_bottle", 1, 1, true, false), beeHarvest("minecraft:shears", "minecraft:honeycomb", 3, 3, false, true)));
         return InteractionProfile.EMPTY;
     }
 
