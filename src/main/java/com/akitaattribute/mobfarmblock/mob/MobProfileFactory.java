@@ -66,6 +66,7 @@ public final class MobProfileFactory {
         if ("minecraft:chicken".equals(id)) return new InteractionProfile(List.of(breedTag("mob_farm_block:chicken_breeding_items"), method(MobFarmBlockMod.id("egg"))));
         if ("minecraft:pig".equals(id)) return new InteractionProfile(List.of(breedTag("mob_farm_block:pig_breeding_items")));
         if ("minecraft:turtle".equals(id)) return new InteractionProfile(List.of(breedItem("minecraft:seagrass"), harvestTool("minecraft:bucket", "minecraft:turtle_egg", 6000L)));
+        if ("minecraft:bee".equals(id)) return new InteractionProfile(List.of(breedTag("minecraft:flowers"), beeHarvest("minecraft:glass_bottle", "minecraft:honey_bottle", 1, 1, true, false), beeHarvest("minecraft:shears", "minecraft:honeycomb", 3, 3, false, true)));
         return InteractionProfile.EMPTY;
     }
 
@@ -76,6 +77,16 @@ public final class MobProfileFactory {
     private static InteractionDefinition shearOutput(String output, int min, int max, long cooldown) { return new InteractionDefinition(MobFarmBlockMod.id("shear"), Optional.empty(), Optional.empty(), Optional.of(ResourceLocation.parse(output)), cooldown, min, max, Optional.empty(), Map.of()); }
     private static InteractionDefinition harvestTool(String item, String output, long cooldown) { return new InteractionDefinition(MobFarmBlockMod.id("harvest"), Optional.of(ResourceLocation.parse(item)), Optional.empty(), Optional.of(ResourceLocation.parse(output)), cooldown, 1, 1, Optional.empty(), Map.of()); }
     private static InteractionDefinition containerOutput(ResourceLocation method, String item, String output) { return new InteractionDefinition(method, Optional.of(ResourceLocation.parse(item)), Optional.empty(), Optional.of(ResourceLocation.parse(output)), 0L, 1, 1, Optional.empty(), Map.of("consume", "true")); }
+    private static InteractionDefinition beeHarvest(String item, String output, int min, int max, boolean consume, boolean damageTool) {
+        return new InteractionDefinition(MobFarmBlockMod.id("harvest"), Optional.of(ResourceLocation.parse(item)), Optional.empty(), Optional.of(ResourceLocation.parse(output)), 3600L, min, max, Optional.empty(), Map.of(
+                "baseCooldownTicks", "3600",
+                "cooldownReductionPerMobTicks", "200",
+                "cooldownReductionFreeCount", "1",
+                "scaleWithCount", "false",
+                "consume", Boolean.toString(consume),
+                "damageTool", Boolean.toString(damageTool)
+        ));
+    }
 
     private static MobKind detectKind(LivingEntity entity, ResourceLocation mobId) {
         if (CobblemonIntegration.isPokemonEntity(entity)) return MobKind.COBBLEMON;
