@@ -43,6 +43,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     private static final int NO_TEXT_BACKGROUND = 0x00000000;
     private static final int MAX_EXPANDED_ROWS = 7;
     private static final int MAX_COMPACT_ROWS = 7;
+    private static final int MIN_COMPACT_COLUMN_WIDTH = 30;
 
     public MobFarmBlockEntityRenderer(BlockEntityRendererProvider.Context context) {}
 
@@ -86,43 +87,73 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         List<LookRow> rows = expanded ? expandedRows(stored, now) : compactRows(stored, now);
         if (rows.isEmpty()) return;
 
-        Font font = minecraft.font;
-        int rowLimit = expanded ? MAX_EXPANDED_ROWS : MAX_COMPACT_ROWS;
-        int rowCount = Math.min(rows.size(), rowLimit);
-        int width = expanded ? font.width(mobLabel(stored)) : font.width("x" + stored.count);
-        for (int i = 0; i < rowCount; i++) width = Math.max(width, rowWidth(font, rows.get(i), expanded));
-        width = Math.max(width + 8, expanded ? 72 : 34);
-        int height = (expanded ? 12 : 8) + rowCount * (expanded ? 13 : 12);
-
         poseStack.pushPose();
         double y = 1.35D + Math.min(0.55D, entity == null ? 0.0D : entity.getBbHeight() * 0.18D);
         poseStack.translate(0.5D, y, 0.5D);
         poseStack.mulPose(minecraft.getEntityRenderDispatcher().cameraOrientation());
         poseStack.scale(0.018F, -0.018F, 0.018F);
 
+        if (expanded) renderExpandedNametag(stored, rows, poseStack, buffer, minecraft);
+        else renderCompactColumns(stored, rows, poseStack, buffer, minecraft);
+
+        poseStack.popPose();
+    }
+
+    private static void renderExpandedNametag(StoredMob stored, List<LookRow> rows, PoseStack poseStack, MultiBufferSource buffer, Minecraft minecraft) {
+        Font font = minecraft.font;
+        int rowCount = Math.min(rows.size(), MAX_EXPANDED_ROWS);
+        int width = font.width(mobLabel(stored));
+        for (int i = 0; i < rowCount; i++) width = Math.max(width, rowWidth(font, rows.get(i), true));
+        width = Math.max(width + 8, 72);
+        int height = 12 + rowCount * 13;
         int left = -width / 2;
         int top = -height / 2;
-        String title = expanded ? mobLabel(stored) : "x" + stored.count;
+
+        String title = mobLabel(stored);
         drawLookText(font, title, -font.width(title) / 2.0F, top + 2, TEXT_WHITE, poseStack, buffer);
 
-        int rowY = top + (expanded ? 15 : 12);
+        int rowY = top + 15;
         for (int i = 0; i < rowCount; i++) {
             LookRow row = rows.get(i);
             if (!row.icon().isEmpty()) renderLookItem(row.icon(), left + 1, rowY - 3, poseStack, buffer, minecraft);
-            if (expanded) {
-                int textX = left + 16;
-                drawLookText(font, row.label(), textX, rowY, row.labelColor(), poseStack, buffer);
-                if (!row.value().isBlank()) {
-                    int valueWidth = font.width(row.value());
-                    drawLookText(font, row.value(), left + width - valueWidth - 4, rowY, row.valueColor(), poseStack, buffer);
-                }
-            } else {
-                String value = row.value().isBlank() ? row.label() : row.value();
-                drawLookText(font, value, left + 18, rowY, row.valueColor(), poseStack, buffer);
+            int textX = left + 16;
+            drawLookText(font, row.label(), textX, rowY, row.labelColor(), poseStack, buffer);
+            if (!row.value().isBlank()) {
+                int valueWidth = font.width(row.value());
+                drawLookText(font, row.value(), left + width - valueWidth - 4, rowY, row.valueColor(), poseStack, buffer);
             }
-            rowY += expanded ? 13 : 12;
+            rowY += 13;
         }
-        poseStack.popPose();
+    }
+
+    private static void renderCompactColumns(StoredMob stored, List<LookRow> rows, PoseStack poseStack, MultiBufferSource buffer, Minecraft minecraft) {
+        Font font = minecraft.font;
+        int columnCount = Math.min(rows.size(), MAX_COMPACT_ROWS);
+        String title = "x" + stored.count;
+        int columnWidth = MIN_COMPACT_COLUMN_WIDTH;
+        for (int i = 0; i < columnCount; i++) {
+            String value = compactValue(rows.get(i));
+            columnWidth = Math.max(columnWidth, font.width(value) + 8);
+        }
+        int width = Math.max(font.width(title) + 8, columnCount * columnWidth);
+        int left = -width / 2;
+        int top = -20;
+
+        drawLookText(font, title, -font.width(title) / 2.0F, top, TEXT_WHITE, poseStack, buffer);
+
+        int rowTop = top + 13;
+        for (int i = 0; i < columnCount; i++) {
+            LookRow row = rows.get(i);
+            int columnLeft = left + i * columnWidth + (width - columnCount * columnWidth) / 2;
+            int centerX = columnLeft + columnWidth / 2;
+            if (!row.icon().isEmpty()) renderLookItem(row.icon(), centerX - 8, rowTop, poseStack, buffer, minecraft);
+            String value = compactValue(row);
+            drawLookText(font, value, centerX - font.width(value) / 2.0F, rowTop + 15, row.valueColor(), poseStack, buffer);
+        }
+    }
+
+    private static String compactValue(LookRow row) {
+        return row.value().isBlank() ? row.label() : row.value();
     }
 
     private static void drawLookText(Font font, String text, float x, float y, int color, PoseStack poseStack, MultiBufferSource buffer) {
@@ -172,7 +203,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
 
     private static int rowWidth(Font font, LookRow row, boolean expanded) {
         int icon = row.icon().isEmpty() ? 0 : 16;
-        if (!expanded) return icon + font.width(row.value().isBlank() ? row.label() : row.value()) + 4;
+        if (!expanded) return icon + font.width(compactValue(row)) + 4;
         int value = row.value().isBlank() ? 0 : font.width(row.value()) + 6;
         return icon + font.width(row.label()) + value + 8;
     }
