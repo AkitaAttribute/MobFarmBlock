@@ -9,8 +9,11 @@ import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.ExperienceOrb;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.Enchantments;
@@ -25,6 +28,10 @@ final class BehaviorUtil {
 
     static AttackResult attack(MobFarmContext context) {
         if (context.stored().isEmpty()) return AttackResult.PASS;
+        if (!isWeapon(context.heldItem())) {
+            MobFarmDebug.send(context.player(), Component.literal("Mob Farm Block Debug:\nProcessing rejected\n- reason: weapon required"));
+            return AttackResult.PASS;
+        }
         context.stored().count--;
         if (context.stored().count <= 0) {
             context.stored().state.putBoolean("breedingCycleActive", false);
@@ -94,6 +101,17 @@ final class BehaviorUtil {
             remaining = handler.insertItem(slot, remaining, false);
         }
         return remaining;
+    }
+
+    private static boolean isWeapon(ItemStack stack) {
+        if (stack.isEmpty()) return false;
+        return stack.is(itemTag("swords"))
+                || stack.is(itemTag("axes"))
+                || stack.is(itemTag("enchantable/weapon"));
+    }
+
+    private static TagKey<Item> itemTag(String path) {
+        return TagKey.create(BuiltInRegistries.ITEM.key(), ResourceLocation.fromNamespaceAndPath("minecraft", path));
     }
 
     private static RollResult rollDrop(MobFarmContext context, DropRule rule, int lootingLevel) {
