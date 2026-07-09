@@ -60,10 +60,12 @@ public final class MobProfileFactory {
 
     public static InteractionProfile builtInInteractions(ResourceLocation mobId) {
         String id = mobId.toString();
-        if ("minecraft:cow".equals(id) || "minecraft:mooshroom".equals(id)) return new InteractionProfile(List.of(breedItem("minecraft:wheat"), methodItem(MobFarmBlockMod.id("milk"), "minecraft:bucket", "minecraft:milk_bucket")));
+        if ("minecraft:cow".equals(id) || "minecraft:goat".equals(id)) return new InteractionProfile(List.of(breedItem("minecraft:wheat"), containerOutput(MobFarmBlockMod.id("milk"), "minecraft:bucket", "minecraft:milk_bucket")));
+        if ("minecraft:mooshroom".equals(id)) return new InteractionProfile(List.of(breedItem("minecraft:wheat"), containerOutput(MobFarmBlockMod.id("milk"), "minecraft:bucket", "minecraft:milk_bucket"), containerOutput(MobFarmBlockMod.id("output_item"), "minecraft:bowl", "minecraft:mushroom_stew"), shearOutput("minecraft:red_mushroom", 5, 5, 6000L)));
         if ("minecraft:sheep".equals(id)) return new InteractionProfile(List.of(breedItem("minecraft:wheat"), shearMethod(), method(MobFarmBlockMod.id("dye"))));
         if ("minecraft:chicken".equals(id)) return new InteractionProfile(List.of(breedTag("mob_farm_block:chicken_breeding_items"), method(MobFarmBlockMod.id("egg"))));
         if ("minecraft:pig".equals(id)) return new InteractionProfile(List.of(breedTag("mob_farm_block:pig_breeding_items")));
+        if ("minecraft:turtle".equals(id)) return new InteractionProfile(List.of(breedItem("minecraft:seagrass"), harvestTool("minecraft:bucket", "minecraft:scute", 6000L)));
         return InteractionProfile.EMPTY;
     }
 
@@ -71,7 +73,9 @@ public final class MobProfileFactory {
     private static InteractionDefinition breedTag(String tag) { return new InteractionDefinition(MobFarmBlockMod.id("breed"), Optional.empty(), Optional.of(ResourceLocation.parse(tag)), Optional.empty(), 6000L, 1, 1, Optional.empty(), Map.of()); }
     private static InteractionDefinition method(ResourceLocation method) { return new InteractionDefinition(method, Optional.empty(), Optional.empty(), Optional.empty(), 0L, 1, 1, Optional.empty(), Map.of()); }
     private static InteractionDefinition shearMethod() { return new InteractionDefinition(MobFarmBlockMod.id("shear"), Optional.empty(), Optional.empty(), Optional.empty(), 6000L, 1, 3, Optional.empty(), Map.of()); }
-    private static InteractionDefinition methodItem(ResourceLocation method, String item, String output) { return new InteractionDefinition(method, Optional.of(ResourceLocation.parse(item)), Optional.empty(), Optional.of(ResourceLocation.parse(output)), 0L, 1, 1, Optional.empty(), Map.of()); }
+    private static InteractionDefinition shearOutput(String output, int min, int max, long cooldown) { return new InteractionDefinition(MobFarmBlockMod.id("shear"), Optional.empty(), Optional.empty(), Optional.of(ResourceLocation.parse(output)), cooldown, min, max, Optional.empty(), Map.of()); }
+    private static InteractionDefinition harvestTool(String item, String output, long cooldown) { return new InteractionDefinition(MobFarmBlockMod.id("harvest"), Optional.of(ResourceLocation.parse(item)), Optional.empty(), Optional.of(ResourceLocation.parse(output)), cooldown, 1, 1, Optional.empty(), Map.of()); }
+    private static InteractionDefinition containerOutput(ResourceLocation method, String item, String output) { return new InteractionDefinition(method, Optional.of(ResourceLocation.parse(item)), Optional.empty(), Optional.of(ResourceLocation.parse(output)), 0L, 1, 1, Optional.empty(), Map.of("consume", "true")); }
 
     private static MobKind detectKind(LivingEntity entity, ResourceLocation mobId) {
         if (CobblemonIntegration.isPokemonEntity(entity)) return MobKind.COBBLEMON;
