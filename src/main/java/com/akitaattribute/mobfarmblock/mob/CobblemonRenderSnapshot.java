@@ -19,7 +19,10 @@ public record CobblemonRenderSnapshot(
         String renderableDebug,
         String exposedSpecies,
         String exposedForm,
-        String exposedAspects
+        String exposedAspects,
+        String pokemonPayloadFormat,
+        String pokemonPayload,
+        String propertiesText
 ) {
     public CompoundTag toNbt() {
         CompoundTag tag = new CompoundTag();
@@ -36,6 +39,9 @@ public record CobblemonRenderSnapshot(
         tag.putString("exposedSpecies", exposedSpecies == null ? "" : exposedSpecies);
         tag.putString("exposedForm", exposedForm == null ? "" : exposedForm);
         tag.putString("exposedAspects", exposedAspects == null ? "" : exposedAspects);
+        tag.putString("pokemonPayloadFormat", pokemonPayloadFormat == null ? "" : pokemonPayloadFormat);
+        tag.putString("pokemonPayload", pokemonPayload == null ? "" : pokemonPayload);
+        tag.putString("propertiesText", propertiesText == null ? "" : propertiesText);
         return tag;
     }
 
@@ -55,7 +61,10 @@ public record CobblemonRenderSnapshot(
                 tag.getString("renderableDebug"),
                 tag.getString("exposedSpecies"),
                 tag.getString("exposedForm"),
-                tag.getString("exposedAspects")
+                tag.getString("exposedAspects"),
+                tag.getString("pokemonPayloadFormat"),
+                tag.getString("pokemonPayload"),
+                tag.getString("propertiesText")
         );
     }
 }

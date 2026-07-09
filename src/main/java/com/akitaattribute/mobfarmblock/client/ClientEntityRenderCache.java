@@ -11,7 +11,6 @@ import com.akitaattribute.mobfarmblock.mob.CobblemonRenderSnapshot;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.network.chat.Component;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.AgeableMob;
@@ -26,14 +25,23 @@ public final class ClientEntityRenderCache {
     private static final String EXISTING_POKEMON_ENTITY_STATE = "ExistingPokemonEntityState";
     private static final Map<String, Entity> CACHE = new HashMap<>();
     private static final java.util.Set<String> WARNED = new java.util.HashSet<>();
+    private static final Map<String, Long> FAILED_UNTIL = new HashMap<>();
     private static final Map<String, String> SUCCESSFUL_COBBLEMON_METHODS = new HashMap<>();
     private static final java.util.Set<String> ANNOUNCED_COBBLEMON_METHODS = new java.util.HashSet<>();
+    private static Class<?> pokemonPropertiesClass;
+    private static boolean pokemonPropertiesClassResolved;
+    private static long rebuildTick = Long.MIN_VALUE;
+    private static int cobblemonRebuildsThisTick;
+    private static final int MAX_COBBLEMON_REBUILDS_PER_TICK = 2;
 
     public static Entity getOrCreate(StoredMob stored) {
         if (stored == null || stored.isEmpty() || Minecraft.getInstance().level == null) return null;
-        String key = stored.mobId + "|" + stored.speciesId + "|" + stored.display.variantKey() + "|" + stored.display.colorKey() + "|" + stored.display.baby();
+        String key = stored.mobId + "|" + stored.speciesId + "|" + stored.display.variantKey() + "|" + stored.display.colorKey() + "|" + stored.display.baby() + "|" + snapshotHash(stored);
+        long now = Minecraft.getInstance().level.getGameTime();
+        if (FAILED_UNTIL.getOrDefault(key, 0L) > now) return null;
         Entity cached = CACHE.get(key);
         if (cached != null) { freezeForRender(cached); return cached; }
+        if (stored.cobblemonRenderSnapshot != null && !allowCobblemonRebuild(now)) return null;
         EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(stored.mobId);
         if (type == null || type == EntityType.PIG && !stored.mobId.equals(BuiltInRegistries.ENTITY_TYPE.getKey(EntityType.PIG))) {
             warnOnce("entity type could not be resolved: " + stored.mobId);
@@ -44,9 +52,20 @@ public final class ClientEntityRenderCache {
             warnOnce("dummy entity could not be created: " + stored.mobId);
             return null;
         }
-        if (!applyDisplay(entity, stored)) return null;
+        if (!applyDisplay(entity, stored)) { FAILED_UNTIL.put(key, now + 40L); return null; }
         CACHE.put(key, entity);
         return entity;
+    }
+
+    private static int snapshotHash(StoredMob stored) {
+        return stored.cobblemonRenderSnapshot == null ? 0 : stored.cobblemonRenderSnapshot.toNbt().toString().hashCode();
+    }
+
+    private static boolean allowCobblemonRebuild(long now) {
+        if (rebuildTick != now) { rebuildTick = now; cobblemonRebuildsThisTick = 0; }
+        if (cobblemonRebuildsThisTick >= MAX_COBBLEMON_REBUILDS_PER_TICK) return false;
+        cobblemonRebuildsThisTick++;
+        return true;
     }
 
     private static boolean applyDisplay(Entity entity, StoredMob stored) {
@@ -63,18 +82,16 @@ public final class ClientEntityRenderCache {
 
     private static boolean applyCobblemonSnapshot(Entity entity, StoredMob stored) {
         CobblemonRenderSnapshot snapshot = stored.cobblemonRenderSnapshot;
-        boolean applied = false;
-        for (String className : java.util.List.of("com.cobblemon.mod.common.api.pokemon.PokemonProperties", "com.cobblemon.mod.common.pokemon.PokemonProperties")) {
-            applied = tryPokemonPropertiesText(entity, snapshot.speciesId(), snapshotPropertiesText(snapshot), className);
-            if (applied) break;
-        }
+        boolean applied = tryPokemonPropertiesText(entity, snapshot.speciesId(), snapshot.propertiesText().isBlank() ? snapshotPropertiesText(snapshot) : snapshot.propertiesText(), pokemonPropertiesClass());
         Optional<Object> pokemon = readPokemon(entity);
         pokemon.ifPresent(value -> syncCobblemonEntityData(entity, snapshot.speciesId(), value, snapshot.aspects()));
         ValidationResult validation = validationFor(entity, stored);
         boolean aspectsValid = snapshot.aspects() == null || snapshot.aspects().isEmpty() || snapshot.aspects().stream().allMatch(aspect -> validation.aspects().contains(aspect));
         boolean valid = applied && validation.valid() && aspectsValid;
-        MobFarmBlockMod.LOGGER.info("Mob Farm Block Debug: Cobblemon snapshot render for {} applied={} valid={} readBack={} aspects={} expectedAspects={} renderable={} capturedRenderable={}",
-                snapshot.speciesId(), applied, valid, validation.readBack(), validation.aspects(), snapshot.aspects(), validation.renderable(), snapshot.renderableDebug());
+        if (!valid) MobFarmBlockMod.LOGGER.info("Mob Farm Block Debug: Cobblemon snapshot render failed for {} applied={} valid={} readBack={} aspects={} expectedAspects={} renderable={} capturedRenderable={} payloadFormat={}",
+                snapshot.speciesId(), applied, false, validation.readBack(), validation.aspects(), snapshot.aspects(), validation.renderable(), snapshot.renderableDebug(), snapshot.pokemonPayloadFormat());
+        else MobFarmBlockMod.LOGGER.debug("Cobblemon snapshot render validated for {} readBack={} aspects={} payloadFormat={}",
+                snapshot.speciesId(), validation.readBack(), validation.aspects(), snapshot.pokemonPayloadFormat());
         return valid;
     }
 
@@ -151,18 +168,35 @@ public final class ClientEntityRenderCache {
 
     private static boolean tryPokemonPropertiesText(Entity entity, ResourceLocation speciesId, String propertiesText, String className) {
         try {
-            Class<?> propertiesClass = Class.forName(className);
-            Object props = invokeStatic(propertiesClass, "parse", propertiesText).or(() -> invokeStatic(propertiesClass, "parse", speciesId.getPath())).or(() -> invokeStatic(propertiesClass, "parse", speciesId.toString())).orElse(null);
-            if (props == null) return false;
-            Object pokemon = invoke(props, "create").orElse(null);
-            if (pokemon == null) return false;
-            if (invoke(entity, "setPokemon", pokemon).isPresent() || setField(entity, "pokemon", pokemon)) {
-                return true;
-            }
+            return tryPokemonPropertiesText(entity, speciesId, propertiesText, Class.forName(className));
         } catch (Throwable error) {
             warnOnce("Cobblemon PokemonProperties failed: " + className, error);
+            return false;
         }
-        return false;
+    }
+
+    private static boolean tryPokemonPropertiesText(Entity entity, ResourceLocation speciesId, String propertiesText, Class<?> propertiesClass) {
+        if (propertiesClass == null) return false;
+        Object props = invokeStatic(propertiesClass, "parse", propertiesText).or(() -> invokeStatic(propertiesClass, "parse", speciesId.getPath())).or(() -> invokeStatic(propertiesClass, "parse", speciesId.toString())).orElse(null);
+        if (props == null) return false;
+        Object pokemon = invoke(props, "create").orElse(null);
+        if (pokemon == null) return false;
+        return invoke(entity, "setPokemon", pokemon).isPresent() || setField(entity, "pokemon", pokemon);
+    }
+
+    private static Class<?> pokemonPropertiesClass() {
+        if (pokemonPropertiesClassResolved) return pokemonPropertiesClass;
+        pokemonPropertiesClassResolved = true;
+        for (String className : java.util.List.of("com.cobblemon.mod.common.api.pokemon.PokemonProperties", "com.cobblemon.mod.common.pokemon.PokemonProperties")) {
+            try {
+                pokemonPropertiesClass = Class.forName(className);
+                MobFarmBlockMod.LOGGER.debug("Resolved Cobblemon PokemonProperties class once: {}", className);
+                return pokemonPropertiesClass;
+            } catch (Throwable error) {
+                warnOnce("Cobblemon PokemonProperties class unavailable: " + className, error);
+            }
+        }
+        return null;
     }
 
     private static String snapshotPropertiesText(CobblemonRenderSnapshot snapshot) {
@@ -188,8 +222,6 @@ public final class ClientEntityRenderCache {
                 + " aspects=" + validation.aspects()
                 + " renderable=" + validation.renderable();
         MobFarmBlockMod.LOGGER.info(message);
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.player != null) minecraft.player.displayClientMessage(Component.literal(message), false);
     }
 
     private static boolean trySetSpeciesOnPokemon(Object pokemon, ResourceLocation speciesId) {

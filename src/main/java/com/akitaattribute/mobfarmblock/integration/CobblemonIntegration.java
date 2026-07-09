@@ -180,8 +180,30 @@ public final class CobblemonIntegration {
         String exposedSpecies = reflectNoArg(entity, "getExposedSpecies").map(String::valueOf).orElse("");
         String exposedForm = reflectNoArg(entity, "getExposedForm").map(String::valueOf).orElse("");
         String exposedAspects = reflectNoArg(entity, "getExposedAspects").map(String::valueOf).orElse("");
-        return Optional.of(new CobblemonRenderSnapshot(species.get(), formId, aspects, level, shiny, gender, baseScale, scaleModifier, heldItem, renderable, exposedSpecies, exposedForm, exposedAspects));
+        String propertiesText = pokemonPropertiesText(species.get(), formId, aspects, level, shiny, gender);
+        Payload payload = pokemonPayload(pokemonObject);
+        return Optional.of(new CobblemonRenderSnapshot(species.get(), formId, aspects, level, shiny, gender, baseScale, scaleModifier, heldItem, renderable, exposedSpecies, exposedForm, exposedAspects, payload.format(), payload.value(), propertiesText));
     }
+
+    private static String pokemonPropertiesText(ResourceLocation species, String form, List<String> aspects, int level, boolean shiny, String gender) {
+        StringBuilder text = new StringBuilder(species.getPath());
+        for (String aspect : aspects) if (aspect != null && !aspect.isBlank()) text.append(' ').append(aspect);
+        if (form != null && !form.isBlank()) text.append(' ').append(form);
+        if (level > 0) text.append(" level=").append(level);
+        if (shiny) text.append(" shiny");
+        if (gender != null && !gender.isBlank()) text.append(' ').append(gender.toLowerCase(java.util.Locale.ROOT));
+        return text.toString();
+    }
+
+    private static Payload pokemonPayload(Object pokemon) {
+        for (String method : new String[] {"saveToNBT", "saveToNbt", "serializeNBT", "serializeNbt", "toNBT", "toNbt", "save", "writeToNBT", "writeNbt"}) {
+            Optional<Object> value = reflectNoArg(pokemon, method);
+            if (value.isPresent()) return new Payload(method + ":" + value.get().getClass().getName(), String.valueOf(value.get()));
+        }
+        return new Payload("", "");
+    }
+
+    private record Payload(String format, String value) {}
 
     private static List<String> stringList(Object value) {
         if (value instanceof Collection<?> collection) return collection.stream().map(String::valueOf).map(String::trim).filter(s -> !s.isBlank()).toList();
