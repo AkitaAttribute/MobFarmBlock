@@ -1,5 +1,6 @@
 package com.akitaattribute.mobfarmblock.client;
 
+import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.item.CaptureToolItem;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -16,6 +17,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
+    private static final java.util.Set<String> WARNED_RENDER_FAILURES = new java.util.HashSet<>();
+
     public CaptureToolItemRenderer(BlockEntityRenderDispatcher dispatcher, EntityModelSet modelSet) { super(dispatcher, modelSet); }
 
     @Override
@@ -31,7 +34,7 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
 
         if (!CaptureToolItem.hasStoredMob(stack) || !slotContext) return;
         StoredMob stored = CaptureToolItem.getStoredMob(stack);
-        Entity entity = ClientEntityRenderCache.getOrCreate(stored);
+        Entity entity = safeGetRenderEntity(stored);
         if (entity == null) return;
 
         poseStack.pushPose();
@@ -43,6 +46,18 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
         ClientEntityRenderCache.freezeForRender(entity);
         minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, 0.0F, poseStack, buffer, 0x00F000F0);
         poseStack.popPose();
+    }
+
+    private static Entity safeGetRenderEntity(StoredMob stored) {
+        try {
+            return ClientEntityRenderCache.getOrCreate(stored);
+        } catch (Throwable error) {
+            String key = stored == null ? "unknown" : stored.mobId + "|" + stored.speciesId + "|" + stored.display.variantKey();
+            if (WARNED_RENDER_FAILURES.add(key)) {
+                MobFarmBlockMod.LOGGER.error("Capture Tool mob overlay render failed for {}; skipping overlay so item rendering cannot crash", key, error);
+            }
+            return null;
+        }
     }
 
     private static float entityScale(Entity entity, StoredMob stored) {
