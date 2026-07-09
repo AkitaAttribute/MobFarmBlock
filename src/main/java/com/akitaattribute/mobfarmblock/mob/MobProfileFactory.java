@@ -65,7 +65,7 @@ public final class MobProfileFactory {
         if ("minecraft:sheep".equals(id)) return new InteractionProfile(List.of(breedItem("minecraft:wheat"), shearMethod(), method(MobFarmBlockMod.id("dye"))));
         if ("minecraft:chicken".equals(id)) return new InteractionProfile(List.of(breedTag("mob_farm_block:chicken_breeding_items"), method(MobFarmBlockMod.id("egg"))));
         if ("minecraft:pig".equals(id)) return new InteractionProfile(List.of(breedTag("mob_farm_block:pig_breeding_items")));
-        if ("minecraft:turtle".equals(id)) return new InteractionProfile(List.of(breedItem("minecraft:seagrass"), harvestTool("minecraft:bucket", "minecraft:scute", 6000L)));
+        if ("minecraft:turtle".equals(id)) return new InteractionProfile(List.of(breedItem("minecraft:seagrass"), harvestTool("minecraft:bucket", "minecraft:turtle_egg", 6000L)));
         return InteractionProfile.EMPTY;
     }
 
