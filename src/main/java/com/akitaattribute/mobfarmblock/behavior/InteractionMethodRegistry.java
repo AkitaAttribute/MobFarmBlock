@@ -13,6 +13,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.DyeItem;
 import net.minecraft.world.item.Item;
@@ -129,8 +130,7 @@ public final class InteractionMethodRegistry {
     }
 
     private static InteractionResult milk(MobFarmContext context, InteractionDefinition definition) {
-        context.heldItem().shrink(1);
-        BehaviorUtil.output(context, new ItemStack(Items.MILK_BUCKET));
+        replaceOneHeldItem(context.player(), context.heldItem(), new ItemStack(Items.MILK_BUCKET));
         return InteractionResult.SUCCESS;
     }
 
@@ -167,8 +167,14 @@ public final class InteractionMethodRegistry {
         int max = Math.max(min, definition.maxCount());
         boolean scaleWithCount = !"false".equalsIgnoreCase(definition.parameters().getOrDefault("scaleWithCount", "true"));
         long total = scaleWithCount ? scaledRoll(context, min, max) : randomBetween(context, min, max);
-        outputLargeStack(context, BuiltInRegistries.ITEM.get(definition.outputItem().get()), total);
-        if ("true".equalsIgnoreCase(definition.parameters().getOrDefault("consume", "false"))) context.heldItem().shrink(1);
+        Item outputItem = BuiltInRegistries.ITEM.get(definition.outputItem().get());
+        if ("true".equalsIgnoreCase(definition.parameters().getOrDefault("fillContainer", "false"))) {
+            replaceOneHeldItem(context.player(), context.heldItem(), new ItemStack(outputItem));
+            if (total > 1L) outputLargeStack(context, outputItem, total - 1L);
+        } else {
+            outputLargeStack(context, outputItem, total);
+            if ("true".equalsIgnoreCase(definition.parameters().getOrDefault("consume", "false"))) context.heldItem().shrink(1);
+        }
         if ("true".equalsIgnoreCase(definition.parameters().getOrDefault("damageTool", "false"))) context.heldItem().hurtAndBreak(1, context.player(), net.minecraft.world.entity.EquipmentSlot.MAINHAND);
         long cooldown = harvestCooldown(context, definition);
         if (cooldown > 20L) context.stored().setCooldown(action, now, cooldown);
@@ -208,6 +214,16 @@ public final class InteractionMethodRegistry {
         }
     }
 
+    private static void replaceOneHeldItem(Player player, ItemStack held, ItemStack filled) {
+        if (held.getCount() == 1) {
+            held.setCount(0);
+            player.setItemInHand(player.getUsedItemHand(), filled);
+            return;
+        }
+        held.shrink(1);
+        if (!player.getInventory().add(filled)) player.drop(filled, false);
+    }
+
     private static int randomBetween(MobFarmContext context, int min, int max) {
         return max <= min ? min : min + context.random().nextInt(max - min + 1);
     }
@@ -232,8 +248,12 @@ public final class InteractionMethodRegistry {
 
     private static InteractionResult outputItem(MobFarmContext context, InteractionDefinition definition) {
         if (definition.outputItem().isEmpty()) return InteractionResult.PASS;
-        if ((definition.item().isPresent() || definition.itemTag().isPresent()) && !context.heldItem().isEmpty()) context.heldItem().shrink(1);
-        BehaviorUtil.output(context, new ItemStack(BuiltInRegistries.ITEM.get(definition.outputItem().get()), Math.max(1, definition.minCount())));
+        Item outputItem = BuiltInRegistries.ITEM.get(definition.outputItem().get());
+        if ("true".equalsIgnoreCase(definition.parameters().getOrDefault("fillContainer", "false"))) replaceOneHeldItem(context.player(), context.heldItem(), new ItemStack(outputItem));
+        else {
+            if ((definition.item().isPresent() || definition.itemTag().isPresent()) && !context.heldItem().isEmpty() && "true".equalsIgnoreCase(definition.parameters().getOrDefault("consume", "false"))) context.heldItem().shrink(1);
+            BehaviorUtil.output(context, new ItemStack(outputItem, Math.max(1, definition.minCount())));
+        }
         return InteractionResult.SUCCESS;
     }
 
