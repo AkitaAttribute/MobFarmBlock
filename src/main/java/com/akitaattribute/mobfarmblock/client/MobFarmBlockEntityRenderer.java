@@ -34,6 +34,7 @@ import net.minecraft.world.entity.animal.Sheep;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import org.joml.Matrix4f;
@@ -272,14 +273,16 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
 
         for (InteractionDefinition definition : stored.interactionProfile.definitions()) {
             ResourceLocation method = definition.methodId();
-            if (method.equals(MobFarmBlockMod.id("egg"))) rows.add(statusRow(new ItemStack(net.minecraft.world.item.Items.EGG), "Egg", now, stored.readyAtTicks.getOrDefault(method, 0L)));
-            if (method.equals(MobFarmBlockMod.id("milk"))) rows.add(new LookRow(new ItemStack(net.minecraft.world.item.Items.MILK_BUCKET), "Milk", TEXT_WHITE, "Ready", TEXT_GREEN));
+            if (method.equals(MobFarmBlockMod.id("egg"))) rows.add(statusRow(new ItemStack(Items.EGG), "Egg", now, stored.readyAtTicks.getOrDefault(method, 0L)));
+            if (method.equals(MobFarmBlockMod.id("milk"))) rows.add(new LookRow(new ItemStack(Items.MILK_BUCKET), "Milk", TEXT_WHITE, "Ready", TEXT_GREEN));
             if (method.equals(MobFarmBlockMod.id("breed"))) rows.add(breedRow(stored, now));
-            Optional<ResourceLocation> output = definition.outputItem();
-            output.ifPresent(item -> {
-                ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(item));
-                rows.add(statusRow(stack, stack.getHoverName().getString(), now, stored.readyAtTicks.getOrDefault(method, 0L)));
-            });
+            if (!method.equals(MobFarmBlockMod.id("milk")) && !method.equals(MobFarmBlockMod.id("breed")) && !method.equals(MobFarmBlockMod.id("egg"))) {
+                Optional<ResourceLocation> output = definition.outputItem();
+                output.ifPresent(item -> {
+                    ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(item));
+                    rows.add(statusRow(stack, stack.getHoverName().getString(), now, stored.readyAtTicks.getOrDefault(method, 0L)));
+                });
+            }
         }
 
         if (rows.isEmpty()) rows.add(new LookRow(ItemStack.EMPTY, "No Drops", TEXT_GRAY, "", TEXT_GRAY));
@@ -295,8 +298,8 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         }
         for (InteractionDefinition definition : stored.interactionProfile.definitions()) {
             ResourceLocation method = definition.methodId();
-            if (method.equals(MobFarmBlockMod.id("egg"))) return Optional.of(statusRow(new ItemStack(net.minecraft.world.item.Items.EGG), "Egg", now, stored.readyAtTicks.getOrDefault(method, 0L)));
-            if (method.equals(MobFarmBlockMod.id("milk"))) return Optional.of(new LookRow(new ItemStack(net.minecraft.world.item.Items.MILK_BUCKET), "Milk", TEXT_WHITE, "Ready", TEXT_GREEN));
+            if (method.equals(MobFarmBlockMod.id("egg"))) return Optional.of(statusRow(new ItemStack(Items.EGG), "Egg", now, stored.readyAtTicks.getOrDefault(method, 0L)));
+            if (method.equals(MobFarmBlockMod.id("milk"))) return Optional.of(new LookRow(new ItemStack(Items.MILK_BUCKET), "Milk", TEXT_WHITE, "Ready", TEXT_GREEN));
             if (method.equals(MobFarmBlockMod.id("breed"))) continue;
             if (definition.outputItem().isPresent()) {
                 ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(definition.outputItem().get()));
@@ -312,8 +315,9 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     }
 
     private static LookRow breedRow(StoredMob stored, long now) {
+        ItemStack icon = breedIcon(stored);
         if (!stored.state.getBoolean("breedingCycleActive") || now >= stored.state.getLong("breedingReadyAt")) {
-            return new LookRow(new ItemStack(net.minecraft.world.item.Items.WHEAT), "Breeding", TEXT_WHITE, stored.count >= 2 ? "Ready" : "Need 2", stored.count >= 2 ? TEXT_GREEN : TEXT_YELLOW);
+            return new LookRow(icon, "Breeding", TEXT_WHITE, stored.count >= 2 ? "Ready" : "Need 2", stored.count >= 2 ? TEXT_GREEN : TEXT_YELLOW);
         }
         long base = stored.state.getLong("breedingBaseCount");
         long produced = stored.state.contains("breedingProducedCount") ? stored.state.getLong("breedingProducedCount") : stored.state.getLong("breedingFedCount") / 2L;
@@ -322,7 +326,20 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         long maxFeed = Math.max(0L, capacity * 2L);
         long usedFeed = produced * 2L + pending;
         long readyAt = stored.state.getLong("breedingReadyAt");
-        return new LookRow(new ItemStack(net.minecraft.world.item.Items.WHEAT), "Breeding " + usedFeed + "/" + maxFeed, TEXT_WHITE, status(now, readyAt), now >= readyAt ? TEXT_GREEN : TEXT_YELLOW);
+        return new LookRow(icon, "Breeding " + usedFeed + "/" + maxFeed, TEXT_WHITE, status(now, readyAt), now >= readyAt ? TEXT_GREEN : TEXT_YELLOW);
+    }
+
+    private static ItemStack breedIcon(StoredMob stored) {
+        for (InteractionDefinition definition : stored.interactionProfile.definitions()) {
+            if (!definition.methodId().equals(MobFarmBlockMod.id("breed"))) continue;
+            if (definition.item().isPresent()) return new ItemStack(BuiltInRegistries.ITEM.get(definition.item().get()));
+            if (definition.itemTag().isPresent()) {
+                String tag = definition.itemTag().get().toString();
+                if (tag.equals("mob_farm_block:chicken_breeding_items")) return new ItemStack(Items.WHEAT_SEEDS);
+                if (tag.equals("mob_farm_block:pig_breeding_items")) return new ItemStack(Items.CARROT);
+            }
+        }
+        return new ItemStack(Items.WHEAT);
     }
 
     private static LookRow statusRow(ItemStack icon, String label, long now, long readyAt) {
