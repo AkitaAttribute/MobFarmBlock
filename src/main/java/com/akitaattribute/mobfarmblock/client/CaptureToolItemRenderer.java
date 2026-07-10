@@ -42,6 +42,7 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
         poseStack.translate(0.5D, 0.68D, 0.18D);
         poseStack.scale(scale, scale, scale);
         poseStack.translate(0.0D, -entity.getBbHeight() * 0.46D, 0.0D);
+        poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
         ClientEntityRenderCache.freezeForRender(entity);
         minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, 0.0F, poseStack, buffer, LightTexture.FULL_BRIGHT);
         poseStack.popPose();
