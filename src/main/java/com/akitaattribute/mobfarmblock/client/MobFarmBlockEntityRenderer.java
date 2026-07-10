@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
+import com.akitaattribute.mobfarmblock.block.MobFarmBlock;
 import com.akitaattribute.mobfarmblock.block.MobFarmBlockEntity;
 import com.akitaattribute.mobfarmblock.config.MobFarmConfig;
 import com.akitaattribute.mobfarmblock.mob.DropRule;
@@ -65,7 +66,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
             float scale = 0.32F;
             if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, entity.getBbHeight()));
             poseStack.scale(scale, scale, scale);
-            poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
+            poseStack.mulPose(Axis.YP.rotationDegrees(blockEntity.getBlockState().getValue(MobFarmBlock.FACING).toYRot()));
             ClientEntityRenderCache.freezeForRender(entity);
             minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, 0.0F, poseStack, buffer, 0x00F000F0);
             poseStack.popPose();
