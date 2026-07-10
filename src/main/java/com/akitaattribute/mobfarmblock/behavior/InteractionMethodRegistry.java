@@ -168,7 +168,7 @@ public final class InteractionMethodRegistry {
         boolean scaleWithCount = !"false".equalsIgnoreCase(definition.parameters().getOrDefault("scaleWithCount", "true"));
         long total = scaleWithCount ? scaledRoll(context, min, max) : randomBetween(context, min, max);
         Item outputItem = BuiltInRegistries.ITEM.get(definition.outputItem().get());
-        if ("true".equalsIgnoreCase(definition.parameters().getOrDefault("fillContainer", "false"))) {
+        if (isContainerFill(definition, context.heldItem(), outputItem)) {
             replaceOneHeldItem(context.player(), context.heldItem(), new ItemStack(outputItem));
             if (total > 1L) outputLargeStack(context, outputItem, total - 1L);
         } else {
@@ -224,6 +224,13 @@ public final class InteractionMethodRegistry {
         if (!player.getInventory().add(filled)) player.drop(filled, false);
     }
 
+    private static boolean isContainerFill(InteractionDefinition definition, ItemStack held, Item outputItem) {
+        if ("true".equalsIgnoreCase(definition.parameters().getOrDefault("fillContainer", "false"))) return true;
+        return (held.is(Items.GLASS_BOTTLE) && outputItem == Items.HONEY_BOTTLE)
+                || (held.is(Items.BUCKET) && outputItem == Items.MILK_BUCKET)
+                || (held.is(Items.BOWL) && outputItem == Items.MUSHROOM_STEW);
+    }
+
     private static int randomBetween(MobFarmContext context, int min, int max) {
         return max <= min ? min : min + context.random().nextInt(max - min + 1);
     }
@@ -249,7 +256,7 @@ public final class InteractionMethodRegistry {
     private static InteractionResult outputItem(MobFarmContext context, InteractionDefinition definition) {
         if (definition.outputItem().isEmpty()) return InteractionResult.PASS;
         Item outputItem = BuiltInRegistries.ITEM.get(definition.outputItem().get());
-        if ("true".equalsIgnoreCase(definition.parameters().getOrDefault("fillContainer", "false"))) replaceOneHeldItem(context.player(), context.heldItem(), new ItemStack(outputItem));
+        if (isContainerFill(definition, context.heldItem(), outputItem)) replaceOneHeldItem(context.player(), context.heldItem(), new ItemStack(outputItem));
         else {
             if ((definition.item().isPresent() || definition.itemTag().isPresent()) && !context.heldItem().isEmpty() && "true".equalsIgnoreCase(definition.parameters().getOrDefault("consume", "false"))) context.heldItem().shrink(1);
             BehaviorUtil.output(context, new ItemStack(outputItem, Math.max(1, definition.minCount())));
