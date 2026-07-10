@@ -26,31 +26,33 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
     public void renderByItem(ItemStack stack, ItemDisplayContext displayContext, PoseStack poseStack, MultiBufferSource buffer, int packedLight, int packedOverlay) {
         Minecraft minecraft = Minecraft.getInstance();
         boolean slotContext = displayContext == ItemDisplayContext.GUI || displayContext == ItemDisplayContext.FIXED;
+        boolean filled = CaptureToolItem.hasStoredMob(stack);
 
         poseStack.pushPose();
-        if (slotContext) applyGuiToolTransform(poseStack);
+        if (slotContext) applyGuiToolTransform(poseStack, filled);
         minecraft.getBlockRenderer().renderSingleBlock(Blocks.SPAWNER.defaultBlockState(), poseStack, buffer, packedLight, packedOverlay);
         poseStack.popPose();
 
-        if (!CaptureToolItem.hasStoredMob(stack) || !slotContext) return;
+        if (!filled || !slotContext) return;
         StoredMob stored = CaptureToolItem.getStoredMob(stack);
         Entity entity = safeGetRenderEntity(stored);
         if (entity == null) return;
 
         poseStack.pushPose();
         float scale = entityScale(entity, stored);
-        poseStack.translate(0.5D, 0.68D, 0.18D);
+        poseStack.translate(0.66D, 0.84D, 0.02D);
         poseStack.scale(scale, scale, scale);
-        poseStack.translate(0.0D, -entity.getBbHeight() * 0.46D, 0.0D);
+        poseStack.translate(0.0D, -entity.getBbHeight() * 0.50D, 0.0D);
         poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
         ClientEntityRenderCache.freezeForRender(entity);
         minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, 0.0F, poseStack, buffer, LightTexture.FULL_BRIGHT);
         poseStack.popPose();
     }
 
-    private static void applyGuiToolTransform(PoseStack poseStack) {
-        poseStack.translate(0.5D, 0.50D, 0.5D);
-        poseStack.scale(0.78F, 0.78F, 0.78F);
+    private static void applyGuiToolTransform(PoseStack poseStack, boolean filled) {
+        poseStack.translate(filled ? 0.36D : 0.5D, filled ? 0.42D : 0.50D, 0.5D);
+        float scale = filled ? 0.92F : 0.82F;
+        poseStack.scale(scale, scale, scale);
         poseStack.mulPose(Axis.XP.rotationDegrees(28.0F));
         poseStack.mulPose(Axis.YP.rotationDegrees(225.0F));
         poseStack.translate(-0.5D, -0.5D, -0.5D);
@@ -73,7 +75,7 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
         float height = Math.max(entity.getBbHeight(), 0.35F) * displayScale;
         float width = Math.max(entity.getBbWidth(), 0.35F) * displayScale;
         float bounding = Math.max(height, width);
-        float fit = 0.60F / Math.max(0.1F, bounding);
-        return Math.max(0.24F, Math.min(0.72F, fit));
+        float fit = 0.82F / Math.max(0.1F, bounding);
+        return Math.max(0.36F, Math.min(1.08F, fit));
     }
 }
