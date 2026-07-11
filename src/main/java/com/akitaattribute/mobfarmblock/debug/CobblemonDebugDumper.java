@@ -34,18 +34,25 @@ public final class CobblemonDebugDumper {
 
     private static void writeDump(Player player, Entity entity, StoredMob stored, String action, String rollDetails) {
         if (player == null || stored == null || !MobFarmConfig.DEBUG_CHAT_MESSAGES.get() || !MobFarmConfig.DEBUG_COBBLEMON_JSON_DUMP.get()) return;
-        if (!"cobblemon:pokemon".equals(stored.mobId.toString()) && (entity == null || !"cobblemon:pokemon".equals(BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString()))) return;
+        ResourceLocation entityType = entity == null ? stored.mobId : BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+        if (!isPokemonDebugType(stored.mobId) && !isPokemonDebugType(entityType)) return;
         try {
-            Path dir = Path.of("config", "mob_farm_block", "debug", "cobblemon").toAbsolutePath();
+            Path dir = Path.of("config", "mob_farm_block", "debug", entityType.getNamespace()).toAbsolutePath();
             Files.createDirectories(dir);
             String stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HHmmss"));
-            String entityType = (entity == null ? stored.mobId : BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType())).toString().replace(':', '_');
-            Path file = dir.resolve(stamp + "_" + action + "_" + entityType + "_" + player.getUUID() + ".json");
+            String entityTypeText = entityType.toString().replace(':', '_');
+            Path file = dir.resolve(stamp + "_" + action + "_" + entityTypeText + "_" + player.getUUID() + ".json");
             Files.writeString(file, jsonRoot(player, entity, stored, action, rollDetails), StandardCharsets.UTF_8);
-            player.displayClientMessage(Component.literal("Mob Farm Block Debug:\nCobblemon debug dump written:\n" + file), false);
+            player.displayClientMessage(Component.literal("Mob Farm Block Debug:\nPokemon debug dump written:\n" + file), false);
         } catch (Exception error) {
-            player.displayClientMessage(Component.literal("Mob Farm Block Debug:\nFailed to write Cobblemon debug dump:\n" + error.getMessage()), false);
+            player.displayClientMessage(Component.literal("Mob Farm Block Debug:\nFailed to write Pokemon debug dump:\n" + error.getMessage()), false);
         }
+    }
+
+    private static boolean isPokemonDebugType(ResourceLocation id) {
+        if (id == null) return false;
+        String text = id.toString();
+        return "cobblemon:pokemon".equals(text) || "pixelmon:pixelmon".equals(text);
     }
 
     private static String jsonRoot(Player player, Entity entity, StoredMob stored, String action, String rollDetails) throws IOException {
@@ -58,7 +65,7 @@ public final class CobblemonDebugDumper {
         prop(out, "storedDropProfileSource", stored.dropProfileSource, true); prop(out, "storedDropRuleCount", stored.dropProfile.drops().size(), true);
         out.append("  \"resolvedDropRules\": ").append(dropRulesJson(stored)).append(",\n");
         out.append("  \"processingRollDetails\": ").append(rollDetails == null ? "null" : quote(rollDetails)).append(",\n");
-        out.append("  \"knownCobblemonPaths\": ").append(entity == null ? "null" : knownPaths(entity)).append(",\n");
+        out.append("  \"knownPokemonPaths\": ").append(entity == null ? "null" : knownPaths(entity)).append(",\n");
         out.append("  \"entityBreakdown\": ").append(entity == null ? "null" : breakdown(entity, 0, new IdentityHashMap<>())).append('\n').append('}').append('\n');
         return out.toString();
     }
@@ -114,14 +121,16 @@ public final class CobblemonDebugDumper {
 
     private static String knownPaths(Entity entity) {
         StringBuilder out = new StringBuilder("{");
-        IdentityHashMap<Object, Boolean> seen = new IdentityHashMap<>();
         Object pokemon = readPath(out, "entity.pokemon", entity, "getPokemon", "pokemon");
         if (pokemon != null) {
-            Object species = readPath(out, "pokemon.getSpecies", pokemon, "getSpecies", "species");
+            Object species = readPath(out, "pokemon.getSpecies", pokemon, "getSpecies", "species", "getSpeciesValue", "speciesValue");
             Object form = readPath(out, "pokemon.getForm", pokemon, "getForm", "form");
             readPath(out, "pokemon.getAspects", pokemon, "getAspects", "aspects");
+            readPath(out, "pokemon.getPalette", pokemon, "getPalette", "palette");
+            readPath(out, "pokemon.isShiny", pokemon, "isShiny", "getShiny", "shiny");
+            readPath(out, "pokemon.getGender", pokemon, "getGender", "gender");
             Object renderable = readPath(out, "pokemon.asRenderablePokemon", pokemon, "asRenderablePokemon");
-            if (species != null) { readPath(out, "species.getResourceIdentifier", species, "getResourceIdentifier", "resourceIdentifier"); readPath(out, "species.drops", species, "getDrops", "drops"); }
+            if (species != null) { readPath(out, "species.getRegistryValue", species, "getRegistryValue", "getRegistryName", "getResourceLocation", "getResourceIdentifier", "resourceIdentifier", "getName", "name"); readPath(out, "species.drops", species, "getDrops", "drops"); }
             if (form != null) { readPath(out, "form.drops", form, "getDrops", "drops", "_drops"); readPath(out, "form.getBaseScale", form, "getBaseScale", "baseScale"); readPath(out, "form.showdownId", form, "showdownId", "getShowdownId", "formOnlyShowdownId"); }
             if (renderable != null) { readPath(out, "renderablePokemon.getSpecies", renderable, "getSpecies", "species"); readPath(out, "renderablePokemon.getAspects", renderable, "getAspects", "aspects"); }
         }
@@ -168,7 +177,7 @@ public final class CobblemonDebugDumper {
                 || n.startsWith("discard") || n.startsWith("shrink") || n.startsWith("grow") || n.startsWith("tick") || n.startsWith("update")
                 || n.startsWith("refresh") || n.startsWith("init") || n.startsWith("load") || n.startsWith("save")) return false;
         return name.startsWith("get") || name.startsWith("is") || name.startsWith("has") || name.startsWith("can") || name.startsWith("should")
-                || name.equals("toString") || name.equals("hashCode") || name.equals("asRenderablePokemon") || name.equals("pokemon") || name.equals("species") || name.equals("form") || name.equals("aspects");
+                || name.equals("toString") || name.equals("hashCode") || name.equals("asRenderablePokemon") || name.equals("pokemon") || name.equals("species") || name.equals("form") || name.equals("aspects") || name.equals("palette") || name.equals("shiny") || name.equals("gender");
     }
 
     private static boolean isInteresting(String name, Object value) { return simple(value) || isInterestingName(name); }
@@ -177,7 +186,7 @@ public final class CobblemonDebugDumper {
         return n.contains("pokemon") || n.contains("species") || n.contains("form") || n.contains("aspect") || n.contains("variant") || n.contains("id") || n.contains("texture")
                 || n.contains("drop") || n.contains("loot") || n.contains("table") || n.contains("entry") || n.contains("entries") || n.contains("item") || n.contains("percentage")
                 || n.contains("chance") || n.contains("quantity") || n.contains("range") || n.contains("selectable") || n.contains("weight") || n.contains("reward")
-                || n.contains("render") || n.contains("renderable") || n.contains("model") || n.contains("scale") || n.contains("showdown");
+                || n.contains("render") || n.contains("renderable") || n.contains("model") || n.contains("scale") || n.contains("showdown") || n.contains("palette") || n.contains("shiny") || n.contains("gender") || n.contains("growth");
     }
     private static boolean simple(Object value) { return value instanceof String || value instanceof Number || value instanceof Boolean || value instanceof Enum<?> || value instanceof ResourceLocation || value instanceof java.util.UUID; }
     private static void prop(StringBuilder out, String name, Object value, boolean comma) { out.append("  ").append(quote(name)).append(": ").append(value instanceof Number ? value : quote(value == null ? "null" : String.valueOf(value))).append(comma ? ",\n" : "\n"); }
