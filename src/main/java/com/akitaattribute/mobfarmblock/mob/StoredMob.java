@@ -51,7 +51,7 @@ public class StoredMob {
 
     public boolean isSameType(StoredMob other) {
         if (other == null || !mobId.equals(other.mobId) || kind != other.kind) return false;
-        if (kind == MobKind.COBBLEMON && "cobblemon:pokemon".equals(mobId.toString())) {
+        if (isSingleEntityPokemonKind(kind, mobId)) {
             if (speciesId != null && other.speciesId != null) return speciesId.equals(other.speciesId);
             if (speciesId != null || other.speciesId != null) return false;
             String variant = display == null ? "" : display.variantKey();
@@ -60,6 +60,11 @@ public class StoredMob {
             return false;
         }
         return true;
+    }
+
+    private static boolean isSingleEntityPokemonKind(MobKind kind, ResourceLocation mobId) {
+        return (kind == MobKind.COBBLEMON && "cobblemon:pokemon".equals(mobId.toString()))
+                || (kind == MobKind.PIXELMON && "pixelmon:pixelmon".equals(mobId.toString()));
     }
 
     public boolean isUnknownCobblemonPokemon() {
@@ -95,7 +100,7 @@ public class StoredMob {
     public static StoredMob fromNbt(CompoundTag tag) {
         Map<ResourceLocation, Long> readyAtTicks = new HashMap<>();
         CompoundTag readyTag = tag.getCompound("readyAtTicks");
-        for (String key : readyTag.getAllKeys()) readyAtTicks.put(ResourceLocation.parse(key), readyTag.getLong(key));
+        for (String key : readyTag.getAllKeys()) readyAtTicks.put(ResourceLocation.parse(key), tag.getCompound("readyAtTicks").getLong(key));
         ResourceLocation speciesId = tag.contains("speciesId") ? ResourceLocation.parse(tag.getString("speciesId")) : null;
         CobblemonRenderSnapshot snapshot = tag.contains("cobblemonRenderSnapshot") ? CobblemonRenderSnapshot.fromNbt(tag.getCompound("cobblemonRenderSnapshot")) : null;
         return new StoredMob(
