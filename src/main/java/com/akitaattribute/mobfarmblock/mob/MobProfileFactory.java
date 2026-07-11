@@ -29,6 +29,9 @@ public final class MobProfileFactory {
             String variant = CobblemonIntegration.getDisplayKey(entity).orElse(species.toString());
             display = new DisplaySnapshot(display.entityTypeId(), display.textureId(), variant, display.colorKey(), display.baby(), display.scale());
             cobblemonRenderSnapshot = CobblemonIntegration.getRenderSnapshot(entity).orElse(null);
+        } else if (kind == MobKind.PIXELMON && species != null) {
+            String variant = PixelmonIntegration.getDisplayKey(entity).orElse(species.toString());
+            display = new DisplaySnapshot(display.entityTypeId(), display.textureId(), variant, display.colorKey(), display.baby(), display.scale());
         }
         DropProfile drops = null;
         String source = "vanilla";
@@ -38,7 +41,7 @@ public final class MobProfileFactory {
             source = drops.drops().isEmpty() ? "cobblemon:unresolved_or_empty_drop_table" : "cobblemon:drop_table_reflection";
         } else {
             drops = PixelmonIntegration.resolveBattleDropProfile(entity).orElse(null);
-            source = drops != null ? (kind == MobKind.PIXELMON ? "pixelmon" : "integration") : "vanilla";
+            source = drops != null ? (kind == MobKind.PIXELMON ? "pixelmon:unresolved_or_empty_drop_table" : "integration") : "vanilla";
             if (drops == null) {
                 drops = DropProfileRegistry.get(mobId);
                 if (drops.drops().isEmpty() && drops.xp().maxXp() <= 0) source = "empty";
