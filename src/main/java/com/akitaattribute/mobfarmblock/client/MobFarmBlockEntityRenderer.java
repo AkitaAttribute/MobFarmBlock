@@ -76,6 +76,8 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
 
     private static Entity renderEntity(StoredMob stored, Minecraft minecraft) {
         if ("minecraft:sheep".equals(stored.mobId.toString())) return sheepRenderEntity(stored, minecraft);
+        Entity pixelmon = PixelmonEntityRenderCache.getOrCreate(stored);
+        if (pixelmon != null) return pixelmon;
         return ClientEntityRenderCache.getOrCreate(stored);
     }
 
@@ -221,153 +223,94 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
 
     private static void renderFlatSpriteIcon(TextureAtlasSprite sprite, int x, int y, PoseStack poseStack, MultiBufferSource buffer) {
         poseStack.pushPose();
-        poseStack.translate(x + 1.0D, y + 1.0D, 0.0D);
-        renderSpriteQuad(sprite, 0.0F, 0.0F, 14.0F, 14.0F, poseStack, buffer);
+        poseStack.translate(x, y, 0.0D);
+        Matrix4f matrix = poseStack.last().pose();
+        VertexConsumer consumer = buffer.getBuffer(RenderType.text(sprite.atlasLocation()));
+        vertex(consumer, matrix, 0, 16, sprite.getU0(), sprite.getV1());
+        vertex(consumer, matrix, 16, 16, sprite.getU1(), sprite.getV1());
+        vertex(consumer, matrix, 16, 0, sprite.getU1(), sprite.getV0());
+        vertex(consumer, matrix, 0, 0, sprite.getU0(), sprite.getV0());
         poseStack.popPose();
     }
 
-    private static void renderSpriteQuad(TextureAtlasSprite sprite, float x, float y, float width, float height, PoseStack poseStack, MultiBufferSource buffer) {
-        Matrix4f matrix = poseStack.last().pose();
-        VertexConsumer consumer = buffer.getBuffer(RenderType.text(sprite.atlasLocation()));
-        float u0 = sprite.getU0();
-        float u1 = sprite.getU1();
-        float v0 = sprite.getV0();
-        float v1 = sprite.getV1();
-        consumer.addVertex(matrix, x, y + height, 0.0F).setColor(255, 255, 255, 255).setUv(u0, v1).setLight(LightTexture.FULL_BRIGHT);
-        consumer.addVertex(matrix, x + width, y + height, 0.0F).setColor(255, 255, 255, 255).setUv(u1, v1).setLight(LightTexture.FULL_BRIGHT);
-        consumer.addVertex(matrix, x + width, y, 0.0F).setColor(255, 255, 255, 255).setUv(u1, v0).setLight(LightTexture.FULL_BRIGHT);
-        consumer.addVertex(matrix, x, y, 0.0F).setColor(255, 255, 255, 255).setUv(u0, v0).setLight(LightTexture.FULL_BRIGHT);
-    }
-
-    private static int rowWidth(Font font, LookRow row, boolean expanded) {
-        int icon = row.icon().isEmpty() ? 0 : 16;
-        if (!expanded) return icon + font.width(compactValue(row)) + 4;
-        int value = row.value().isBlank() ? 0 : font.width(row.value()) + 6;
-        return icon + font.width(row.label()) + value + 8;
+    private static void vertex(VertexConsumer consumer, Matrix4f matrix, float x, float y, float u, float v) {
+        consumer.addVertex(matrix, x, y, 0.0F).setColor(255, 255, 255, 255).setUv(u, v).setLight(LightTexture.FULL_BRIGHT);
     }
 
     private static List<LookRow> compactRows(StoredMob stored, long now) {
         List<LookRow> rows = new ArrayList<>();
-        for (DropRule rule : stored.dropProfile.drops()) {
-            ItemStack icon = new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId()));
-            rows.add(new LookRow(icon, icon.getHoverName().getString(), TEXT_WHITE, chanceText(rule.chance()), TEXT_GREEN));
+        for (InteractionDefinition definition : stored.interactionProfile.definitions()) {
+            LookRow row = compactRow(stored, definition, now);
+            if (row != null) rows.add(row);
         }
-        firstTimedOutput(stored, now).ifPresent(rows::add);
-        if (hasBreedDefinition(stored)) rows.add(breedRow(stored, now));
-        if (rows.isEmpty()) rows.add(new LookRow(ItemStack.EMPTY, "No Drops", TEXT_GRAY, "", TEXT_GRAY));
+        if (rows.isEmpty() && stored.dropProfile.drops().isEmpty()) rows.add(new LookRow(new ItemStack(Items.BARRIER), "No Drops", "", TEXT_GRAY, TEXT_GRAY));
         return rows;
+    }
+
+    private static LookRow compactRow(StoredMob stored, InteractionDefinition definition, long now) {
+        String method = definition.methodId().toString();
+        if (method.equals(MobFarmBlockMod.id("breed").toString())) return new LookRow(breedIcon(definition), "Breed", "", TEXT_GREEN, TEXT_GREEN);
+        if (method.equals(MobFarmBlockMod.id("milk").toString())) return new LookRow(new ItemStack(Items.MILK_BUCKET), "Milk", "", TEXT_WHITE, TEXT_WHITE);
+        if (method.equals(MobFarmBlockMod.id("shear").toString())) return new LookRow(shearIcon(stored, definition), "Wool", readyValue(stored, definition.methodId(), now), TEXT_WHITE, readyColor(stored, definition.methodId(), now));
+        if (method.equals(MobFarmBlockMod.id("egg").toString())) return new LookRow(new ItemStack(Items.EGG), "Egg", readyValue(stored, definition.methodId(), now), TEXT_WHITE, readyColor(stored, definition.methodId(), now));
+        if (method.equals(MobFarmBlockMod.id("output_item").toString()) || method.equals(MobFarmBlockMod.id("harvest").toString())) return definition.outputItem().map(id -> new LookRow(new ItemStack(BuiltInRegistries.ITEM.get(id)), "Drop", readyValue(stored, definition.methodId(), now), TEXT_WHITE, readyColor(stored, definition.methodId(), now))).orElse(null);
+        return null;
     }
 
     private static List<LookRow> expandedRows(StoredMob stored, long now) {
         List<LookRow> rows = new ArrayList<>();
-        for (DropRule rule : stored.dropProfile.drops()) {
-            ItemStack icon = new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId()));
-            rows.add(new LookRow(icon, icon.getHoverName().getString(), TEXT_WHITE, chanceText(rule.chance()), TEXT_GREEN));
-        }
-
-        if ("minecraft:sheep".equals(stored.mobId.toString())) {
-            long readyAt = Math.max(stored.state.getLong("nextWoolReadyAt"), stored.readyAtTicks.getOrDefault(MobFarmBlockMod.id("shear"), 0L));
-            DyeColor color = DyeColor.byName(stored.state.getString("sheepColor"), DyeColor.WHITE);
-            ItemStack wool = new ItemStack(com.akitaattribute.mobfarmblock.behavior.SheepBehavior.woolForColor(color));
-            rows.add(statusRow(wool, wool.getHoverName().getString(), now, readyAt));
-        }
-
         for (InteractionDefinition definition : stored.interactionProfile.definitions()) {
-            ResourceLocation method = definition.methodId();
-            if (method.equals(MobFarmBlockMod.id("egg"))) rows.add(statusRow(new ItemStack(Items.EGG), "Egg", now, stored.readyAtTicks.getOrDefault(method, 0L)));
-            if (method.equals(MobFarmBlockMod.id("milk"))) rows.add(new LookRow(new ItemStack(Items.MILK_BUCKET), "Milk", TEXT_WHITE, "Ready", TEXT_GREEN));
-            if (method.equals(MobFarmBlockMod.id("breed"))) rows.add(breedRow(stored, now));
-            if (!method.equals(MobFarmBlockMod.id("milk")) && !method.equals(MobFarmBlockMod.id("breed")) && !method.equals(MobFarmBlockMod.id("egg"))) {
-                Optional<ResourceLocation> output = definition.outputItem();
-                output.ifPresent(item -> {
-                    ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(item));
-                    rows.add(statusRow(stack, stack.getHoverName().getString(), now, stored.readyAtTicks.getOrDefault(method, 0L)));
-                });
-            }
+            LookRow row = compactRow(stored, definition, now);
+            if (row != null) rows.add(row);
         }
-
-        if (rows.isEmpty()) rows.add(new LookRow(ItemStack.EMPTY, "No Drops", TEXT_GRAY, "", TEXT_GRAY));
+        for (DropRule rule : stored.dropProfile.drops()) rows.add(new LookRow(new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId())), "Drop", formatChance(rule.chance()), TEXT_WHITE, TEXT_YELLOW));
+        if (rows.isEmpty()) rows.add(new LookRow(new ItemStack(Items.BARRIER), "No Drops", "", TEXT_GRAY, TEXT_GRAY));
         return rows;
     }
 
-    private static Optional<LookRow> firstTimedOutput(StoredMob stored, long now) {
-        if ("minecraft:sheep".equals(stored.mobId.toString())) {
-            long readyAt = Math.max(stored.state.getLong("nextWoolReadyAt"), stored.readyAtTicks.getOrDefault(MobFarmBlockMod.id("shear"), 0L));
-            DyeColor color = DyeColor.byName(stored.state.getString("sheepColor"), DyeColor.WHITE);
-            ItemStack wool = new ItemStack(com.akitaattribute.mobfarmblock.behavior.SheepBehavior.woolForColor(color));
-            return Optional.of(statusRow(wool, wool.getHoverName().getString(), now, readyAt));
-        }
-        for (InteractionDefinition definition : stored.interactionProfile.definitions()) {
-            ResourceLocation method = definition.methodId();
-            if (method.equals(MobFarmBlockMod.id("egg"))) return Optional.of(statusRow(new ItemStack(Items.EGG), "Egg", now, stored.readyAtTicks.getOrDefault(method, 0L)));
-            if (method.equals(MobFarmBlockMod.id("milk"))) return Optional.of(new LookRow(new ItemStack(Items.MILK_BUCKET), "Milk", TEXT_WHITE, "Ready", TEXT_GREEN));
-            if (method.equals(MobFarmBlockMod.id("breed"))) continue;
-            if (definition.outputItem().isPresent()) {
-                ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(definition.outputItem().get()));
-                return Optional.of(statusRow(stack, stack.getHoverName().getString(), now, stored.readyAtTicks.getOrDefault(method, 0L)));
-            }
-        }
-        return Optional.empty();
-    }
-
-    private static boolean hasBreedDefinition(StoredMob stored) {
-        for (InteractionDefinition definition : stored.interactionProfile.definitions()) if (definition.methodId().equals(MobFarmBlockMod.id("breed"))) return true;
-        return false;
-    }
-
-    private static LookRow breedRow(StoredMob stored, long now) {
-        ItemStack icon = breedIcon(stored);
-        if (!stored.state.getBoolean("breedingCycleActive") || now >= stored.state.getLong("breedingReadyAt")) {
-            return new LookRow(icon, "Breeding", TEXT_WHITE, stored.count >= 2 ? "Ready" : "Need 2", stored.count >= 2 ? TEXT_GREEN : TEXT_YELLOW);
-        }
-        long base = stored.state.getLong("breedingBaseCount");
-        long produced = stored.state.contains("breedingProducedCount") ? stored.state.getLong("breedingProducedCount") : stored.state.getLong("breedingFedCount") / 2L;
-        long pending = stored.state.contains("breedingPendingFeedCount") ? stored.state.getLong("breedingPendingFeedCount") : stored.state.getLong("breedingFedCount") % 2L;
-        long capacity = Math.min(base, stored.count) / 2L;
-        long maxFeed = Math.max(0L, capacity * 2L);
-        long usedFeed = produced * 2L + pending;
-        long readyAt = stored.state.getLong("breedingReadyAt");
-        return new LookRow(icon, "Breeding " + usedFeed + "/" + maxFeed, TEXT_WHITE, status(now, readyAt), now >= readyAt ? TEXT_GREEN : TEXT_YELLOW);
-    }
-
-    private static ItemStack breedIcon(StoredMob stored) {
-        for (InteractionDefinition definition : stored.interactionProfile.definitions()) {
-            if (!definition.methodId().equals(MobFarmBlockMod.id("breed"))) continue;
-            if (definition.item().isPresent()) return new ItemStack(BuiltInRegistries.ITEM.get(definition.item().get()));
-            if (definition.itemTag().isPresent()) {
-                String tag = definition.itemTag().get().toString();
-                if (tag.equals("mob_farm_block:chicken_breeding_items")) return new ItemStack(Items.WHEAT_SEEDS);
-                if (tag.equals("mob_farm_block:pig_breeding_items")) return new ItemStack(Items.CARROT);
-            }
+    private static ItemStack breedIcon(InteractionDefinition definition) {
+        if (definition.item().isPresent()) return new ItemStack(BuiltInRegistries.ITEM.get(definition.item().get()));
+        if (definition.itemTag().isPresent()) {
+            String tag = definition.itemTag().get().toString();
+            if ("mob_farm_block:chicken_breeding_items".equals(tag)) return new ItemStack(Items.WHEAT_SEEDS);
+            if ("mob_farm_block:pig_breeding_items".equals(tag)) return new ItemStack(Items.CARROT);
         }
         return new ItemStack(Items.WHEAT);
     }
 
-    private static LookRow statusRow(ItemStack icon, String label, long now, long readyAt) {
-        return new LookRow(icon, label, TEXT_WHITE, status(now, readyAt), now >= readyAt ? TEXT_GREEN : TEXT_YELLOW);
+    private static ItemStack shearIcon(StoredMob stored, InteractionDefinition definition) {
+        if (definition.outputItem().isPresent()) return new ItemStack(BuiltInRegistries.ITEM.get(definition.outputItem().get()));
+        DyeColor color = DyeColor.byName(stored.state.getString("sheepColor"), DyeColor.WHITE);
+        return new ItemStack(switch (color) {
+            case BLACK -> Items.BLACK_WOOL;
+            case BLUE -> Items.BLUE_WOOL;
+            case BROWN -> Items.BROWN_WOOL;
+            case CYAN -> Items.CYAN_WOOL;
+            case GRAY -> Items.GRAY_WOOL;
+            case GREEN -> Items.GREEN_WOOL;
+            case LIGHT_BLUE -> Items.LIGHT_BLUE_WOOL;
+            case LIGHT_GRAY -> Items.LIGHT_GRAY_WOOL;
+            case LIME -> Items.LIME_WOOL;
+            case MAGENTA -> Items.MAGENTA_WOOL;
+            case ORANGE -> Items.ORANGE_WOOL;
+            case PINK -> Items.PINK_WOOL;
+            case PURPLE -> Items.PURPLE_WOOL;
+            case RED -> Items.RED_WOOL;
+            case WHITE -> Items.WHITE_WOOL;
+            case YELLOW -> Items.YELLOW_WOOL;
+        });
     }
 
-    private static String mobLabel(StoredMob stored) {
-        String id = stored.speciesId == null ? stored.mobId.toString() : stored.speciesId.toString();
-        int colon = id.indexOf(':');
-        String name = colon >= 0 ? id.substring(colon + 1) : id;
-        name = java.util.Arrays.stream(name.split("[_-]")).filter(part -> !part.isBlank()).map(part -> part.substring(0, 1).toUpperCase(java.util.Locale.ROOT) + part.substring(1)).reduce((a, b) -> a + " " + b).orElse(name);
-        return name + " x" + stored.count;
+    private static String readyValue(StoredMob stored, ResourceLocation action, long now) {
+        long readyAt = stored.readyAtTicks.getOrDefault(action, 0L);
+        if (now >= readyAt) return "Ready";
+        long seconds = Math.max(1L, (readyAt - now + 19L) / 20L);
+        return seconds + "s";
     }
 
-    private static String chanceText(double chance) {
-        double percent = Math.max(0.0D, Math.min(1.0D, chance)) * 100.0D;
-        if (Math.abs(percent - Math.rint(percent)) < 0.0001D) return Long.toString(Math.round(percent)) + "%";
-        return String.format(java.util.Locale.ROOT, "%.2f", percent).replaceAll("0+$", "").replaceAll("\\.$", "") + "%";
-    }
-
-    private static String status(long now, long readyAt) {
-        long remaining = Math.max(0L, readyAt - now);
-        if (remaining <= 0L) return "Ready";
-        long seconds = (remaining + 19L) / 20L;
-        if (seconds < 60L) return seconds + "s";
-        return (seconds / 60L) + "m " + String.format(java.util.Locale.ROOT, "%02d", seconds % 60L) + "s";
-    }
-
-    private record LookRow(ItemStack icon, String label, int labelColor, String value, int valueColor) {}
+    private static int readyColor(StoredMob stored, ResourceLocation action, long now) { return now >= stored.readyAtTicks.getOrDefault(action, 0L) ? TEXT_GREEN : TEXT_YELLOW; }
+    private static String formatChance(double chance) { return Math.round(chance * 100.0D) + "%"; }
+    private static int rowWidth(Font font, LookRow row, boolean showValue) { return 16 + font.width(row.label()) + (showValue && !row.value().isBlank() ? 6 + font.width(row.value()) : 0); }
+    private static String mobLabel(StoredMob stored) { return stored.speciesId != null ? stored.speciesId.getPath() : stored.mobId.getPath(); }
+    private record LookRow(ItemStack icon, String label, String value, int labelColor, int valueColor) {}
 }
