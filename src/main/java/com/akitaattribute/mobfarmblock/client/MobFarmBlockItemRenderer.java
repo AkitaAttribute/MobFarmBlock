@@ -57,6 +57,8 @@ public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
 
     private static Entity safeGetRenderEntity(StoredMob stored) {
         try {
+            Entity pixelmon = PixelmonEntityRenderCache.getOrCreate(stored);
+            if (pixelmon != null) return pixelmon;
             return ClientEntityRenderCache.getOrCreate(stored);
         } catch (Throwable error) {
             String key = stored == null ? "unknown" : stored.mobId + "|" + stored.speciesId + "|" + stored.display.variantKey();
