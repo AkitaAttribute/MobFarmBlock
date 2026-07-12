@@ -34,12 +34,13 @@ public final class PixelmonIntegration {
         if (pokemon.isEmpty()) return getSpeciesId(entity).map(ResourceLocation::toString);
         StringBuilder key = new StringBuilder();
         getSpeciesId(entity).ifPresent(id -> key.append(id));
-        appendObjectValue(key, "form", value(pokemon.get(), "getForm", "form"));
-        appendObjectValue(key, "palette", value(pokemon.get(), "getPalette", "palette"));
+        appendObjectValue(key, "form", cleanNamedValue(value(pokemon.get(), "getForm", "form")));
+        appendObjectValue(key, "palette", cleanNamedValue(value(pokemon.get(), "getPalette", "palette")));
         appendObjectValue(key, "gender", value(pokemon.get(), "getGender", "gender"));
         appendObjectValue(key, "shiny", value(pokemon.get(), "isShiny", "getShiny", "shiny"));
-        appendObjectValue(key, "growth", value(pokemon.get(), "getGrowth", "growth"));
-        appendObjectValue(key, "size", value(pokemon.get(), "getSize", "getScale", "scale"));
+        appendObjectValue(key, "growth", cleanNamedValue(value(pokemon.get(), "getGrowth", "growth")));
+        appendObjectValue(key, "renderScale", value(pokemon.get(), "getRenderScale", "renderScale"));
+        appendObjectValue(key, "size", value(pokemon.get(), "getSize", "size"));
         return key.isEmpty() ? Optional.empty() : Optional.of(key.toString());
     }
 
@@ -72,29 +73,71 @@ public final class PixelmonIntegration {
 
     public static Optional<ResourceLocation> extractSpeciesFromSpeciesObject(Object species) {
         if (species == null) return Optional.empty();
-        Optional<ResourceLocation> direct = coerceResourceLocation(species);
-        if (direct.isPresent() && "pixelmon".equals(direct.get().getNamespace())) return direct;
-        for (String method : new String[] {"getRegistryValue", "getRegistryName", "getResourceLocation", "getResourceIdentifier", "getIdentifier", "getId", "id", "resourceLocation", "getName", "getPokemonName", "name"}) {
+
+        Optional<ResourceLocation> named = speciesName(species).flatMap(PixelmonIntegration::parseOrPixelmon);
+        if (named.isPresent()) return named;
+
+        for (String method : new String[] {"getStrippedName", "getName", "getPokemonName", "getLocalizedName", "name"}) {
+            Optional<ResourceLocation> candidate = reflectNoArg(species, method).flatMap(PixelmonIntegration::textName).flatMap(PixelmonIntegration::parseOrPixelmon);
+            if (candidate.isPresent()) return candidate;
+        }
+        for (String field : new String[] {"strippedName", "name", "pokemonName"}) {
+            Optional<ResourceLocation> candidate = readField(species, field).flatMap(PixelmonIntegration::textName).flatMap(PixelmonIntegration::parseOrPixelmon);
+            if (candidate.isPresent()) return candidate;
+        }
+
+        for (String method : new String[] {"getRegistryName", "getResourceLocation", "getResourceIdentifier", "getIdentifier", "getId", "id", "resourceLocation"}) {
             Optional<ResourceLocation> candidate = reflectNoArg(species, method).flatMap(PixelmonIntegration::coerceResourceLocation);
-            if (candidate.isPresent()) return candidate;
+            if (candidate.isPresent() && !looksLikeClassName(candidate.get())) return candidate;
         }
-        for (String field : new String[] {"registryValue", "registryName", "resourceLocation", "resourceIdentifier", "identifier", "id", "name"}) {
+        for (String field : new String[] {"registryName", "resourceLocation", "resourceIdentifier", "identifier", "id"}) {
             Optional<ResourceLocation> candidate = readField(species, field).flatMap(PixelmonIntegration::coerceResourceLocation);
-            if (candidate.isPresent()) return candidate;
+            if (candidate.isPresent() && !looksLikeClassName(candidate.get())) return candidate;
         }
-        return Optional.empty();
+
+        Optional<ResourceLocation> direct = coerceResourceLocation(species);
+        return direct.filter(id -> !looksLikeClassName(id));
     }
 
     public static Optional<ResourceLocation> coerceResourceLocation(Object value) {
         if (value == null) return Optional.empty();
         if (value instanceof ResourceLocation id) return Optional.of(normalizePixelmonId(id));
         Optional<ResourceLocation> nsPath = namespacePath(value);
-        if (nsPath.isPresent()) return nsPath;
-        if (value instanceof CharSequence text) return parseOrPixelmon(text.toString());
+        if (nsPath.isPresent()) return nsPath.filter(id -> !looksLikeClassName(id));
+        Optional<String> named = speciesName(value).or(() -> textName(value));
+        if (named.isPresent()) return named.flatMap(PixelmonIntegration::parseOrPixelmon);
         if (value instanceof Enum<?> e) return parseOrPixelmon(e.name());
-        Optional<Object> nested = value(value, "getRegistryValue", "getRegistryName", "getResourceLocation", "getResourceIdentifier", "getIdentifier", "getId", "id", "getName", "name");
+        Optional<Object> nested = value(value, "getRegistryName", "getResourceLocation", "getResourceIdentifier", "getIdentifier", "getId", "id", "getName", "name");
         if (nested.isPresent() && nested.get() != value) return coerceResourceLocation(nested.get());
-        return parseOrPixelmon(String.valueOf(value));
+        return parseOrPixelmon(String.valueOf(value)).filter(id -> !looksLikeClassName(id));
+    }
+
+    private static Optional<String> speciesName(Object value) {
+        Optional<Object> name = value(value, "getStrippedName", "getName", "getPokemonName", "getLocalizedName", "name");
+        Optional<String> direct = name.flatMap(PixelmonIntegration::textName);
+        if (direct.isPresent()) return direct;
+        return nameFromToString(String.valueOf(value));
+    }
+
+    private static Optional<String> textName(Object value) {
+        if (value == null) return Optional.empty();
+        String text = String.valueOf(value).trim();
+        if (text.isBlank()) return Optional.empty();
+        if (text.contains("@") && text.contains(".")) return nameFromToString(text);
+        if (text.matches("\\d+")) return Optional.empty();
+        if (text.contains("{")) return nameFromToString(text);
+        return Optional.of(text);
+    }
+
+    private static Optional<String> nameFromToString(String text) {
+        if (text == null) return Optional.empty();
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(?:name|Name)=([A-Za-z0-9_ .-]+)").matcher(text);
+        if (matcher.find()) return Optional.of(matcher.group(1).trim());
+        return Optional.empty();
+    }
+
+    private static Optional<Object> cleanNamedValue(Optional<Object> value) {
+        return value.map(object -> speciesName(object).<Object>map(name -> name).orElse(object));
     }
 
     private static Optional<ResourceLocation> namespacePath(Object value) {
@@ -108,23 +151,29 @@ public final class PixelmonIntegration {
         if (raw == null) return Optional.empty();
         String text = raw.trim();
         if (text.isBlank()) return Optional.empty();
+        Optional<String> named = nameFromToString(text);
+        if (named.isPresent()) text = named.get();
         int bracket = text.indexOf('[');
         if (bracket > 0) text = text.substring(0, bracket).trim();
         int at = text.indexOf('@');
         if (at > 0 && text.contains(".")) text = text.substring(0, at).trim();
+        if (text.contains(".")) return Optional.empty();
         int colon = text.lastIndexOf(':');
         try {
             if (colon > 0 && colon < text.length() - 1) return Optional.of(normalizePixelmonId(ResourceLocation.parse(sanitizeId(text))));
             String path = sanitizePath(text);
-            return path.isBlank() ? Optional.empty() : Optional.of(ResourceLocation.fromNamespaceAndPath("pixelmon", path));
+            if (path.isBlank() || path.matches("\\d+")) return Optional.empty();
+            return Optional.of(ResourceLocation.fromNamespaceAndPath("pixelmon", path));
         } catch (Throwable error) {
             warnOnce("parse:" + raw, error);
             return Optional.empty();
         }
     }
 
+    private static boolean looksLikeClassName(ResourceLocation id) { return id.getPath().contains("com.") || id.getPath().contains("pixelmonmod") || id.getPath().matches("\\d+"); }
+
     private static ResourceLocation normalizePixelmonId(ResourceLocation id) {
-        return "pixelmon".equals(id.getNamespace()) ? id : ResourceLocation.fromNamespaceAndPath("pixelmon", sanitizePath(id.getPath()));
+        return "pixelmon".equals(id.getNamespace()) ? ResourceLocation.fromNamespaceAndPath("pixelmon", sanitizePath(id.getPath())) : ResourceLocation.fromNamespaceAndPath("pixelmon", sanitizePath(id.getPath()));
     }
 
     private static String sanitizeId(String text) {
@@ -138,9 +187,9 @@ public final class PixelmonIntegration {
 
     private static float displayScale(Entity entity) {
         Optional<Object> pokemon = getPokemonObject(entity);
-        return pokemon.flatMap(p -> value(p, "getScale", "scale", "getSize", "size", "getGrowthScale", "growthScale"))
+        return pokemon.flatMap(p -> value(p, "getRenderScale", "renderScale", "getScale", "scale", "getGrowthScale", "growthScale"))
                 .flatMap(PixelmonIntegration::coerceFloat)
-                .filter(v -> v > 0.05F && v < 20.0F)
+                .filter(v -> v > 0.05F && v < 5.0F)
                 .orElse(1.0F);
     }
 
