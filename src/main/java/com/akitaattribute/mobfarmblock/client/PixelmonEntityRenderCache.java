@@ -74,6 +74,7 @@ public final class PixelmonEntityRenderCache {
         changed |= setField(entity, "pokemon", pokemonObject);
         changed |= invoke(entity, "setPixelmon", pokemonObject).isPresent();
         changed |= invoke(entity, "setPokemonData", pokemonObject).isPresent();
+        changed |= invoke(entity, "updatePokemon", pokemonObject).isPresent();
         invoke(entity, "refreshDimensions");
         invoke(entity, "recalculateSize");
         invoke(entity, "updateSize");
@@ -91,6 +92,7 @@ public final class PixelmonEntityRenderCache {
     private static boolean applySpeciesToPokemon(Object pokemon, Object species, ResourceLocation speciesId) {
         boolean changed = false;
         changed |= invoke(pokemon, "setSpecies", species).isPresent();
+        changed |= invoke(pokemon, "setSpecies", titleCase(speciesId.getPath())).isPresent();
         changed |= invoke(pokemon, "setSpecies", speciesId.getPath()).isPresent();
         changed |= invoke(pokemon, "setSpecies", speciesId.toString()).isPresent();
         changed |= setField(pokemon, "species", species);
@@ -146,10 +148,10 @@ public final class PixelmonEntityRenderCache {
                 for (String method : new String[] {"create", "createPokemon", "createFromSpecies", "fromSpecies", "get"}) {
                     Optional<Object> created = Optional.empty();
                     if (speciesObject != null) created = invokeStaticOrSingleton(type, method, speciesObject);
-                    created = created.or(() -> invokeStaticOrSingleton(type, method, speciesId))
+                    created = created.or(() -> invokeStaticOrSingleton(type, method, titleCase(speciesId.getPath())))
                             .or(() -> invokeStaticOrSingleton(type, method, speciesId.getPath()))
                             .or(() -> invokeStaticOrSingleton(type, method, speciesId.toString()))
-                            .or(() -> invokeStaticOrSingleton(type, method, titleCase(speciesId.getPath())));
+                            .or(() -> invokeStaticOrSingleton(type, method, speciesId));
                     if (created.isPresent()) return created;
                 }
             } catch (Throwable error) {
@@ -168,10 +170,10 @@ public final class PixelmonEntityRenderCache {
             try {
                 Class<?> type = Class.forName(className);
                 for (String method : new String[] {"get", "getFromName", "fromName", "getSpecies", "getByName", "getById", "getByIdentifier", "getValue"}) {
-                    Optional<Object> species = invokeStaticOrSingleton(type, method, speciesId)
+                    Optional<Object> species = invokeStaticOrSingleton(type, method, titleCase(speciesId.getPath()))
                             .or(() -> invokeStaticOrSingleton(type, method, speciesId.getPath()))
                             .or(() -> invokeStaticOrSingleton(type, method, speciesId.toString()))
-                            .or(() -> invokeStaticOrSingleton(type, method, titleCase(speciesId.getPath())));
+                            .or(() -> invokeStaticOrSingleton(type, method, speciesId));
                     if (species.isPresent()) return unwrapSpecies(species.get());
                 }
                 Optional<Object> fieldSpecies = readStaticField(type, speciesId.getPath().toUpperCase(java.util.Locale.ROOT))
@@ -195,17 +197,64 @@ public final class PixelmonEntityRenderCache {
 
     private static Optional<ResourceLocation> coercePixelmonId(Object value) {
         if (value == null) return Optional.empty();
-        if (value instanceof ResourceLocation id) return Optional.of("pixelmon".equals(id.getNamespace()) ? id : ResourceLocation.fromNamespaceAndPath("pixelmon", sanitizePath(id.getPath())));
-        Optional<Object> nested = invoke(value, "getRegistryValue").or(() -> invoke(value, "getRegistryName")).or(() -> invoke(value, "getResourceLocation")).or(() -> invoke(value, "getResourceIdentifier")).or(() -> invoke(value, "getIdentifier")).or(() -> invoke(value, "getId")).or(() -> invoke(value, "getName")).or(() -> readField(value, "registryValue")).or(() -> readField(value, "name"));
+        if (value instanceof ResourceLocation id) return Optional.of(ResourceLocation.fromNamespaceAndPath("pixelmon", sanitizePath(id.getPath()))).filter(id2 -> !looksBadId(id2));
+        Optional<String> name = speciesName(value);
+        if (name.isPresent()) return parsePixelmonName(name.get());
+        Optional<Object> nested = invoke(value, "getStrippedName").or(() -> invoke(value, "getName")).or(() -> invoke(value, "getPokemonName")).or(() -> invoke(value, "getLocalizedName")).or(() -> readField(value, "name"))
+                .or(() -> invoke(value, "getRegistryName")).or(() -> invoke(value, "getResourceLocation")).or(() -> invoke(value, "getResourceIdentifier")).or(() -> invoke(value, "getIdentifier")).or(() -> invoke(value, "getId")).or(() -> readField(value, "registryName"));
         if (nested.isPresent() && nested.get() != value) return coercePixelmonId(nested.get());
+        return parsePixelmonName(String.valueOf(value));
+    }
+
+    private static Optional<String> speciesName(Object value) {
+        if (value == null) return Optional.empty();
+        for (String method : new String[] {"getStrippedName", "getName", "getPokemonName", "getLocalizedName"}) {
+            Optional<Object> result = invoke(value, method);
+            if (result.isPresent()) {
+                Optional<String> text = textName(result.get());
+                if (text.isPresent()) return text;
+            }
+        }
+        for (String field : new String[] {"strippedName", "name", "pokemonName"}) {
+            Optional<Object> result = readField(value, field);
+            if (result.isPresent()) {
+                Optional<String> text = textName(result.get());
+                if (text.isPresent()) return text;
+            }
+        }
+        return nameFromToString(String.valueOf(value));
+    }
+
+    private static Optional<String> textName(Object value) {
+        if (value == null) return Optional.empty();
         String text = String.valueOf(value).trim();
-        if (text.isBlank()) return Optional.empty();
+        if (text.isBlank() || text.matches("\\d+")) return Optional.empty();
+        if (text.contains("{")) return nameFromToString(text);
+        if (text.contains("@") && text.contains(".")) return Optional.empty();
+        return Optional.of(text);
+    }
+
+    private static Optional<String> nameFromToString(String text) {
+        if (text == null) return Optional.empty();
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(?:name|Name)=([A-Za-z0-9_ .-]+)").matcher(text);
+        if (matcher.find()) return Optional.of(matcher.group(1).trim());
+        return Optional.empty();
+    }
+
+    private static Optional<ResourceLocation> parsePixelmonName(String raw) {
+        if (raw == null) return Optional.empty();
+        String text = raw.trim();
+        Optional<String> named = nameFromToString(text);
+        if (named.isPresent()) text = named.get();
+        if (text.isBlank() || text.contains(".") || text.matches("\\d+")) return Optional.empty();
         int colon = text.lastIndexOf(':');
         try {
-            if (colon > 0 && colon < text.length() - 1) return Optional.of(ResourceLocation.parse(sanitizeId(text)));
-            return Optional.of(ResourceLocation.fromNamespaceAndPath("pixelmon", sanitizePath(text)));
+            ResourceLocation id = colon > 0 && colon < text.length() - 1 ? ResourceLocation.parse(sanitizeId(text)) : ResourceLocation.fromNamespaceAndPath("pixelmon", sanitizePath(text));
+            return looksBadId(id) ? Optional.empty() : Optional.of(ResourceLocation.fromNamespaceAndPath("pixelmon", sanitizePath(id.getPath())));
         } catch (Throwable ignored) { return Optional.empty(); }
     }
+
+    private static boolean looksBadId(ResourceLocation id) { return id.getPath().contains("com.") || id.getPath().contains("pixelmonmod") || id.getPath().matches("\\d+"); }
 
     private static Optional<Object> readPokemon(Entity entity) { return invoke(entity, "getPokemon").or(() -> invoke(entity, "pokemon")).or(() -> readField(entity, "pokemon")); }
 
