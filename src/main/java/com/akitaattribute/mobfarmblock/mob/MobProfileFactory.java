@@ -39,9 +39,12 @@ public final class MobProfileFactory {
             Optional<DropProfile> cobblemonDrops = CobblemonIntegration.resolveBattleDropProfile(entity);
             drops = cobblemonDrops.orElse(DropProfile.EMPTY);
             source = drops.drops().isEmpty() ? "cobblemon:unresolved_or_empty_drop_table" : "cobblemon:drop_table_reflection";
+        } else if (kind == MobKind.PIXELMON) {
+            drops = PixelmonIntegration.resolveBattleDropProfile(entity).orElse(DropProfile.EMPTY);
+            source = drops.drops().isEmpty() && drops.xp().maxXp() <= 0 ? "pixelmon:unresolved_drop_table" : "pixelmon:drop_table_reflection";
         } else {
             drops = PixelmonIntegration.resolveBattleDropProfile(entity).orElse(null);
-            source = drops != null ? (kind == MobKind.PIXELMON ? "pixelmon:unresolved_or_empty_drop_table" : "integration") : "vanilla";
+            source = drops != null ? "integration" : "vanilla";
             if (drops == null) {
                 drops = DropProfileRegistry.get(mobId);
                 if (drops.drops().isEmpty() && drops.xp().maxXp() <= 0) source = "empty";
