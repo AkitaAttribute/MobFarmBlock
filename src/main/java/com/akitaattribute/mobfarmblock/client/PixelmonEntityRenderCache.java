@@ -1,5 +1,6 @@
 package com.akitaattribute.mobfarmblock.client;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -60,6 +61,7 @@ public final class PixelmonEntityRenderCache {
     private static boolean applyPixelmon(Entity entity, StoredMob stored) {
         Optional<Object> species = findPixelmonSpeciesObject(stored.speciesId);
         Optional<Object> pokemon = createPokemon(stored.speciesId, species.orElse(null));
+        if (pokemon.isEmpty()) pokemon = constructPokemon(stored.speciesId, species.orElse(null));
         if (pokemon.isEmpty()) pokemon = readPokemon(entity);
         if (pokemon.isEmpty()) {
             warnOnce("Pixelmon dummy has no Pokemon object and factory creation failed: " + stored.speciesId);
@@ -70,14 +72,9 @@ public final class PixelmonEntityRenderCache {
         Object pokemonObject = pokemon.get();
         if (species.isPresent()) changed |= applySpeciesToPokemon(pokemonObject, species.get(), stored.speciesId);
         changed |= applyVariantHints(pokemonObject, stored.display.variantKey());
-        changed |= invoke(entity, "setPokemon", pokemonObject).isPresent();
-        changed |= setField(entity, "pokemon", pokemonObject);
-        changed |= invoke(entity, "setPixelmon", pokemonObject).isPresent();
-        changed |= invoke(entity, "setPokemonData", pokemonObject).isPresent();
-        changed |= invoke(entity, "updatePokemon", pokemonObject).isPresent();
-        invoke(entity, "refreshDimensions");
-        invoke(entity, "recalculateSize");
-        invoke(entity, "updateSize");
+        changed |= bindPokemonToEntity(pokemonObject, entity);
+        changed |= installPokemonOnEntity(entity, pokemonObject);
+        changed |= refreshPixelmonRenderState(entity, pokemonObject);
         ClientEntityRenderCache.freezeForRender(entity);
 
         Optional<ResourceLocation> readBack = readPokemon(entity).flatMap(PixelmonEntityRenderCache::readPokemonSpeciesId)
@@ -91,11 +88,14 @@ public final class PixelmonEntityRenderCache {
 
     private static boolean applySpeciesToPokemon(Object pokemon, Object species, ResourceLocation speciesId) {
         boolean changed = false;
+        Optional<Object> registryValue = invoke(species, "getRegistryValue").or(() -> readField(species, "registryValue"));
         changed |= invoke(pokemon, "setSpecies", species).isPresent();
+        if (registryValue.isPresent()) changed |= invoke(pokemon, "setSpecies", registryValue.get()).isPresent();
         changed |= invoke(pokemon, "setSpecies", titleCase(speciesId.getPath())).isPresent();
         changed |= invoke(pokemon, "setSpecies", speciesId.getPath()).isPresent();
         changed |= invoke(pokemon, "setSpecies", speciesId.toString()).isPresent();
         changed |= setField(pokemon, "species", species);
+        if (registryValue.isPresent()) changed |= setField(pokemon, "speciesValue", registryValue.get());
         changed |= setField(pokemon, "speciesValue", species);
         return changed;
     }
@@ -115,6 +115,45 @@ public final class PixelmonEntityRenderCache {
         if (!form.isBlank()) changed |= setEnumOrString(pokemon, "form", "setForm", form);
         String palette = parseVariantValue(variantKey, "palette");
         if (!palette.isBlank()) changed |= setEnumOrString(pokemon, "palette", "setPalette", palette);
+        return changed;
+    }
+
+    private static boolean bindPokemonToEntity(Object pokemon, Entity entity) {
+        boolean changed = false;
+        changed |= invoke(pokemon, "setEntity", entity).isPresent();
+        changed |= invoke(pokemon, "setPixelmonEntity", entity).isPresent();
+        changed |= invoke(pokemon, "setEntityID", entity.getId()).isPresent();
+        changed |= setField(pokemon, "entity", entity);
+        changed |= setField(pokemon, "pixelmonEntity", entity);
+        changed |= setField(pokemon, "entityID", entity.getId());
+        return changed;
+    }
+
+    private static boolean installPokemonOnEntity(Entity entity, Object pokemon) {
+        boolean changed = false;
+        changed |= invoke(entity, "setPokemon", pokemon).isPresent();
+        changed |= invoke(entity, "setPixelmon", pokemon).isPresent();
+        changed |= invoke(entity, "setPokemonData", pokemon).isPresent();
+        changed |= invoke(entity, "updatePokemon", pokemon).isPresent();
+        changed |= setField(entity, "pokemon", pokemon);
+        changed |= setField(entity, "pixelmon", pokemon);
+        changed |= setField(entity, "pokemonData", pokemon);
+        return changed;
+    }
+
+    private static boolean refreshPixelmonRenderState(Entity entity, Object pokemon) {
+        boolean changed = false;
+        for (String method : java.util.List.of("update", "updateForm", "updatePalette", "updateStats", "recalculateStats", "updateAspects")) {
+            changed |= invoke(pokemon, method).isPresent();
+        }
+        for (String method : java.util.List.of("updatePokemon", "updatePokemonData", "updatePixelmon", "refreshPokemon", "refreshDimensions", "recalculateSize", "updateSize", "updateModel", "reloadModel")) {
+            changed |= invoke(entity, method).isPresent();
+        }
+        readField(entity, "delegate").ifPresent(delegate -> {
+            invoke(delegate, "changePokemon", pokemon);
+            invoke(delegate, "setPokemon", pokemon);
+            invoke(delegate, "updatePokemon", pokemon);
+        });
         return changed;
     }
 
@@ -146,13 +185,10 @@ public final class PixelmonEntityRenderCache {
             try {
                 Class<?> type = Class.forName(className);
                 for (String method : new String[] {"create", "createPokemon", "createFromSpecies", "fromSpecies", "get"}) {
-                    Optional<Object> created = Optional.empty();
-                    if (speciesObject != null) created = invokeStaticOrSingleton(type, method, speciesObject);
-                    created = created.or(() -> invokeStaticOrSingleton(type, method, titleCase(speciesId.getPath())))
-                            .or(() -> invokeStaticOrSingleton(type, method, speciesId.getPath()))
-                            .or(() -> invokeStaticOrSingleton(type, method, speciesId.toString()))
-                            .or(() -> invokeStaticOrSingleton(type, method, speciesId));
-                    if (created.isPresent()) return created;
+                    for (Object candidate : speciesCandidates(speciesId, speciesObject)) {
+                        Optional<Object> created = invokeStaticOrSingleton(type, method, candidate);
+                        if (created.isPresent()) return created;
+                    }
                 }
             } catch (Throwable error) {
                 warnOnce("Pixelmon Pokemon factory unavailable: " + className, error);
@@ -160,6 +196,37 @@ public final class PixelmonEntityRenderCache {
         }
         return Optional.empty();
     }
+
+    private static Optional<Object> constructPokemon(ResourceLocation speciesId, Object speciesObject) {
+        try {
+            Class<?> type = Class.forName("com.pixelmonmod.pixelmon.api.pokemon.Pokemon");
+            for (Object candidate : speciesCandidates(speciesId, speciesObject)) {
+                Optional<Object> created = construct(type, candidate);
+                if (created.isPresent()) return created;
+            }
+            Optional<Object> noArg = construct(type);
+            noArg.ifPresent(pokemon -> speciesObjectOptional(speciesObject).ifPresent(species -> applySpeciesToPokemon(pokemon, species, speciesId)));
+            return noArg;
+        } catch (Throwable error) {
+            warnOnce("Pixelmon Pokemon constructor unavailable", error);
+            return Optional.empty();
+        }
+    }
+
+    private static java.util.List<Object> speciesCandidates(ResourceLocation speciesId, Object speciesObject) {
+        java.util.ArrayList<Object> candidates = new java.util.ArrayList<>();
+        if (speciesObject != null) {
+            candidates.add(speciesObject);
+            invoke(speciesObject, "getRegistryValue").ifPresent(candidates::add);
+        }
+        candidates.add(titleCase(speciesId.getPath()));
+        candidates.add(speciesId.getPath());
+        candidates.add(speciesId.toString());
+        candidates.add(speciesId);
+        return candidates;
+    }
+
+    private static Optional<Object> speciesObjectOptional(Object speciesObject) { return speciesObject == null ? Optional.empty() : Optional.of(speciesObject); }
 
     private static Optional<Object> findPixelmonSpeciesObject(ResourceLocation speciesId) {
         for (String className : java.util.List.of(
@@ -256,7 +323,7 @@ public final class PixelmonEntityRenderCache {
 
     private static boolean looksBadId(ResourceLocation id) { return id.getPath().contains("com.") || id.getPath().contains("pixelmonmod") || id.getPath().matches("\\d+"); }
 
-    private static Optional<Object> readPokemon(Entity entity) { return invoke(entity, "getPokemon").or(() -> invoke(entity, "pokemon")).or(() -> readField(entity, "pokemon")); }
+    private static Optional<Object> readPokemon(Entity entity) { return invoke(entity, "getPokemon").or(() -> invoke(entity, "pokemon")).or(() -> invoke(entity, "getPixelmon")).or(() -> readField(entity, "pokemon")).or(() -> readField(entity, "pixelmon")).or(() -> readField(entity, "pokemonData")); }
 
     private static String parseVariantValue(String variantKey, String key) {
         for (String part : variantKey.split("\\|")) {
@@ -295,6 +362,15 @@ public final class PixelmonEntityRenderCache {
         return Optional.empty();
     }
 
+    private static Optional<Object> construct(Class<?> type, Object... args) {
+        try {
+            Constructor<?> constructor = findConstructor(type, args);
+            if (constructor == null) return Optional.empty();
+            constructor.setAccessible(true);
+            return Optional.ofNullable(constructor.newInstance(args));
+        } catch (Throwable error) { warnOnce("construct:" + type.getName(), error); return Optional.empty(); }
+    }
+
     private static java.util.List<Object> singletonObjects(Class<?> type) {
         java.util.List<Object> singletons = new java.util.ArrayList<>();
         for (String fieldName : java.util.List.of("INSTANCE", "Companion")) {
@@ -325,6 +401,13 @@ public final class PixelmonEntityRenderCache {
             for (Method m : c.getDeclaredMethods()) {
                 if (m.getName().equals(name) && m.getParameterCount() == args.length && parametersCompatible(m.getParameterTypes(), args)) return m;
             }
+        }
+        return null;
+    }
+
+    private static Constructor<?> findConstructor(Class<?> type, Object... args) {
+        for (Constructor<?> constructor : type.getDeclaredConstructors()) {
+            if (constructor.getParameterCount() == args.length && parametersCompatible(constructor.getParameterTypes(), args)) return constructor;
         }
         return null;
     }
