@@ -76,8 +76,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
 
     private static Entity renderEntity(StoredMob stored, Minecraft minecraft) {
         if ("minecraft:sheep".equals(stored.mobId.toString())) return sheepRenderEntity(stored, minecraft);
-        Entity pixelmon = PixelmonEntityRenderCache.getOrCreate(stored);
-        if (pixelmon != null) return pixelmon;
+        if (PixelmonEntityRenderCache.isPixelmonStored(stored)) return null;
         return ClientEntityRenderCache.getOrCreate(stored);
     }
 
