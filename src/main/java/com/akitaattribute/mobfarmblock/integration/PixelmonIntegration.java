@@ -1,16 +1,25 @@
 package com.akitaattribute.mobfarmblock.integration;
 
+import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.mob.DisplaySnapshot;
 import com.akitaattribute.mobfarmblock.mob.DropProfile;
+import com.akitaattribute.mobfarmblock.mob.DropRule;
+import com.akitaattribute.mobfarmblock.mob.XpProfile;
 
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 
 /** Optional Pixelmon integration using guarded reflection only. */
 public final class PixelmonIntegration {
@@ -44,7 +53,148 @@ public final class PixelmonIntegration {
         return key.isEmpty() ? Optional.empty() : Optional.of(key.toString());
     }
 
-    public static Optional<DropProfile> resolveBattleDropProfile(Entity entity) { return Optional.empty(); }
+    public static Optional<DropProfile> resolveBattleDropProfile(Entity entity) {
+        if (!isPokemonEntity(entity)) return Optional.empty();
+        Optional<Object> pokemon = getPokemonObject(entity);
+        if (pokemon.isEmpty()) return Optional.of(DropProfile.EMPTY);
+        List<DropRule> rules = new ArrayList<>();
+        rules.addAll(rulesFromDropSources(pokemon.get(), pokemon.get()));
+        Object form = value(pokemon.get(), "getForm", "form").orElse(null);
+        if (form != null) rules.addAll(rulesFromDropSources(form, pokemon.get()));
+        Object species = value(pokemon.get(), "getSpecies", "species", "speciesValue").orElse(null);
+        if (species != null) rules.addAll(rulesFromDropSources(species, pokemon.get()));
+        DropProfile profile = rules.isEmpty() ? DropProfile.EMPTY : new DropProfile(List.copyOf(rules), XpProfile.NONE);
+        MobFarmBlockMod.LOGGER.debug("Resolved Pixelmon drop profile for {} with {} rules", getSpeciesId(entity).map(ResourceLocation::toString).orElse("unknown"), rules.size());
+        return Optional.of(profile);
+    }
+
+    private static List<DropRule> rulesFromDropSources(Object target, Object pokemon) {
+        if (target == null) return List.of();
+        List<DropRule> rules = new ArrayList<>();
+        for (String name : new String[] {"getDrops", "drops", "getDropItems", "dropItems", "getDropTable", "dropTable", "getLootTable", "lootTable", "getRewards", "rewards"}) {
+            value(target, name).ifPresent(table -> rules.addAll(rulesFromDropTable(table, pokemon)));
+        }
+        for (Method method : target.getClass().getMethods()) {
+            String name = method.getName().toLowerCase(java.util.Locale.ROOT);
+            if (!(name.contains("drop") || name.contains("loot") || name.contains("reward"))) continue;
+            if (method.getReturnType() == Void.TYPE || method.getParameterCount() > 2) continue;
+            try {
+                method.setAccessible(true);
+                Object result = null;
+                if (method.getParameterCount() == 0) result = method.invoke(target);
+                else if (method.getParameterCount() == 1) result = method.invoke(target, pokemon);
+                else {
+                    result = tryInvoke(method, target, 1, pokemon)
+                            .or(() -> tryInvoke(method, target, pokemon, 1))
+                            .orElse(null);
+                }
+                if (result != null && result != target) rules.addAll(rulesFromDropTable(result, pokemon));
+            } catch (Throwable error) {
+                warnOnce("Pixelmon drop method failed: " + target.getClass().getName() + "." + method.getName(), error);
+            }
+        }
+        return rules;
+    }
+
+    private static Optional<Object> tryInvoke(Method method, Object target, Object... args) {
+        try { return Optional.ofNullable(method.invoke(target, args)); }
+        catch (Throwable ignored) { return Optional.empty(); }
+    }
+
+    private static List<DropRule> rulesFromDropTable(Object table, Object pokemon) {
+        List<DropRule> rules = new ArrayList<>();
+        for (Object entry : extractDropEntries(table, pokemon)) dropRuleFromEntry(entry).ifPresent(rules::add);
+        return rules;
+    }
+
+    private static List<?> extractDropEntries(Object table, Object pokemon) {
+        if (table == null) return List.of();
+        if (table instanceof Collection<?> collection) return List.copyOf(collection);
+        if (table.getClass().isArray()) {
+            List<Object> values = new ArrayList<>();
+            int length = Array.getLength(table);
+            for (int i = 0; i < length; i++) values.add(Array.get(table, i));
+            return values;
+        }
+        for (String name : new String[] {"getEntries", "entries", "getDrops", "drops", "getRewards", "rewards", "getItems", "items"}) {
+            Optional<Object> value = value(table, name);
+            if (value.isPresent()) {
+                Object result = value.get();
+                if (result instanceof Collection<?> collection) return List.copyOf(collection);
+                if (result.getClass().isArray()) {
+                    List<Object> values = new ArrayList<>();
+                    int length = Array.getLength(result);
+                    for (int i = 0; i < length; i++) values.add(Array.get(result, i));
+                    return values;
+                }
+            }
+        }
+        return List.of(table);
+    }
+
+    private static Optional<DropRule> dropRuleFromEntry(Object entry) {
+        if (entry == null) return Optional.empty();
+        Optional<Object> rawItem = Optional.<Object>empty();
+        if (entry instanceof ItemStack || entry instanceof Item || entry instanceof ResourceLocation || entry instanceof CharSequence) rawItem = Optional.of(entry);
+        rawItem = rawItem.or(() -> value(entry, "getItemStack", "itemStack", "getStack", "stack", "getItem", "item", "getItemId", "itemId", "getItemID", "itemID", "getIdentifier", "identifier", "getResourceLocation", "resourceLocation"));
+        Optional<ResourceLocation> item = rawItem.flatMap(PixelmonIntegration::coerceItemId);
+        if (item.isEmpty()) return Optional.empty();
+        Optional<Object> rawPercentage = value(entry, "getPercentage", "percentage", "getChance", "chance", "getProbability", "probability", "getDropChance", "dropChance");
+        Optional<Object> rawQuantity = value(entry, "getQuantity", "quantity", "getCount", "count", "getAmount", "amount");
+        Optional<Object> rawMin = value(entry, "getMin", "min", "getMinCount", "minCount", "minimum");
+        Optional<Object> rawMax = value(entry, "getMax", "max", "getMaxCount", "maxCount", "maximum");
+        Optional<Object> rawRange = value(entry, "getQuantityRange", "quantityRange", "range", "countRange");
+        double percentage = rawPercentage.flatMap(PixelmonIntegration::coerceDouble).orElse(100.0D);
+        double chance = percentage > 1.0D ? percentage / 100.0D : percentage;
+        int[] range = rawRange.map(PixelmonIntegration::coerceRange).orElse(null);
+        int min = range == null ? rawMin.flatMap(PixelmonIntegration::coerceInt).or(() -> rawQuantity.flatMap(PixelmonIntegration::coerceInt)).orElse(1) : range[0];
+        int max = range == null ? rawMax.flatMap(PixelmonIntegration::coerceInt).orElse(min) : range[1];
+        return Optional.of(new DropRule(item.get(), Math.max(0.0D, Math.min(1.0D, chance)), Math.max(0, min), Math.max(Math.max(0, min), max), false, 0.0D, 0));
+    }
+
+    private static Optional<ResourceLocation> coerceItemId(Object value) {
+        if (value == null) return Optional.empty();
+        if (value instanceof ItemStack stack) return stack.isEmpty() ? Optional.empty() : Optional.of(BuiltInRegistries.ITEM.getKey(stack.getItem()));
+        if (value instanceof Item item) return Optional.of(BuiltInRegistries.ITEM.getKey(item));
+        Optional<Object> nested = value(value, "getItem", "item", "getStack", "stack", "getItemStack", "itemStack", "getIdentifier", "identifier", "getResourceLocation", "resourceLocation", "getRegistryName", "registryName");
+        if (nested.isPresent() && nested.get() != value) return coerceItemId(nested.get());
+        String text = String.valueOf(value).trim();
+        if (text.isBlank() || text.contains("@") && text.contains(".")) return Optional.empty();
+        int colon = text.lastIndexOf(':');
+        try {
+            if (colon > 0 && colon < text.length() - 1) return Optional.of(ResourceLocation.parse(sanitizeId(text)));
+            String path = sanitizePath(text);
+            return path.isBlank() ? Optional.empty() : Optional.of(ResourceLocation.withDefaultNamespace(path));
+        } catch (Throwable ignored) { return Optional.empty(); }
+    }
+
+    private static Optional<Integer> coerceInt(Object value) {
+        if (value instanceof Number number) return Optional.of(number.intValue());
+        try { return Optional.of(Integer.parseInt(String.valueOf(value).replaceAll("[^0-9-]", ""))); } catch (Throwable ignored) { return Optional.empty(); }
+    }
+
+    private static Optional<Double> coerceDouble(Object value) {
+        if (value instanceof Number number) return Optional.of(number.doubleValue());
+        try { return Optional.of(Double.parseDouble(String.valueOf(value).replace("%", ""))); } catch (Throwable ignored) { return Optional.empty(); }
+    }
+
+    private static int[] coerceRange(Object value) {
+        if (value instanceof Collection<?> collection && !collection.isEmpty()) {
+            List<Integer> ints = collection.stream().map(PixelmonIntegration::coerceInt).filter(Optional::isPresent).map(Optional::get).toList();
+            if (!ints.isEmpty()) return orderedRange(ints.get(0), ints.get(ints.size() - 1));
+        }
+        Optional<Integer> min = value(value, "getMin", "min", "getMinimum", "minimum", "getStart", "start", "getFirst", "first").flatMap(PixelmonIntegration::coerceInt);
+        Optional<Integer> max = value(value, "getMax", "max", "getMaximum", "maximum", "getEndInclusive", "endInclusive", "getEnd", "end", "getLast", "last").flatMap(PixelmonIntegration::coerceInt);
+        if (min.isPresent() || max.isPresent()) return orderedRange(min.orElse(max.orElse(1)), max.orElse(min.orElse(1)));
+        String text = String.valueOf(value).replace("..", "-").replace(" ", "");
+        String[] parts = text.split("-");
+        if (parts.length >= 2) {
+            try { return orderedRange(Integer.parseInt(parts[0].replaceAll("\\D", "")), Integer.parseInt(parts[1].replaceAll("\\D", ""))); } catch (Throwable ignored) {}
+        }
+        return new int[] {1, 1};
+    }
+
+    private static int[] orderedRange(int a, int b) { return new int[] {Math.min(a, b), Math.max(a, b)}; }
 
     public static Optional<DisplaySnapshot> resolveDisplay(Entity entity) {
         if (!isPokemonEntity(entity) || !(entity instanceof LivingEntity living)) return Optional.empty();
