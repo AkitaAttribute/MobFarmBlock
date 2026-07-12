@@ -2,6 +2,7 @@ package com.akitaattribute.mobfarmblock.client;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.item.CaptureToolItem;
+import com.akitaattribute.mobfarmblock.mob.MobKind;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
@@ -45,7 +46,11 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
         poseStack.translate(0.0D, -entity.getBbHeight() * 0.50D, 0.0D);
         poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
         ClientEntityRenderCache.freezeForRender(entity);
-        minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, 0.0F, poseStack, buffer, LightTexture.FULL_BRIGHT);
+        try {
+            minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, 0.0F, poseStack, buffer, LightTexture.FULL_BRIGHT);
+        } catch (Throwable error) {
+            warnRenderFailure(stored, error);
+        }
         poseStack.popPose();
     }
 
@@ -59,16 +64,23 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
     }
 
     private static Entity safeGetRenderEntity(StoredMob stored) {
+        if (stored != null && stored.kind == MobKind.PIXELMON) {
+            return null;
+        }
         try {
             Entity pixelmon = PixelmonEntityRenderCache.getOrCreate(stored);
             if (pixelmon != null) return pixelmon;
             return ClientEntityRenderCache.getOrCreate(stored);
         } catch (Throwable error) {
-            String key = stored == null ? "unknown" : stored.mobId + "|" + stored.speciesId + "|" + stored.display.variantKey();
-            if (WARNED_RENDER_FAILURES.add(key)) {
-                MobFarmBlockMod.LOGGER.error("Capture Tool mob overlay render failed for {}; skipping overlay so item rendering cannot crash", key, error);
-            }
+            warnRenderFailure(stored, error);
             return null;
+        }
+    }
+
+    private static void warnRenderFailure(StoredMob stored, Throwable error) {
+        String key = stored == null ? "unknown" : stored.mobId + "|" + stored.speciesId + "|" + stored.display.variantKey();
+        if (WARNED_RENDER_FAILURES.add(key)) {
+            MobFarmBlockMod.LOGGER.error("Capture Tool mob overlay render failed for {}; skipping overlay so item rendering cannot crash", key, error);
         }
     }
 
