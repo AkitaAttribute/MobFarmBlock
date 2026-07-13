@@ -60,9 +60,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         Minecraft minecraft = Minecraft.getInstance();
         boolean inspected = isInspected(minecraft, blockEntity.getBlockPos());
         Entity entity = renderEntity(stored, minecraft);
-        if (PixelmonEntityRenderCache.isPixelmonStored(stored)) {
-            PixelmonSpriteRenderer.renderWorldBillboard(stored, minecraft, poseStack, buffer, 0.5D, 0.76D, 0.5D, inspected ? 0.62F : 0.52F);
-        } else if (entity != null) {
+        if (entity != null) {
             poseStack.pushPose();
             poseStack.translate(0.5D, 0.58D, 0.5D);
             float scale = 0.32F;
@@ -70,15 +68,21 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
             poseStack.scale(scale, scale, scale);
             poseStack.mulPose(Axis.YP.rotationDegrees(blockEntity.getBlockState().getValue(MobFarmBlock.FACING).toYRot()));
             ClientEntityRenderCache.freezeForRender(entity);
-            minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, 0.0F, poseStack, buffer, 0x00F000F0);
+            try {
+                minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, 0.0F, poseStack, buffer, 0x00F000F0);
+            } catch (Throwable error) {
+                MobFarmBlockMod.LOGGER.error("Placed pen mob render failed for {}; skipping entity overlay", stored.speciesId != null ? stored.speciesId : stored.mobId, error);
+            }
             poseStack.popPose();
+        } else if (PixelmonEntityRenderCache.isPixelmonStored(stored)) {
+            PixelmonSpriteRenderer.renderWorldBillboard(stored, minecraft, poseStack, buffer, 0.5D, 0.76D, 0.5D, inspected ? 0.62F : 0.52F);
         }
         if (inspected) renderLookUi(blockEntity, entity, poseStack, buffer, minecraft);
     }
 
     private static Entity renderEntity(StoredMob stored, Minecraft minecraft) {
         if ("minecraft:sheep".equals(stored.mobId.toString())) return sheepRenderEntity(stored, minecraft);
-        if (PixelmonEntityRenderCache.isPixelmonStored(stored)) return null;
+        if (PixelmonEntityRenderCache.isPixelmonStored(stored)) return PixelmonEntityRenderCache.getOrCreate(stored);
         return ClientEntityRenderCache.getOrCreate(stored);
     }
 
