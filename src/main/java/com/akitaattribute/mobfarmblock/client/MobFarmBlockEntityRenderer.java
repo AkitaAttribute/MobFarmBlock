@@ -74,8 +74,6 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
                 MobFarmBlockMod.LOGGER.error("Placed pen mob render failed for {}; skipping entity overlay", stored.speciesId != null ? stored.speciesId : stored.mobId, error);
             }
             poseStack.popPose();
-        } else if (PixelmonEntityRenderCache.isPixelmonStored(stored)) {
-            PixelmonSpriteRenderer.renderWorldBillboard(stored, minecraft, poseStack, buffer, 0.5D, 0.76D, 0.5D, inspected ? 0.62F : 0.52F);
         }
         if (inspected) renderLookUi(blockEntity, entity, poseStack, buffer, minecraft);
     }
