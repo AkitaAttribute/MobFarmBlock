@@ -9,7 +9,6 @@ import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.integration.CobblemonIntegration;
 import com.akitaattribute.mobfarmblock.integration.PixelmonDropFallback;
 import com.akitaattribute.mobfarmblock.integration.PixelmonIntegration;
-import com.akitaattribute.mobfarmblock.integration.PixelmonSpriteIdentity;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
@@ -33,8 +32,7 @@ public final class MobProfileFactory {
             cobblemonRenderSnapshot = CobblemonIntegration.getRenderSnapshot(entity).orElse(null);
         } else if (kind == MobKind.PIXELMON && species != null) {
             String variant = PixelmonIntegration.getDisplayKey(entity).orElse(species.toString());
-            ResourceLocation spriteTexture = PixelmonSpriteIdentity.getSpriteTexture(entity).orElse(display.textureId());
-            display = new DisplaySnapshot(display.entityTypeId(), spriteTexture, variant, display.colorKey(), display.baby(), display.scale());
+            display = new DisplaySnapshot(display.entityTypeId(), display.textureId(), variant, display.colorKey(), display.baby(), display.scale());
         }
         DropProfile drops = null;
         String source = "vanilla";
