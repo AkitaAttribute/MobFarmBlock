@@ -60,7 +60,9 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         Minecraft minecraft = Minecraft.getInstance();
         boolean inspected = isInspected(minecraft, blockEntity.getBlockPos());
         Entity entity = renderEntity(stored, minecraft);
-        if (entity != null) {
+        if (PixelmonEntityRenderCache.isPixelmonStored(stored)) {
+            PixelmonSpriteRenderer.renderWorldBillboard(stored, minecraft, poseStack, buffer, 0.5D, 0.76D, 0.5D, inspected ? 0.62F : 0.52F);
+        } else if (entity != null) {
             poseStack.pushPose();
             poseStack.translate(0.5D, 0.58D, 0.5D);
             float scale = 0.32F;
