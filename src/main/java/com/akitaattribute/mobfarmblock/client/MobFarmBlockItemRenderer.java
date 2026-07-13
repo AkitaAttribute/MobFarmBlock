@@ -35,13 +35,11 @@ public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
 
         if (!MobFarmBlockItemData.hasStoredMob(stack) || !slotContext) return;
         StoredMob stored = MobFarmBlockItemData.getStoredMob(stack);
-        if (stored.kind == MobKind.PIXELMON) {
-            PixelmonSpriteRenderer.renderGuiSprite(stored, poseStack, buffer, 0.50D, 0.72D, 0.04D, 1.08F);
+        Entity entity = safeGetRenderEntity(stored);
+        if (entity == null) {
+            if (stored.kind == MobKind.PIXELMON) PixelmonSpriteRenderer.renderGuiSprite(stored, poseStack, buffer, 0.50D, 0.72D, 0.04D, 1.08F);
             return;
         }
-
-        Entity entity = safeGetRenderEntity(stored);
-        if (entity == null) return;
 
         poseStack.pushPose();
         float scale = entityScale(entity, stored);
@@ -53,6 +51,7 @@ public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
             minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, 0.0F, poseStack, buffer, LightTexture.FULL_BRIGHT);
         } catch (Throwable error) {
             warnRenderFailure(stored, error);
+            if (stored.kind == MobKind.PIXELMON) PixelmonSpriteRenderer.renderGuiSprite(stored, poseStack, buffer, 0.50D, 0.72D, 0.04D, 1.08F);
         }
         poseStack.popPose();
     }
@@ -66,9 +65,6 @@ public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
     }
 
     private static Entity safeGetRenderEntity(StoredMob stored) {
-        if (stored != null && stored.kind == MobKind.PIXELMON) {
-            return null;
-        }
         try {
             Entity pixelmon = PixelmonEntityRenderCache.getOrCreate(stored);
             if (pixelmon != null) return pixelmon;
