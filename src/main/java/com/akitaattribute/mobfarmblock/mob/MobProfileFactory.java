@@ -9,6 +9,7 @@ import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.integration.CobblemonIntegration;
 import com.akitaattribute.mobfarmblock.integration.PixelmonDropFallback;
 import com.akitaattribute.mobfarmblock.integration.PixelmonIntegration;
+import com.akitaattribute.mobfarmblock.integration.PixelmonRenderSnapshotFactory;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
@@ -26,6 +27,7 @@ public final class MobProfileFactory {
         DisplaySnapshot display = resolveDisplay(entity);
         ResourceLocation species = CobblemonIntegration.getSpeciesId(entity).or(() -> PixelmonIntegration.getSpeciesId(entity)).orElse(null);
         CobblemonRenderSnapshot cobblemonRenderSnapshot = null;
+        PixelmonRenderSnapshot pixelmonRenderSnapshot = null;
         if (kind == MobKind.COBBLEMON && species != null) {
             String variant = CobblemonIntegration.getDisplayKey(entity).orElse(species.toString());
             display = new DisplaySnapshot(display.entityTypeId(), display.textureId(), variant, display.colorKey(), display.baby(), display.scale());
@@ -33,6 +35,7 @@ public final class MobProfileFactory {
         } else if (kind == MobKind.PIXELMON && species != null) {
             String variant = PixelmonIntegration.getDisplayKey(entity).orElse(species.toString());
             display = new DisplaySnapshot(display.entityTypeId(), display.textureId(), variant, display.colorKey(), display.baby(), display.scale());
+            pixelmonRenderSnapshot = PixelmonRenderSnapshotFactory.capture(entity).orElse(null);
         }
         DropProfile drops = null;
         String source = "vanilla";
@@ -57,7 +60,7 @@ public final class MobProfileFactory {
             }
         }
         return new StoredMob(mobId, kind, 1, display, initialState(mobId, display), drops,
-                builtInInteractions(mobId), new HashMap<>(), species, source, cobblemonRenderSnapshot);
+                builtInInteractions(mobId), new HashMap<>(), species, source, cobblemonRenderSnapshot, pixelmonRenderSnapshot);
     }
 
     public static StoredMob vanilla(ResourceLocation mobId, DisplaySnapshot display, long count) {
