@@ -19,16 +19,24 @@ public class StoredMob {
     public ResourceLocation speciesId;
     public String dropProfileSource;
     public CobblemonRenderSnapshot cobblemonRenderSnapshot;
+    public PixelmonRenderSnapshot pixelmonRenderSnapshot;
 
     public StoredMob(ResourceLocation mobId, MobKind kind, long count, DisplaySnapshot display, CompoundTag state,
                      DropProfile dropProfile, InteractionProfile interactionProfile, Map<ResourceLocation, Long> readyAtTicks,
                      ResourceLocation speciesId, String dropProfileSource) {
-        this(mobId, kind, count, display, state, dropProfile, interactionProfile, readyAtTicks, speciesId, dropProfileSource, null);
+        this(mobId, kind, count, display, state, dropProfile, interactionProfile, readyAtTicks, speciesId, dropProfileSource, null, null);
     }
 
     public StoredMob(ResourceLocation mobId, MobKind kind, long count, DisplaySnapshot display, CompoundTag state,
                      DropProfile dropProfile, InteractionProfile interactionProfile, Map<ResourceLocation, Long> readyAtTicks,
                      ResourceLocation speciesId, String dropProfileSource, CobblemonRenderSnapshot cobblemonRenderSnapshot) {
+        this(mobId, kind, count, display, state, dropProfile, interactionProfile, readyAtTicks, speciesId, dropProfileSource, cobblemonRenderSnapshot, null);
+    }
+
+    public StoredMob(ResourceLocation mobId, MobKind kind, long count, DisplaySnapshot display, CompoundTag state,
+                     DropProfile dropProfile, InteractionProfile interactionProfile, Map<ResourceLocation, Long> readyAtTicks,
+                     ResourceLocation speciesId, String dropProfileSource, CobblemonRenderSnapshot cobblemonRenderSnapshot,
+                     PixelmonRenderSnapshot pixelmonRenderSnapshot) {
         this.mobId = mobId;
         this.kind = kind;
         this.count = count;
@@ -40,6 +48,7 @@ public class StoredMob {
         this.speciesId = speciesId;
         this.dropProfileSource = dropProfileSource == null ? "empty" : dropProfileSource;
         this.cobblemonRenderSnapshot = cobblemonRenderSnapshot;
+        this.pixelmonRenderSnapshot = pixelmonRenderSnapshot;
     }
 
     public static StoredMob empty() {
@@ -76,7 +85,7 @@ public class StoredMob {
 
     public StoredMob copyWithCount(long newCount) {
         return new StoredMob(mobId, kind, newCount, display, state.copy(), dropProfile, interactionProfile,
-                new HashMap<>(readyAtTicks), speciesId, dropProfileSource, cobblemonRenderSnapshot);
+                new HashMap<>(readyAtTicks), speciesId, dropProfileSource, cobblemonRenderSnapshot, pixelmonRenderSnapshot);
     }
 
     public CompoundTag toNbt() {
@@ -91,6 +100,7 @@ public class StoredMob {
         if (speciesId != null) tag.putString("speciesId", speciesId.toString());
         tag.putString("dropProfileSource", dropProfileSource);
         if (cobblemonRenderSnapshot != null) tag.put("cobblemonRenderSnapshot", cobblemonRenderSnapshot.toNbt());
+        if (pixelmonRenderSnapshot != null) tag.put("pixelmonRenderSnapshot", pixelmonRenderSnapshot.toNbt());
         CompoundTag readyTag = new CompoundTag();
         readyAtTicks.forEach((action, tick) -> readyTag.putLong(action.toString(), tick));
         tag.put("readyAtTicks", readyTag);
@@ -102,7 +112,8 @@ public class StoredMob {
         CompoundTag readyTag = tag.getCompound("readyAtTicks");
         for (String key : readyTag.getAllKeys()) readyAtTicks.put(ResourceLocation.parse(key), tag.getCompound("readyAtTicks").getLong(key));
         ResourceLocation speciesId = tag.contains("speciesId") ? ResourceLocation.parse(tag.getString("speciesId")) : null;
-        CobblemonRenderSnapshot snapshot = tag.contains("cobblemonRenderSnapshot") ? CobblemonRenderSnapshot.fromNbt(tag.getCompound("cobblemonRenderSnapshot")) : null;
+        CobblemonRenderSnapshot cobblemonSnapshot = tag.contains("cobblemonRenderSnapshot") ? CobblemonRenderSnapshot.fromNbt(tag.getCompound("cobblemonRenderSnapshot")) : null;
+        PixelmonRenderSnapshot pixelmonSnapshot = tag.contains("pixelmonRenderSnapshot") ? PixelmonRenderSnapshot.fromNbt(tag.getCompound("pixelmonRenderSnapshot")) : null;
         return new StoredMob(
                 ResourceLocation.parse(tag.getString("mobId")),
                 MobKind.valueOf(tag.contains("kind") ? tag.getString("kind") : MobKind.CUSTOM.name()),
@@ -114,7 +125,8 @@ public class StoredMob {
                 readyAtTicks,
                 speciesId,
                 tag.contains("dropProfileSource") ? tag.getString("dropProfileSource") : "empty",
-                snapshot
+                cobblemonSnapshot,
+                pixelmonSnapshot
         );
     }
 }
