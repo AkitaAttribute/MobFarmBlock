@@ -1,16 +1,13 @@
 package com.akitaattribute.mobfarmblock.client;
 
-import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.akitaattribute.mobfarmblock.mob.MobKind;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
-import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 
@@ -27,7 +24,7 @@ public final class PixelmonSpriteRenderer {
     private static final String GENERIC_PIXELMON_TEXTURE = "pixelmon:textures/entity/pixelmon.png";
     private static final Pattern SPRITE_PATTERN = Pattern.compile("\\\"sprite\\\"\\s*:\\s*\\\"(pixelmon:[^\\\"]*sprite\\.png)\\\"");
     private static final java.util.Set<String> WARNED = new java.util.HashSet<>();
-    private static final ConcurrentHashMap<ResourceLocation, SpriteRegion> REGION_CACHE = new ConcurrentHashMap<>();
+    private static final SpriteRegion SPRITE_CROP = new SpriteRegion(0.10F, 0.10F, 0.90F, 0.90F, 1.0F, 1.0F);
 
     public static boolean isRenderable(StoredMob stored) {
         return spriteTexture(stored).isPresent();
@@ -57,7 +54,8 @@ public final class PixelmonSpriteRenderer {
         try {
             poseStack.translate(x, y, z);
             poseStack.mulPose(minecraft.getEntityRenderDispatcher().cameraOrientation());
-            poseStack.scale(size, -size, size);
+            float worldSize = size * 1.85F;
+            poseStack.scale(worldSize, -worldSize, worldSize);
             renderQuad(texture.get(), poseStack, buffer, 1.0F);
             return true;
         } catch (Throwable error) {
@@ -69,7 +67,7 @@ public final class PixelmonSpriteRenderer {
     }
 
     private static void renderQuad(ResourceLocation texture, PoseStack poseStack, MultiBufferSource buffer, float size) {
-        SpriteRegion region = REGION_CACHE.computeIfAbsent(texture, PixelmonSpriteRenderer::loadRegion);
+        SpriteRegion region = SPRITE_CROP;
         float halfWidth = size * region.widthScale() / 2.0F;
         float halfHeight = size * region.heightScale() / 2.0F;
         Matrix4f matrix = poseStack.last().pose();
@@ -78,52 +76,6 @@ public final class PixelmonSpriteRenderer {
         vertex(consumer, matrix, halfWidth, -halfHeight, 0.0F, region.u1(), region.v1());
         vertex(consumer, matrix, halfWidth, halfHeight, 0.0F, region.u1(), region.v0());
         vertex(consumer, matrix, -halfWidth, halfHeight, 0.0F, region.u0(), region.v0());
-    }
-
-    private static SpriteRegion loadRegion(ResourceLocation texture) {
-        try {
-            Optional<net.minecraft.server.packs.resources.Resource> resource = Minecraft.getInstance().getResourceManager().getResource(texture);
-            if (resource.isEmpty()) return SpriteRegion.FULL;
-            try (InputStream in = resource.get().open(); NativeImage image = NativeImage.read(in)) {
-                int width = image.getWidth();
-                int height = image.getHeight();
-                int minX = width;
-                int minY = height;
-                int maxX = -1;
-                int maxY = -1;
-                for (int y = 0; y < height; y++) {
-                    for (int x = 0; x < width; x++) {
-                        int pixel = image.getPixelRGBA(x, y);
-                        int alpha = (pixel >>> 24) & 0xFF;
-                        if (alpha <= 12) continue;
-                        minX = Math.min(minX, x);
-                        minY = Math.min(minY, y);
-                        maxX = Math.max(maxX, x);
-                        maxY = Math.max(maxY, y);
-                    }
-                }
-                if (maxX < minX || maxY < minY) return SpriteRegion.FULL;
-                int padding = 2;
-                minX = Math.max(0, minX - padding);
-                minY = Math.max(0, minY - padding);
-                maxX = Math.min(width - 1, maxX + padding);
-                maxY = Math.min(height - 1, maxY + padding);
-                float croppedWidth = Math.max(1.0F, maxX - minX + 1.0F);
-                float croppedHeight = Math.max(1.0F, maxY - minY + 1.0F);
-                float maxDimension = Math.max(croppedWidth, croppedHeight);
-                return new SpriteRegion(
-                        minX / (float) width,
-                        minY / (float) height,
-                        (maxX + 1.0F) / (float) width,
-                        (maxY + 1.0F) / (float) height,
-                        croppedWidth / maxDimension,
-                        croppedHeight / maxDimension
-                );
-            }
-        } catch (Throwable error) {
-            warnOnce("loadRegion:" + texture, error);
-            return SpriteRegion.FULL;
-        }
     }
 
     private static void vertex(VertexConsumer consumer, Matrix4f matrix, float x, float y, float z, float u, float v) {
@@ -303,9 +255,7 @@ public final class PixelmonSpriteRenderer {
     private static String titleCase(String text) { if (text == null || text.isBlank()) return text; return Character.toUpperCase(text.charAt(0)) + text.substring(1).toLowerCase(java.util.Locale.ROOT); }
     private static void warnOnce(String message, Throwable error) { if (WARNED.add(message)) com.akitaattribute.mobfarmblock.MobFarmBlockMod.LOGGER.debug("Pixelmon sprite render fallback: {}: {}", message, error.toString()); }
 
-    private record SpriteRegion(float u0, float v0, float u1, float v1, float widthScale, float heightScale) {
-        private static final SpriteRegion FULL = new SpriteRegion(0.0F, 0.0F, 1.0F, 1.0F, 1.0F, 1.0F);
-    }
+    private record SpriteRegion(float u0, float v0, float u1, float v1, float widthScale, float heightScale) {}
 
     private PixelmonSpriteRenderer() {}
 }
