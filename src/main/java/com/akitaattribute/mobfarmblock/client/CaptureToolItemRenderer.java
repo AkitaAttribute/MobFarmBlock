@@ -37,7 +37,7 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
         if (!filled || !slotContext) return;
         StoredMob stored = CaptureToolItem.getStoredMob(stack);
         if (stored.kind == MobKind.PIXELMON) {
-            PixelmonSpriteRenderer.renderGuiSprite(stored, poseStack, buffer, 0.66D, 0.78D, 0.03D, 0.58F);
+            PixelmonSpriteRenderer.renderGuiSprite(stored, poseStack, buffer, 0.68D, 0.80D, 0.03D, 1.28F);
             return;
         }
 
