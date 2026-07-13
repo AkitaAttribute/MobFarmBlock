@@ -1,10 +1,14 @@
 package com.akitaattribute.mobfarmblock.integration;
 
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -13,6 +17,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.jar.JarFile;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -34,7 +39,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
-/** Extra Pixelmon drop discovery that probes the live entity and a cached data-resource index. */
+/** Extra Pixelmon drop discovery that probes the live entity and cached Pixelmon drop resources. */
 public final class PixelmonDropFallback {
     private static final java.util.Set<String> WARNED = new java.util.HashSet<>();
     private static final Pattern BASE_EXP = Pattern.compile("\\\"baseExp\\\"\\s*:\\s*(\\d+)");
@@ -64,7 +69,7 @@ public final class PixelmonDropFallback {
         ResourceManager manager = entity.level().getServer().getResourceManager();
         DropIndex index = DROP_INDEX_CACHE.computeIfAbsent(System.identityHashCode(manager), ignored -> buildDropIndex(manager));
         List<DropRule> rules = index.bySpecies().getOrDefault(normalizeSpeciesKey(species), List.of());
-        if (rules.isEmpty()) MobFarmBlockMod.LOGGER.debug("Pixelmon drop index had no rules for {} after scanning {} resources", species, index.resourceCount());
+        if (rules.isEmpty()) MobFarmBlockMod.LOGGER.warn("Pixelmon drop index had no rules for {} after scanning {} resources for {} species", species, index.resourceCount(), index.bySpecies().size());
         return rules;
     }
 
@@ -76,23 +81,61 @@ public final class PixelmonDropFallback {
             try {
                 var resources = manager.listResources(root, id -> id.getNamespace().equals("pixelmon")
                         && id.getPath().endsWith(".json")
-                        && (id.getPath().contains("drop") || id.getPath().contains("loot") || id.getPath().contains("reward")));
-                for (var entry : resources.entrySet()) {
-                    String key = entry.getKey().toString();
-                    if (!seen.add(key)) continue;
-                    scanned[0]++;
-                    ResourceLocation filenameItem = itemFromFileName(entry.getKey()).orElse(null);
-                    for (SpeciesRule rule : speciesRulesFromJson(readResource(entry.getValue()), filenameItem)) {
-                        bySpecies.computeIfAbsent(rule.species(), ignored -> new ArrayList<>()).add(rule.rule());
-                    }
-                }
+                        && looksLikeDropResourcePath(id.getPath()));
+                for (var entry : resources.entrySet()) indexDropJson(entry.getKey().toString(), readResource(entry.getValue()), itemFromFileName(entry.getKey()).orElse(null), bySpecies, seen, scanned);
             } catch (Throwable error) {
                 warnOnce("Pixelmon resource drop index scan failed: " + root, error);
             }
         }
+        indexPixelmonJarDropJson(bySpecies, seen, scanned);
         bySpecies.replaceAll((species, rules) -> List.copyOf(dedupeRules(rules)));
         MobFarmBlockMod.LOGGER.info("Indexed {} Pixelmon drop resources for {} species", scanned[0], bySpecies.size());
         return new DropIndex(Map.copyOf(bySpecies), scanned[0]);
+    }
+
+    private static void indexPixelmonJarDropJson(Map<String, List<DropRule>> bySpecies, Set<String> seen, int[] scanned) {
+        Optional<Path> jar = pixelmonJarPath();
+        if (jar.isEmpty()) return;
+        try (JarFile jarFile = new JarFile(jar.get().toFile())) {
+            var entries = jarFile.entries();
+            while (entries.hasMoreElements()) {
+                var entry = entries.nextElement();
+                if (entry.isDirectory()) continue;
+                String name = entry.getName();
+                if (!name.endsWith(".json") || !looksLikeDropResourcePath(name)) continue;
+                try (InputStream in = jarFile.getInputStream(entry)) {
+                    indexDropJson("jar:" + name, readStream(in), itemFromPath(name).orElse(null), bySpecies, seen, scanned);
+                }
+            }
+        } catch (Throwable error) {
+            warnOnce("Pixelmon jar drop index scan failed", error);
+        }
+    }
+
+    private static Optional<Path> pixelmonJarPath() {
+        for (String className : List.of("com.pixelmonmod.pixelmon.Pixelmon", "com.pixelmonmod.pixelmon.PixelmonMod", "com.pixelmonmod.pixelmon.entities.pixelmon.PixelmonEntity")) {
+            try {
+                Class<?> type = Class.forName(className);
+                URL url = type.getProtectionDomain().getCodeSource().getLocation();
+                if (url == null) continue;
+                Path path = Path.of(url.toURI());
+                if (Files.isRegularFile(path)) return Optional.of(path);
+            } catch (Throwable ignored) {}
+        }
+        return Optional.empty();
+    }
+
+    private static boolean looksLikeDropResourcePath(String path) {
+        String lower = path.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("drop") || lower.contains("loot") || lower.contains("reward");
+    }
+
+    private static void indexDropJson(String key, String json, ResourceLocation filenameItem, Map<String, List<DropRule>> bySpecies, Set<String> seen, int[] scanned) {
+        if (!seen.add(key)) return;
+        scanned[0]++;
+        for (SpeciesRule rule : speciesRulesFromJson(json, filenameItem)) {
+            bySpecies.computeIfAbsent(rule.species(), ignored -> new ArrayList<>()).add(rule.rule());
+        }
     }
 
     private static List<DropRule> dedupeRules(List<DropRule> rules) {
@@ -102,7 +145,11 @@ public final class PixelmonDropFallback {
     }
 
     private static String readResource(Resource resource) throws java.io.IOException {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(resource.open(), StandardCharsets.UTF_8))) {
+        try (InputStream in = resource.open()) { return readStream(in); }
+    }
+
+    private static String readStream(InputStream in) throws java.io.IOException {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
             StringBuilder out = new StringBuilder();
             String line;
             while ((line = reader.readLine()) != null) out.append(line).append('\n');
@@ -115,7 +162,7 @@ public final class PixelmonDropFallback {
         try {
             JsonElement root = JsonParser.parseString(json);
             List<SpeciesRule> rules = new ArrayList<>();
-            collectJsonRules(root, new JsonContext(filenameItem, null, null, null, false), rules);
+            collectJsonRules(root, new JsonContext(filenameItem, null, null, null), rules);
             return rules;
         } catch (Throwable error) {
             warnOnce("Pixelmon drop JSON parse failed", error);
@@ -126,8 +173,7 @@ public final class PixelmonDropFallback {
     private static void collectJsonRules(JsonElement element, JsonContext inherited, List<SpeciesRule> out) {
         if (element == null || element.isJsonNull()) return;
         if (element.isJsonArray()) {
-            JsonArray array = element.getAsJsonArray();
-            for (JsonElement child : array) collectJsonRules(child, inherited, out);
+            for (JsonElement child : element.getAsJsonArray()) collectJsonRules(child, inherited, out);
             return;
         }
         if (!element.isJsonObject()) return;
@@ -135,9 +181,7 @@ public final class PixelmonDropFallback {
         JsonObject object = element.getAsJsonObject();
         JsonContext context = inherited.merge(object);
         Set<String> species = speciesNames(object);
-        if (context.item() != null && !species.isEmpty()) {
-            for (String name : species) out.add(new SpeciesRule(normalizeSpeciesKey(name), context.toRule()));
-        }
+        if (context.item() != null && !species.isEmpty()) for (String name : species) out.add(new SpeciesRule(normalizeSpeciesKey(name), context.toRule()));
 
         for (var entry : object.entrySet()) {
             String key = entry.getKey();
@@ -145,8 +189,8 @@ public final class PixelmonDropFallback {
             JsonContext childContext = context;
             Optional<ResourceLocation> keyedItem = coerceItemId(key);
             if (keyedItem.isPresent()) childContext = childContext.withItem(keyedItem.get());
-            if (context.item() != null && looksLikeSpeciesKey(key) && value != null && value.isJsonObject()) {
-                JsonContext rowContext = childContext.merge(value.getAsJsonObject());
+            if (context.item() != null && looksLikeSpeciesKey(key)) {
+                JsonContext rowContext = value != null && value.isJsonObject() ? childContext.merge(value.getAsJsonObject()) : childContext;
                 out.add(new SpeciesRule(normalizeSpeciesKey(key), rowContext.toRule()));
             }
             collectJsonRules(value, childContext, out);
@@ -169,14 +213,8 @@ public final class PixelmonDropFallback {
             if (primitive.isString()) nameFromText(primitive.getAsString()).ifPresent(names::add);
             return;
         }
-        if (element.isJsonArray()) {
-            for (JsonElement child : element.getAsJsonArray()) collectNames(child, names);
-            return;
-        }
-        if (element.isJsonObject()) {
-            JsonObject object = element.getAsJsonObject();
-            for (String key : List.of("name", "pokemon", "species", "id", "value")) if (object.has(key)) collectNames(object.get(key), names);
-        }
+        if (element.isJsonArray()) { for (JsonElement child : element.getAsJsonArray()) collectNames(child, names); return; }
+        if (element.isJsonObject()) for (String key : List.of("name", "pokemon", "species", "id", "value")) if (element.getAsJsonObject().has(key)) collectNames(element.getAsJsonObject().get(key), names);
     }
 
     private static Optional<String> nameFromText(String text) {
@@ -193,12 +231,13 @@ public final class PixelmonDropFallback {
         if (key == null || key.isBlank()) return false;
         String lower = key.toLowerCase(java.util.Locale.ROOT);
         if (lower.contains(":")) return false;
-        if (List.of("item", "items", "drops", "entries", "pokemon", "species", "chance", "probability", "percentage", "quantity", "count", "min", "max", "amount", "weight").contains(lower)) return false;
+        if (List.of("item", "items", "drops", "entries", "pokemon", "species", "chance", "probability", "percentage", "quantity", "count", "min", "max", "amount", "weight", "type", "types").contains(lower)) return false;
         return lower.matches("[a-z0-9_.-]+");
     }
 
-    private static Optional<ResourceLocation> itemFromFileName(ResourceLocation id) {
-        String path = id.getPath();
+    private static Optional<ResourceLocation> itemFromFileName(ResourceLocation id) { return itemFromPath(id.getPath()); }
+
+    private static Optional<ResourceLocation> itemFromPath(String path) {
         int slash = path.lastIndexOf('/');
         String name = slash >= 0 ? path.substring(slash + 1) : path;
         if (name.endsWith(".json")) name = name.substring(0, name.length() - 5);
@@ -220,9 +259,7 @@ public final class PixelmonDropFallback {
     private static List<DropRule> rulesFromDropSources(Object target) {
         if (target == null) return List.of();
         List<DropRule> rules = new ArrayList<>();
-        for (String name : new String[] {"getDrops", "drops", "getDropItems", "dropItems", "getDropTable", "dropTable", "getLootTable", "lootTable", "getRewards", "rewards"}) {
-            value(target, name).ifPresent(table -> rules.addAll(rulesFromDropTable(table)));
-        }
+        for (String name : new String[] {"getDrops", "drops", "getDropItems", "dropItems", "getDropTable", "dropTable", "getLootTable", "lootTable", "getRewards", "rewards"}) value(target, name).ifPresent(table -> rules.addAll(rulesFromDropTable(table)));
         for (Method method : target.getClass().getMethods()) {
             String name = method.getName().toLowerCase(java.util.Locale.ROOT);
             if (!(name.contains("drop") || name.contains("loot") || name.contains("reward"))) continue;
@@ -349,27 +386,22 @@ public final class PixelmonDropFallback {
 
     private static void warnOnce(String key, Throwable error) { if (WARNED.add(key)) MobFarmBlockMod.LOGGER.debug("Pixelmon fallback drops failed for {}: {}", key, error.toString()); }
 
-    private record JsonContext(ResourceLocation item, Double chance, Integer min, Integer max, boolean hasQuantity) {
+    private record JsonContext(ResourceLocation item, Double chance, Integer min, Integer max) {
         JsonContext merge(JsonObject object) {
             ResourceLocation nextItem = itemFromObject(object).orElse(item);
             Double nextChance = number(object, "chance", "probability", "percentage", "dropChance").orElse(chance);
             Integer nextMin = number(object, "min", "minCount", "minimum").map(Double::intValue).orElse(min);
             Integer nextMax = number(object, "max", "maxCount", "maximum").map(Double::intValue).orElse(max);
             Optional<JsonElement> quantity = element(object, "quantity", "count", "amount");
-            boolean nextHasQuantity = hasQuantity || quantity.isPresent() || nextMin != null || nextMax != null;
             if (quantity.isPresent()) {
                 int[] range = coerceRangeFromJson(quantity.get());
-                if (range != null) {
-                    nextMin = range[0];
-                    nextMax = range[1];
-                } else if (nextMin == null) {
-                    nextMin = numberFromJson(quantity.get()).map(Double::intValue).orElse(null);
-                }
+                if (range != null) { nextMin = range[0]; nextMax = range[1]; }
+                else if (nextMin == null) nextMin = numberFromJson(quantity.get()).map(Double::intValue).orElse(null);
             }
-            return new JsonContext(nextItem, nextChance, nextMin, nextMax, nextHasQuantity);
+            return new JsonContext(nextItem, nextChance, nextMin, nextMax);
         }
 
-        JsonContext withItem(ResourceLocation item) { return new JsonContext(item, chance, min, max, hasQuantity); }
+        JsonContext withItem(ResourceLocation item) { return new JsonContext(item, chance, min, max); }
 
         DropRule toRule() {
             double normalizedChance = chance == null ? 1.0D : chance;
