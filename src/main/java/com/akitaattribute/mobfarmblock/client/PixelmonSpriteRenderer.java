@@ -14,7 +14,6 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.OverlayTexture;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
 import org.joml.Matrix4f;
@@ -67,7 +66,7 @@ public final class PixelmonSpriteRenderer {
     private static void renderQuad(ResourceLocation texture, PoseStack poseStack, MultiBufferSource buffer, float size) {
         float half = size / 2.0F;
         Matrix4f matrix = poseStack.last().pose();
-        VertexConsumer consumer = buffer.getBuffer(RenderType.entityCutoutNoCull(texture));
+        VertexConsumer consumer = buffer.getBuffer(RenderType.text(texture));
         vertex(consumer, matrix, -half, -half, 0.0F, 0.0F, 1.0F);
         vertex(consumer, matrix, half, -half, 0.0F, 1.0F, 1.0F);
         vertex(consumer, matrix, half, half, 0.0F, 1.0F, 0.0F);
@@ -75,12 +74,7 @@ public final class PixelmonSpriteRenderer {
     }
 
     private static void vertex(VertexConsumer consumer, Matrix4f matrix, float x, float y, float z, float u, float v) {
-        consumer.addVertex(matrix, x, y, z)
-                .setColor(255, 255, 255, 255)
-                .setUv(u, v)
-                .setOverlay(OverlayTexture.NO_OVERLAY)
-                .setLight(LightTexture.FULL_BRIGHT)
-                .setNormal(0.0F, 0.0F, 1.0F);
+        consumer.addVertex(matrix, x, y, z).setColor(255, 255, 255, 255).setUv(u, v).setLight(LightTexture.FULL_BRIGHT);
     }
 
     private static Optional<ResourceLocation> spriteTexture(StoredMob stored) {
