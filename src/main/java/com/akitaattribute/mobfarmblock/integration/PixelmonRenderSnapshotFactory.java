@@ -4,17 +4,18 @@ import java.util.Optional;
 
 import com.akitaattribute.mobfarmblock.mob.PixelmonRenderSnapshot;
 
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 
-/** Captures Pixelmon's own Pokemon serialization before the source entity is removed. */
+/** Captures Pixelmon's live entity/Pokemon state before the source entity is removed. */
 public final class PixelmonRenderSnapshotFactory {
     public static Optional<PixelmonRenderSnapshot> capture(Entity entity) {
         if (!PixelmonIntegration.isPokemonEntity(entity)) return Optional.empty();
-        Optional<Object> pokemon = PixelmonIntegration.getPokemonObject(entity);
         Optional<ResourceLocation> species = PixelmonIntegration.getSpeciesId(entity);
-        if (pokemon.isEmpty() || species.isEmpty()) return Optional.empty();
-        Payload payload = payload(pokemon.get());
+        if (species.isEmpty()) return Optional.empty();
+
+        Payload payload = entityPayload(entity).orElseGet(() -> PixelmonIntegration.getPokemonObject(entity).map(PixelmonRenderSnapshotFactory::pokemonPayload).orElse(new Payload("", "")));
         return Optional.of(new PixelmonRenderSnapshot(
                 species.get(),
                 PixelmonIntegration.getDisplayKey(entity).orElse(species.get().toString()),
@@ -23,12 +24,32 @@ public final class PixelmonRenderSnapshotFactory {
         ));
     }
 
-    private static Payload payload(Object pokemon) {
+    private static Optional<Payload> entityPayload(Entity entity) {
+        try {
+            CompoundTag tag = new CompoundTag();
+            entity.saveWithoutId(tag);
+            stripRuntimeEntityState(tag);
+            return Optional.of(new Payload("entity:saveWithoutId", tag.toString()));
+        } catch (Throwable ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private static void stripRuntimeEntityState(CompoundTag tag) {
+        for (String key : new String[] {
+                "UUID", "UUIDMost", "UUIDLeast", "Pos", "Motion", "Rotation", "FallDistance", "Fire", "Air", "OnGround",
+                "Invulnerable", "PortalCooldown", "TicksFrozen", "HurtTime", "HurtByTimestamp", "DeathTime", "AbsorptionAmount",
+                "Passengers", "Leash", "LeftHanded", "NoGravity", "Silent", "Glowing", "Tags", "Brain", "HandItems", "ArmorItems"
+        }) tag.remove(key);
+        // Preserve Pixelmon/Pokemon-owned fields; strip only generic Minecraft runtime state.
+    }
+
+    private static Payload pokemonPayload(Object pokemon) {
         for (String method : new String[] {
                 "saveToNBT", "saveToNbt", "serializeNBT", "serializeNbt", "toNBT", "toNbt", "save", "writeToNBT", "writeNbt"
         }) {
             Optional<Object> value = PixelmonIntegration.reflectNoArg(pokemon, method);
-            if (value.isPresent()) return new Payload(method + ":" + value.get().getClass().getName(), String.valueOf(value.get()));
+            if (value.isPresent()) return new Payload("pokemon:" + method + ":" + value.get().getClass().getName(), String.valueOf(value.get()));
         }
         return new Payload("", "");
     }
