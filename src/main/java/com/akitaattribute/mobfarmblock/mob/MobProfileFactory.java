@@ -9,6 +9,7 @@ import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.integration.CobblemonIntegration;
 import com.akitaattribute.mobfarmblock.integration.PixelmonDropFallback;
 import com.akitaattribute.mobfarmblock.integration.PixelmonIntegration;
+import com.akitaattribute.mobfarmblock.integration.PixelmonSpriteIdentity;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
@@ -32,7 +33,8 @@ public final class MobProfileFactory {
             cobblemonRenderSnapshot = CobblemonIntegration.getRenderSnapshot(entity).orElse(null);
         } else if (kind == MobKind.PIXELMON && species != null) {
             String variant = PixelmonIntegration.getDisplayKey(entity).orElse(species.toString());
-            display = new DisplaySnapshot(display.entityTypeId(), display.textureId(), variant, display.colorKey(), display.baby(), display.scale());
+            ResourceLocation spriteTexture = PixelmonSpriteIdentity.getSpriteTexture(entity).orElse(display.textureId());
+            display = new DisplaySnapshot(display.entityTypeId(), spriteTexture, variant, display.colorKey(), display.baby(), display.scale());
         }
         DropProfile drops = null;
         String source = "vanilla";
@@ -45,7 +47,9 @@ public final class MobProfileFactory {
                     .filter(profile -> !profile.drops().isEmpty() || profile.xp().maxXp() > 0)
                     .or(() -> PixelmonDropFallback.resolve(entity))
                     .orElse(DropProfile.EMPTY);
-            source = drops.drops().isEmpty() && drops.xp().maxXp() <= 0 ? "pixelmon:unresolved_drop_table" : "pixelmon:drop_table_reflection";
+            if (drops.drops().isEmpty() && drops.xp().maxXp() <= 0) source = "pixelmon:unresolved_drop_table";
+            else if (drops.drops().isEmpty()) source = "pixelmon:xp_only_unresolved_drops";
+            else source = "pixelmon:drop_table_reflection";
         } else {
             drops = PixelmonIntegration.resolveBattleDropProfile(entity).orElse(null);
             source = drops != null ? "integration" : "vanilla";
