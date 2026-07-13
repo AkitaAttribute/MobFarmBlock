@@ -3,7 +3,6 @@ package com.akitaattribute.mobfarmblock.debug;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -24,9 +23,7 @@ import net.minecraft.world.entity.player.Player;
 public final class CobblemonDebugDumper {
     private static final int MAX_DEPTH = 6;
     private static final int MAX_MEMBERS = 100;
-    private static final int FULL_MAX_DEPTH = 10;
-    private static final int FULL_MAX_MEMBERS = 350;
-    private static final int MAX_COLLECTION_VALUES = 120;
+    private static final int MAX_SIGNATURES = 450;
 
     public static void writeProcessingDump(Player player, StoredMob stored, String rollDetails) {
         writeDump(player, null, stored, "process", rollDetails);
@@ -73,7 +70,7 @@ public final class CobblemonDebugDumper {
         out.append("  \"processingRollDetails\": ").append(rollDetails == null ? "null" : quote(rollDetails)).append(",\n");
         out.append("  \"knownPokemonPaths\": ").append(entity == null ? "null" : knownPaths(entity)).append(",\n");
         out.append("  \"entityBreakdown\": ").append(entity == null ? "null" : breakdown(entity, 0, new IdentityHashMap<>())).append(",\n");
-        out.append("  \"fullReflectionDump\": ").append(entity == null ? "null" : fullDumpRoot(entity)).append('\n').append('}').append('\n');
+        out.append("  \"reflectionMethodInventory\": ").append(entity == null ? "null" : methodInventoryRoot(entity)).append('\n').append('}').append('\n');
         return out.toString();
     }
 
@@ -127,113 +124,57 @@ public final class CobblemonDebugDumper {
         return out.append("}}").toString();
     }
 
-    private static String fullDumpRoot(Entity entity) {
+    private static String methodInventoryRoot(Entity entity) {
         StringBuilder out = new StringBuilder("{");
-        appendFullMember(out, "entity", entity);
+        appendInventoryMember(out, "entity", entity);
         Object pokemon = firstPath(entity, "getPokemon", "pokemon");
-        appendFullMember(out, "entity.pokemon", pokemon);
+        appendInventoryMember(out, "entity.pokemon", pokemon);
         if (pokemon != null) {
             Object species = firstPath(pokemon, "getSpecies", "species", "getSpeciesValue", "speciesValue");
             Object form = firstPath(pokemon, "getForm", "form");
             Object palette = firstPath(pokemon, "getPalette", "palette");
             Object renderable = firstPath(pokemon, "asRenderablePokemon");
-            appendFullMember(out, "pokemon.species", species);
-            appendFullMember(out, "pokemon.form", form);
-            appendFullMember(out, "pokemon.palette", palette);
-            appendFullMember(out, "pokemon.renderable", renderable);
+            appendInventoryMember(out, "pokemon.species", species);
+            appendInventoryMember(out, "pokemon.form", form);
+            appendInventoryMember(out, "pokemon.palette", palette);
+            appendInventoryMember(out, "pokemon.renderable", renderable);
         }
         return out.append('}').toString();
     }
 
-    private static void appendFullMember(StringBuilder out, String name, Object value) {
+    private static void appendInventoryMember(StringBuilder out, String name, Object value) {
         if (out.length() > 1) out.append(',');
-        out.append(quote(name)).append(':').append(fullBreakdown(value, 0, new IdentityHashMap<>()));
+        out.append(quote(name)).append(':').append(methodInventory(value));
     }
 
-    private static String fullBreakdown(Object value, int depth, IdentityHashMap<Object, Boolean> seen) {
+    private static String methodInventory(Object value) {
         if (value == null) return "null";
-        if (simple(value)) return quote(String.valueOf(value));
-        if (value instanceof CharSequence text) return quote(text.toString());
-        if (depth >= FULL_MAX_DEPTH) return quote("max-depth:" + value.getClass().getName());
-        if (seen.put(value, Boolean.TRUE) != null) return quote("cycle:" + value.getClass().getName());
         StringBuilder out = new StringBuilder("{\"class\":").append(quote(value.getClass().getName()))
                 .append(",\"toString\":").append(quote(String.valueOf(value)))
                 .append(",\"methodSignatures\":").append(methodSignaturesJson(value.getClass()))
-                .append(",\"safeNoArgMethodValues\":{");
-        int n = 0;
-        for (Method method : allMethods(value.getClass())) {
-            if (n >= FULL_MAX_MEMBERS) break;
-            if (method.getParameterCount() != 0 || method.getReturnType() == Void.TYPE || !isSafeAccessorName(method.getName())) continue;
-            try {
-                method.setAccessible(true);
-                Object result = method.invoke(value);
-                if (n++ > 0) out.append(',');
-                out.append(quote(methodLabel(method))).append(':').append(fullBreakdownValue(result, depth + 1, seen));
-            } catch (Throwable error) {
-                if (n++ > 0) out.append(',');
-                out.append(quote(methodLabel(method))).append(':').append(quote("ERROR: " + error));
-            }
-        }
-        out.append("},\"fields\":{");
-        n = 0;
-        for (Field field : allFields(value.getClass())) {
-            if (n >= FULL_MAX_MEMBERS) break;
-            if (Modifier.isStatic(field.getModifiers())) continue;
-            try {
-                field.setAccessible(true);
-                if (n++ > 0) out.append(',');
-                out.append(quote(fieldLabel(field))).append(':').append(fullBreakdownValue(field.get(value), depth + 1, seen));
-            } catch (Throwable error) {
-                if (n++ > 0) out.append(',');
-                out.append(quote(fieldLabel(field))).append(':').append(quote("ERROR: " + error));
-            }
-        }
-        seen.remove(value);
-        return out.append("}}").toString();
-    }
-
-    private static String fullBreakdownValue(Object value, int depth, IdentityHashMap<Object, Boolean> seen) {
-        if (value == null || simple(value)) return value == null ? "null" : quote(String.valueOf(value));
-        if (value instanceof Iterable<?> iterable) {
-            StringBuilder out = new StringBuilder("[");
-            int n = 0;
-            for (Object item : iterable) {
-                if (n >= MAX_COLLECTION_VALUES) { if (n > 0) out.append(','); out.append(quote("truncated")); break; }
-                if (n++ > 0) out.append(',');
-                out.append(fullBreakdown(item, depth, seen));
-            }
-            return out.append(']').toString();
-        }
-        if (value instanceof Map<?, ?> map) {
-            StringBuilder out = new StringBuilder("{");
-            int n = 0;
-            for (var entry : map.entrySet()) {
-                if (n >= MAX_COLLECTION_VALUES) { if (n > 0) out.append(','); out.append(quote("truncated")).append(':').append(quote("true")); break; }
-                if (n++ > 0) out.append(',');
-                out.append(quote(String.valueOf(entry.getKey()))).append(':').append(fullBreakdown(entry.getValue(), depth, seen));
-            }
-            return out.append('}').toString();
-        }
-        if (value.getClass().isArray()) {
-            StringBuilder out = new StringBuilder("[");
-            int length = Math.min(java.lang.reflect.Array.getLength(value), MAX_COLLECTION_VALUES);
-            for (int i = 0; i < length; i++) {
-                if (i > 0) out.append(',');
-                out.append(fullBreakdown(java.lang.reflect.Array.get(value, i), depth, seen));
-            }
-            if (java.lang.reflect.Array.getLength(value) > MAX_COLLECTION_VALUES) out.append(',').append(quote("truncated"));
-            return out.append(']').toString();
-        }
-        return fullBreakdown(value, depth, seen);
+                .append(",\"fieldSignatures\":").append(fieldSignaturesJson(value.getClass()))
+                .append('}');
+        return out.toString();
     }
 
     private static String methodSignaturesJson(Class<?> type) {
         StringBuilder out = new StringBuilder("[");
         int n = 0;
         for (Method method : allMethods(type)) {
-            if (n >= FULL_MAX_MEMBERS) { if (n > 0) out.append(','); out.append(quote("truncated")); break; }
+            if (n >= MAX_SIGNATURES) { if (n > 0) out.append(','); out.append(quote("truncated")); break; }
             if (n++ > 0) out.append(',');
             out.append(quote(methodLabel(method)));
+        }
+        return out.append(']').toString();
+    }
+
+    private static String fieldSignaturesJson(Class<?> type) {
+        StringBuilder out = new StringBuilder("[");
+        int n = 0;
+        for (Field field : allFields(type)) {
+            if (n >= MAX_SIGNATURES) { if (n > 0) out.append(','); out.append(quote("truncated")); break; }
+            if (n++ > 0) out.append(',');
+            out.append(quote(fieldLabel(field)));
         }
         return out.append(']').toString();
     }
