@@ -87,7 +87,7 @@ public final class PixelmonDropFallback {
         while (matcher.find()) {
             try {
                 ResourceLocation item = ResourceLocation.parse(matcher.group(1));
-                if (!BuiltInRegistries.ITEM.containsKey(item)) continue;
+                if (!BuiltInRegistries.ITEM.getOptional(item).isPresent()) continue;
                 String tail = json.substring(matcher.start(), Math.min(json.length(), matcher.start() + 500));
                 double chance = number(CHANCE, tail).orElse(1.0D);
                 if (chance > 1.0D) chance /= 100.0D;
@@ -193,7 +193,7 @@ public final class PixelmonDropFallback {
         if (text.isBlank() || text.contains("@") && text.contains(".")) return Optional.empty();
         try {
             ResourceLocation id = text.contains(":") ? ResourceLocation.parse(text) : ResourceLocation.withDefaultNamespace(text);
-            return BuiltInRegistries.ITEM.containsKey(id) ? Optional.of(id) : Optional.empty();
+            return BuiltInRegistries.ITEM.getOptional(id).isPresent() ? Optional.of(id) : Optional.empty();
         } catch (Throwable ignored) { return Optional.empty(); }
     }
 
