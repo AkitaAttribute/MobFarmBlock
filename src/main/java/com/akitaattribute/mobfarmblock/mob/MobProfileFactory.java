@@ -7,6 +7,7 @@ import java.util.Optional;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.integration.CobblemonIntegration;
+import com.akitaattribute.mobfarmblock.integration.PixelmonDropFallback;
 import com.akitaattribute.mobfarmblock.integration.PixelmonIntegration;
 
 import net.minecraft.nbt.CompoundTag;
@@ -40,7 +41,10 @@ public final class MobProfileFactory {
             drops = cobblemonDrops.orElse(DropProfile.EMPTY);
             source = drops.drops().isEmpty() ? "cobblemon:unresolved_or_empty_drop_table" : "cobblemon:drop_table_reflection";
         } else if (kind == MobKind.PIXELMON) {
-            drops = PixelmonIntegration.resolveBattleDropProfile(entity).orElse(DropProfile.EMPTY);
+            drops = PixelmonIntegration.resolveBattleDropProfile(entity)
+                    .filter(profile -> !profile.drops().isEmpty() || profile.xp().maxXp() > 0)
+                    .or(() -> PixelmonDropFallback.resolve(entity))
+                    .orElse(DropProfile.EMPTY);
             source = drops.drops().isEmpty() && drops.xp().maxXp() <= 0 ? "pixelmon:unresolved_drop_table" : "pixelmon:drop_table_reflection";
         } else {
             drops = PixelmonIntegration.resolveBattleDropProfile(entity).orElse(null);
