@@ -68,7 +68,7 @@ public final class PixelmonSpriteRenderer {
     private static Optional<ResourceLocation> spriteTexture(StoredMob stored) {
         if (stored == null || stored.kind != MobKind.PIXELMON) return Optional.empty();
         ResourceLocation captured = stored.display.textureId();
-        if (captured != null && !GENERIC_PIXELMON_TEXTURE.equals(captured.toString())) return Optional.of(captured);
+        if (captured != null && !GENERIC_PIXELMON_TEXTURE.equals(captured.toString())) return Optional.of(normalizeSpriteLocation(captured));
         return resolveSpriteFromSpecies(stored.speciesId, stored.display.variantKey());
     }
 
@@ -100,7 +100,10 @@ public final class PixelmonSpriteRenderer {
     }
 
     private static ResourceLocation normalizeSpriteLocation(String raw) {
-        ResourceLocation id = ResourceLocation.parse(raw);
+        return normalizeSpriteLocation(ResourceLocation.parse(raw));
+    }
+
+    private static ResourceLocation normalizeSpriteLocation(ResourceLocation id) {
         String path = id.getPath();
         if (!path.startsWith("textures/")) path = "textures/" + path;
         return ResourceLocation.fromNamespaceAndPath(id.getNamespace(), path);
