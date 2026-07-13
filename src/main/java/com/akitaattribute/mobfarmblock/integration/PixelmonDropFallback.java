@@ -1,15 +1,10 @@
 package com.akitaattribute.mobfarmblock.integration;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -21,238 +16,86 @@ import com.akitaattribute.mobfarmblock.mob.XpProfile;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.packs.resources.Resource;
-import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
-/** Extra Pixelmon drop discovery that probes the live entity and data resources. */
+/**
+ * Conservative Pixelmon drop fallback.
+ *
+ * This class intentionally does not scan arbitrary JSON resources and does not
+ * hard-code wiki drops. If Pixelmon's live object graph exposes a concrete drop
+ * table we can convert it; otherwise we only keep the base XP value.
+ */
 public final class PixelmonDropFallback {
     private static final java.util.Set<String> WARNED = new java.util.HashSet<>();
     private static final Pattern BASE_EXP = Pattern.compile("\\\"baseExp\\\"\\s*:\\s*(\\d+)");
-    private static final Pattern ITEM_ID = Pattern.compile("\\\"(?:item|itemId|itemID|id)\\\"\\s*:\\s*\\\"([a-z0-9_.-]+:[a-z0-9_/.-]+)\\\"");
-    private static final Pattern CHANCE = Pattern.compile("\\\"(?:chance|probability|percentage)\\\"\\s*:\\s*([0-9.]+)");
-    private static final Pattern MIN = Pattern.compile("\\\"(?:min|minCount|minimum)\\\"\\s*:\\s*(\\d+)");
-    private static final Pattern MAX = Pattern.compile("\\\"(?:max|maxCount|maximum)\\\"\\s*:\\s*(\\d+)");
-    private static ResourceManager cachedResourceManager;
-    private static Map<String, List<DropRule>> cachedResourceRules = Map.of();
 
     public static Optional<DropProfile> resolve(Entity entity) {
         if (!PixelmonIntegration.isPokemonEntity(entity)) return Optional.empty();
         Optional<Object> pokemon = PixelmonIntegration.getPokemonObject(entity);
+        if (pokemon.isEmpty()) return Optional.empty();
+
         List<DropRule> rules = new ArrayList<>();
         rules.addAll(rulesFromDropSources(entity));
-        pokemon.ifPresent(value -> {
-            rules.addAll(rulesFromDropSources(value));
-            value(value, "getForm", "form").ifPresent(form -> rules.addAll(rulesFromDropSources(form)));
-            value(value, "getSpecies", "species", "speciesValue").ifPresent(species -> rules.addAll(rulesFromDropSources(species)));
-        });
-        if (rules.isEmpty()) rules.addAll(rulesFromResourceData(entity));
-        if (rules.isEmpty()) rules.addAll(wikiFallbackRules(entity));
-        int xp = pokemon.flatMap(PixelmonDropFallback::baseExp).orElse(0);
+        rules.addAll(rulesFromDropSources(pokemon.get()));
+        value(pokemon.get(), "getForm", "form").ifPresent(form -> rules.addAll(rulesFromDropSources(form)));
+        value(pokemon.get(), "getSpecies", "species", "speciesValue").ifPresent(species -> rules.addAll(rulesFromDropSources(species)));
+
+        int xp = baseExp(pokemon.get()).orElse(0);
         if (rules.isEmpty() && xp <= 0) return Optional.empty();
         return Optional.of(new DropProfile(List.copyOf(dedupe(rules)), xp > 0 ? new XpProfile(xp, xp) : XpProfile.NONE));
-    }
-
-    private static List<DropRule> wikiFallbackRules(Entity entity) {
-        String species = PixelmonIntegration.getSpeciesId(entity).map(ResourceLocation::getPath).orElse("");
-        String variant = PixelmonIntegration.getDisplayKey(entity).orElse("").toLowerCase(java.util.Locale.ROOT);
-        List<DropRule> rules = new ArrayList<>();
-        if ("tarountula".equals(species)) {
-            addRule(rules, "minecraft:spider_eye", 0.50D, 1, 1);
-            addRule(rules, "minecraft:string", 1.00D, 1, 2);
-        } else if ("oricorio".equals(species)) {
-            addRule(rules, "minecraft:feather", 1.00D, 1, 2);
-            if (variant.contains("form=pompom")) addRule(rules, "minecraft:dandelion", 0.50D, 1, 3);
-            else if (variant.contains("form=baile")) addRule(rules, "minecraft:poppy", 0.50D, 1, 3);
-            else if (variant.contains("form=pau")) addRule(rules, "minecraft:pink_tulip", 0.50D, 1, 3);
-            else if (variant.contains("form=sensu")) addRule(rules, "minecraft:allium", 0.50D, 1, 3);
-        } else if ("ledyba".equals(species)) {
-            addRule(rules, "minecraft:tall_grass", 1.00D, 1, 1);
-            addRule(rules, "minecraft:slime_ball", 0.50D, 1, 1);
-            addRule(rules, "minecraft:dandelion", 0.30D, 1, 1);
-        }
-        if (!rules.isEmpty()) MobFarmBlockMod.LOGGER.warn("Using temporary Pixelmon wiki drop fallback for {} with {} rules", species, rules.size());
-        return rules;
-    }
-
-    private static void addRule(List<DropRule> rules, String item, double chance, int min, int max) {
-        ResourceLocation id = ResourceLocation.parse(item);
-        if (BuiltInRegistries.ITEM.getOptional(id).isPresent()) rules.add(new DropRule(id, chance, min, max, false, 0.0D, 0));
-    }
-
-    private static List<DropRule> rulesFromResourceData(Entity entity) {
-        if (entity.level().getServer() == null) return List.of();
-        String species = PixelmonIntegration.getSpeciesId(entity).map(ResourceLocation::getPath).orElse("");
-        if (species.isBlank()) return List.of();
-        ResourceManager manager = entity.level().getServer().getResourceManager();
-        Map<String, List<DropRule>> index = resourceIndex(manager);
-        return index.getOrDefault(normalizeSpeciesName(species), List.of());
-    }
-
-    private static synchronized Map<String, List<DropRule>> resourceIndex(ResourceManager manager) {
-        if (cachedResourceManager == manager) return cachedResourceRules;
-        Map<String, List<DropRule>> rulesBySpecies = new HashMap<>();
-        int scanned = 0;
-        for (String root : List.of("", "drops", "drop_tables", "loot_tables", "loot_table", "pokemon")) {
-            try {
-                var resources = manager.listResources(root, id -> id.getNamespace().equals("pixelmon") && id.getPath().endsWith(".json") && isLikelyDropResource(id.getPath()));
-                for (var entry : resources.entrySet()) {
-                    scanned++;
-                    String json = readResource(entry.getValue());
-                    List<DropRule> rules = rulesFromJson(json, entry.getKey());
-                    if (rules.isEmpty()) continue;
-                    for (String species : speciesMentions(json)) {
-                        rulesBySpecies.computeIfAbsent(species, ignored -> new ArrayList<>()).addAll(rules);
-                    }
-                }
-            } catch (Throwable error) {
-                warnOnce("Pixelmon resource drop index scan failed: " + root, error);
-            }
-        }
-        rulesBySpecies.replaceAll((ignored, rules) -> List.copyOf(dedupe(rules)));
-        cachedResourceManager = manager;
-        cachedResourceRules = Map.copyOf(rulesBySpecies);
-        MobFarmBlockMod.LOGGER.debug("Indexed Pixelmon drop resources: scanned={} species={}", scanned, cachedResourceRules.size());
-        return cachedResourceRules;
-    }
-
-    private static boolean isLikelyDropResource(String path) {
-        String lower = path.toLowerCase(java.util.Locale.ROOT);
-        return lower.contains("drop") || lower.contains("loot") || lower.contains("reward");
-    }
-
-    private static List<String> speciesMentions(String json) {
-        if (json == null || json.isBlank()) return List.of();
-        java.util.Set<String> names = new java.util.LinkedHashSet<>();
-        Matcher matcher = Pattern.compile("\\\"([^\\\"]{2,64})\\\"").matcher(json);
-        while (matcher.find()) {
-            String text = matcher.group(1).trim();
-            String normalized = normalizeSpeciesName(text);
-            if (normalized.isBlank() || normalized.contains(":")) continue;
-            if (normalized.matches(".*[^a-z0-9_\\-].*")) continue;
-            if (looksLikeMetadataKey(normalized)) continue;
-            names.add(normalized);
-        }
-        return List.copyOf(names);
-    }
-
-    private static boolean looksLikeMetadataKey(String text) {
-        return text.equals("item") || text.equals("itemid") || text.equals("chance") || text.equals("quantity") || text.equals("min") || text.equals("max") || text.equals("pokemon") || text.equals("drops") || text.equals("loot") || text.equals("id") || text.equals("type");
-    }
-
-    private static String normalizeSpeciesName(String text) {
-        if (text == null) return "";
-        String value = text.toLowerCase(java.util.Locale.ROOT).trim();
-        int colon = value.lastIndexOf(':');
-        if (colon >= 0) value = value.substring(colon + 1);
-        value = value.replace("style", "").replace("form", "");
-        return value.replace(' ', '_').replace("'", "").replace(".", "").replaceAll("[^a-z0-9_\\-]", "");
-    }
-
-    private static String readResource(Resource resource) throws java.io.IOException {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(resource.open(), StandardCharsets.UTF_8))) {
-            StringBuilder out = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) out.append(line).append('\n');
-            return out.toString();
-        }
-    }
-
-    private static List<DropRule> rulesFromJson(String json, ResourceLocation sourceId) {
-        if (json == null || json.isBlank()) return List.of();
-        List<DropRule> rules = new ArrayList<>();
-        rules.addAll(rulesFromJson(json));
-        if (rules.isEmpty()) guessItemFromPath(sourceId).ifPresent(item -> rules.add(ruleForGuessedItem(item, json)));
-        return rules;
-    }
-
-    private static Optional<ResourceLocation> guessItemFromPath(ResourceLocation sourceId) {
-        if (sourceId == null) return Optional.empty();
-        String path = sourceId.getPath();
-        int slash = path.lastIndexOf('/');
-        String name = slash >= 0 ? path.substring(slash + 1) : path;
-        if (name.endsWith(".json")) name = name.substring(0, name.length() - 5);
-        for (ResourceLocation candidate : List.of(ResourceLocation.withDefaultNamespace(name), ResourceLocation.fromNamespaceAndPath("pixelmon", name))) {
-            if (BuiltInRegistries.ITEM.getOptional(candidate).isPresent()) return Optional.of(candidate);
-        }
-        return Optional.empty();
-    }
-
-    private static DropRule ruleForGuessedItem(ResourceLocation item, String json) {
-        double chance = number(CHANCE, json).orElse(100.0D);
-        if (chance > 1.0D) chance /= 100.0D;
-        int min = number(MIN, json).map(Double::intValue).orElse(1);
-        int max = number(MAX, json).map(Double::intValue).orElse(min);
-        return new DropRule(item, Math.max(0.0D, Math.min(1.0D, chance)), Math.max(0, min), Math.max(Math.max(0, min), max), false, 0.0D, 0);
-    }
-
-    private static List<DropRule> rulesFromJson(String json) {
-        if (json == null || json.isBlank()) return List.of();
-        List<DropRule> rules = new ArrayList<>();
-        Matcher matcher = ITEM_ID.matcher(json);
-        while (matcher.find()) {
-            try {
-                ResourceLocation item = ResourceLocation.parse(matcher.group(1));
-                if (!BuiltInRegistries.ITEM.getOptional(item).isPresent()) continue;
-                String tail = json.substring(matcher.start(), Math.min(json.length(), matcher.start() + 500));
-                double chance = number(CHANCE, tail).orElse(1.0D);
-                if (chance > 1.0D) chance /= 100.0D;
-                int min = number(MIN, tail).map(Double::intValue).orElse(1);
-                int max = number(MAX, tail).map(Double::intValue).orElse(min);
-                rules.add(new DropRule(item, Math.max(0.0D, Math.min(1.0D, chance)), Math.max(0, min), Math.max(Math.max(0, min), max), false, 0.0D, 0));
-            } catch (Throwable ignored) {}
-        }
-        return rules;
-    }
-
-    private static List<DropRule> dedupe(List<DropRule> rules) {
-        Map<String, DropRule> deduped = new java.util.LinkedHashMap<>();
-        for (DropRule rule : rules) deduped.put(rule.itemId() + "|" + rule.chance() + "|" + rule.minCount() + "|" + rule.maxCount(), rule);
-        return new ArrayList<>(deduped.values());
-    }
-
-    private static Optional<Double> number(Pattern pattern, String text) {
-        Matcher matcher = pattern.matcher(text);
-        if (!matcher.find()) return Optional.empty();
-        try { return Optional.of(Double.parseDouble(matcher.group(1))); }
-        catch (Throwable ignored) { return Optional.empty(); }
-    }
-
-    private static Optional<Integer> baseExp(Object pokemon) {
-        Optional<String> json = value(pokemon, "getSpecies", "species", "speciesValue").flatMap(species -> PixelmonIntegration.reflectNoArg(species, "getJson").map(String::valueOf));
-        if (json.isEmpty()) json = value(pokemon, "getForm", "form").flatMap(form -> PixelmonIntegration.reflectNoArg(form, "getJson").map(String::valueOf));
-        if (json.isEmpty()) return Optional.empty();
-        Matcher matcher = BASE_EXP.matcher(json.get());
-        if (!matcher.find()) return Optional.empty();
-        try { return Optional.of(Integer.parseInt(matcher.group(1))); }
-        catch (Throwable ignored) { return Optional.empty(); }
     }
 
     private static List<DropRule> rulesFromDropSources(Object target) {
         if (target == null) return List.of();
         List<DropRule> rules = new ArrayList<>();
-        for (String name : new String[] {"getDrops", "drops", "getDropItems", "dropItems", "getDropTable", "dropTable", "getLootTable", "lootTable", "getRewards", "rewards"}) value(target, name).ifPresent(table -> rules.addAll(rulesFromDropTable(table)));
+        for (String name : new String[] {"getDrops", "drops", "getDropItems", "dropItems", "getDropTable", "dropTable", "getLootTable", "lootTable", "getRewards", "rewards"}) {
+            value(target, name).ifPresent(table -> rules.addAll(rulesFromDropTable(table)));
+        }
         for (Method method : target.getClass().getMethods()) {
             String name = method.getName().toLowerCase(java.util.Locale.ROOT);
             if (!(name.contains("drop") || name.contains("loot") || name.contains("reward"))) continue;
             if (method.getReturnType() == Void.TYPE || method.getParameterCount() != 0) continue;
             if (!(method.getName().startsWith("get") || method.getName().startsWith("is") || method.getName().startsWith("has"))) continue;
-            try { method.setAccessible(true); Object result = method.invoke(target); if (result != null && result != target) rules.addAll(rulesFromDropTable(result)); }
-            catch (Throwable error) { warnOnce("Pixelmon fallback drop method failed: " + target.getClass().getName() + "." + method.getName(), error); }
+            try {
+                method.setAccessible(true);
+                Object result = method.invoke(target);
+                if (result != null && result != target) rules.addAll(rulesFromDropTable(result));
+            } catch (Throwable error) {
+                warnOnce("Pixelmon fallback drop method failed: " + target.getClass().getName() + "." + method.getName(), error);
+            }
         }
         return rules;
     }
 
-    private static List<DropRule> rulesFromDropTable(Object table) { List<DropRule> rules = new ArrayList<>(); for (Object entry : extractDropEntries(table)) dropRuleFromEntry(entry).ifPresent(rules::add); return rules; }
+    private static List<DropRule> rulesFromDropTable(Object table) {
+        List<DropRule> rules = new ArrayList<>();
+        for (Object entry : extractDropEntries(table)) dropRuleFromEntry(entry).ifPresent(rules::add);
+        return rules;
+    }
+
     private static List<?> extractDropEntries(Object table) {
         if (table == null) return List.of();
         if (table instanceof Collection<?> collection) return List.copyOf(collection);
-        if (table.getClass().isArray()) { List<Object> values = new ArrayList<>(); int length = Array.getLength(table); for (int i = 0; i < length; i++) values.add(Array.get(table, i)); return values; }
+        if (table.getClass().isArray()) {
+            List<Object> values = new ArrayList<>();
+            int length = Array.getLength(table);
+            for (int i = 0; i < length; i++) values.add(Array.get(table, i));
+            return values;
+        }
         for (String name : new String[] {"getEntries", "entries", "getDrops", "drops", "getRewards", "rewards", "getItems", "items"}) {
             Optional<Object> value = value(table, name);
-            if (value.isPresent()) { Object result = value.get(); if (result instanceof Collection<?> collection) return List.copyOf(collection); if (result.getClass().isArray()) { List<Object> values = new ArrayList<>(); int length = Array.getLength(result); for (int i = 0; i < length; i++) values.add(Array.get(result, i)); return values; } }
+            if (value.isPresent()) {
+                Object result = value.get();
+                if (result instanceof Collection<?> collection) return List.copyOf(collection);
+                if (result.getClass().isArray()) {
+                    List<Object> values = new ArrayList<>();
+                    int length = Array.getLength(result);
+                    for (int i = 0; i < length; i++) values.add(Array.get(result, i));
+                    return values;
+                }
+            }
         }
         return List.of(table);
     }
@@ -264,6 +107,7 @@ public final class PixelmonDropFallback {
         rawItem = rawItem.or(() -> value(entry, "getItemStack", "itemStack", "getStack", "stack", "getItem", "item", "getItemId", "itemId", "getItemID", "itemID", "getIdentifier", "identifier", "getResourceLocation", "resourceLocation"));
         Optional<ResourceLocation> item = rawItem.flatMap(PixelmonDropFallback::coerceItemId);
         if (item.isEmpty()) return Optional.empty();
+
         double chance = value(entry, "getPercentage", "percentage", "getChance", "chance", "getProbability", "probability", "getDropChance", "dropChance").flatMap(PixelmonDropFallback::coerceDouble).orElse(100.0D);
         if (chance > 1.0D) chance /= 100.0D;
         int min = value(entry, "getMin", "min", "getMinCount", "minCount", "minimum", "getQuantity", "quantity", "getCount", "count", "getAmount", "amount").flatMap(PixelmonDropFallback::coerceInt).orElse(1);
@@ -277,13 +121,46 @@ public final class PixelmonDropFallback {
         if (value instanceof Item item) return Optional.of(BuiltInRegistries.ITEM.getKey(item));
         String text = String.valueOf(value).trim();
         if (text.isBlank() || text.contains("@") && text.contains(".")) return Optional.empty();
-        try { ResourceLocation id = text.contains(":") ? ResourceLocation.parse(text) : ResourceLocation.withDefaultNamespace(text); return BuiltInRegistries.ITEM.getOptional(id).isPresent() ? Optional.of(id) : Optional.empty(); }
+        try {
+            ResourceLocation id = text.contains(":") ? ResourceLocation.parse(text) : ResourceLocation.withDefaultNamespace(text);
+            return BuiltInRegistries.ITEM.getOptional(id).isPresent() ? Optional.of(id) : Optional.empty();
+        } catch (Throwable ignored) { return Optional.empty(); }
+    }
+
+    private static Optional<Integer> baseExp(Object pokemon) {
+        Optional<String> json = value(pokemon, "getSpecies", "species", "speciesValue").flatMap(species -> PixelmonIntegration.reflectNoArg(species, "getJson").map(String::valueOf));
+        if (json.isEmpty()) json = value(pokemon, "getForm", "form").flatMap(form -> PixelmonIntegration.reflectNoArg(form, "getJson").map(String::valueOf));
+        if (json.isEmpty()) return Optional.empty();
+        Matcher matcher = BASE_EXP.matcher(json.get());
+        if (!matcher.find()) return Optional.empty();
+        try { return Optional.of(Integer.parseInt(matcher.group(1))); }
         catch (Throwable ignored) { return Optional.empty(); }
     }
 
-    private static Optional<Object> value(Object target, String... names) { for (String name : names) { Optional<Object> result = PixelmonIntegration.reflectNoArg(target, name).or(() -> PixelmonIntegration.readField(target, name)); if (result.isPresent()) return result; } return Optional.empty(); }
-    private static Optional<Integer> coerceInt(Object value) { if (value instanceof Number number) return Optional.of(number.intValue()); try { return Optional.of(Integer.parseInt(String.valueOf(value).replaceAll("[^0-9-]", ""))); } catch (Throwable ignored) { return Optional.empty(); } }
-    private static Optional<Double> coerceDouble(Object value) { if (value instanceof Number number) return Optional.of(number.doubleValue()); try { return Optional.of(Double.parseDouble(String.valueOf(value).replace("%", ""))); } catch (Throwable ignored) { return Optional.empty(); } }
+    private static List<DropRule> dedupe(List<DropRule> rules) {
+        java.util.Map<String, DropRule> deduped = new java.util.LinkedHashMap<>();
+        for (DropRule rule : rules) deduped.put(rule.itemId() + "|" + rule.chance() + "|" + rule.minCount() + "|" + rule.maxCount(), rule);
+        return new ArrayList<>(deduped.values());
+    }
+
+    private static Optional<Object> value(Object target, String... names) {
+        for (String name : names) {
+            Optional<Object> result = PixelmonIntegration.reflectNoArg(target, name).or(() -> PixelmonIntegration.readField(target, name));
+            if (result.isPresent()) return result;
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<Integer> coerceInt(Object value) {
+        if (value instanceof Number number) return Optional.of(number.intValue());
+        try { return Optional.of(Integer.parseInt(String.valueOf(value).replaceAll("[^0-9-]", ""))); } catch (Throwable ignored) { return Optional.empty(); }
+    }
+
+    private static Optional<Double> coerceDouble(Object value) {
+        if (value instanceof Number number) return Optional.of(number.doubleValue());
+        try { return Optional.of(Double.parseDouble(String.valueOf(value).replace("%", ""))); } catch (Throwable ignored) { return Optional.empty(); }
+    }
+
     private static void warnOnce(String key, Throwable error) { if (WARNED.add(key)) MobFarmBlockMod.LOGGER.debug("Pixelmon fallback drops failed for {}: {}", key, error.toString()); }
     private PixelmonDropFallback() {}
 }
