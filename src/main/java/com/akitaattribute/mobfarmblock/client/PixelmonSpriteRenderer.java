@@ -14,6 +14,7 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.OverlayTexture;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
 import org.joml.Matrix4f;
@@ -32,23 +33,35 @@ public final class PixelmonSpriteRenderer {
         Optional<ResourceLocation> texture = spriteTexture(stored);
         if (texture.isEmpty()) return false;
         poseStack.pushPose();
-        poseStack.translate(x, y, z);
-        poseStack.scale(size, -size, size);
-        renderQuad(texture.get(), poseStack, buffer, 1.0F);
-        poseStack.popPose();
-        return true;
+        try {
+            poseStack.translate(x, y, z);
+            poseStack.scale(size, -size, size);
+            renderQuad(texture.get(), poseStack, buffer, 1.0F);
+            return true;
+        } catch (Throwable error) {
+            warnOnce("renderGuiSprite:" + texture.get(), error);
+            return false;
+        } finally {
+            poseStack.popPose();
+        }
     }
 
     public static boolean renderWorldBillboard(StoredMob stored, Minecraft minecraft, PoseStack poseStack, MultiBufferSource buffer, double x, double y, double z, float size) {
         Optional<ResourceLocation> texture = spriteTexture(stored);
         if (texture.isEmpty()) return false;
         poseStack.pushPose();
-        poseStack.translate(x, y, z);
-        poseStack.mulPose(minecraft.getEntityRenderDispatcher().cameraOrientation());
-        poseStack.scale(size, -size, size);
-        renderQuad(texture.get(), poseStack, buffer, 1.0F);
-        poseStack.popPose();
-        return true;
+        try {
+            poseStack.translate(x, y, z);
+            poseStack.mulPose(minecraft.getEntityRenderDispatcher().cameraOrientation());
+            poseStack.scale(size, -size, size);
+            renderQuad(texture.get(), poseStack, buffer, 1.0F);
+            return true;
+        } catch (Throwable error) {
+            warnOnce("renderWorldBillboard:" + texture.get(), error);
+            return false;
+        } finally {
+            poseStack.popPose();
+        }
     }
 
     private static void renderQuad(ResourceLocation texture, PoseStack poseStack, MultiBufferSource buffer, float size) {
@@ -62,7 +75,12 @@ public final class PixelmonSpriteRenderer {
     }
 
     private static void vertex(VertexConsumer consumer, Matrix4f matrix, float x, float y, float z, float u, float v) {
-        consumer.addVertex(matrix, x, y, z).setColor(255, 255, 255, 255).setUv(u, v).setLight(LightTexture.FULL_BRIGHT);
+        consumer.addVertex(matrix, x, y, z)
+                .setColor(255, 255, 255, 255)
+                .setUv(u, v)
+                .setOverlay(OverlayTexture.NO_OVERLAY)
+                .setLight(LightTexture.FULL_BRIGHT)
+                .setNormal(0.0F, 0.0F, 1.0F);
     }
 
     private static Optional<ResourceLocation> spriteTexture(StoredMob stored) {
