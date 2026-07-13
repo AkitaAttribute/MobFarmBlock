@@ -36,13 +36,11 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
 
         if (!filled || !slotContext) return;
         StoredMob stored = CaptureToolItem.getStoredMob(stack);
-        if (stored.kind == MobKind.PIXELMON) {
-            PixelmonSpriteRenderer.renderGuiSprite(stored, poseStack, buffer, 0.68D, 0.80D, 0.03D, 1.28F);
+        Entity entity = safeGetRenderEntity(stored);
+        if (entity == null) {
+            if (stored.kind == MobKind.PIXELMON) PixelmonSpriteRenderer.renderGuiSprite(stored, poseStack, buffer, 0.68D, 0.80D, 0.03D, 1.28F);
             return;
         }
-
-        Entity entity = safeGetRenderEntity(stored);
-        if (entity == null) return;
 
         poseStack.pushPose();
         float scale = entityScale(entity, stored);
@@ -55,6 +53,7 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
             minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, 0.0F, poseStack, buffer, LightTexture.FULL_BRIGHT);
         } catch (Throwable error) {
             warnRenderFailure(stored, error);
+            if (stored.kind == MobKind.PIXELMON) PixelmonSpriteRenderer.renderGuiSprite(stored, poseStack, buffer, 0.68D, 0.80D, 0.03D, 1.28F);
         }
         poseStack.popPose();
     }
@@ -69,9 +68,6 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
     }
 
     private static Entity safeGetRenderEntity(StoredMob stored) {
-        if (stored != null && stored.kind == MobKind.PIXELMON) {
-            return null;
-        }
         try {
             Entity pixelmon = PixelmonEntityRenderCache.getOrCreate(stored);
             if (pixelmon != null) return pixelmon;
