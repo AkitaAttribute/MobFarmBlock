@@ -36,7 +36,7 @@ public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
         if (!MobFarmBlockItemData.hasStoredMob(stack) || !slotContext) return;
         StoredMob stored = MobFarmBlockItemData.getStoredMob(stack);
         if (stored.kind == MobKind.PIXELMON) {
-            PixelmonSpriteRenderer.renderGuiSprite(stored, poseStack, buffer, 0.50D, 0.68D, 0.04D, 0.50F);
+            PixelmonSpriteRenderer.renderGuiSprite(stored, poseStack, buffer, 0.50D, 0.72D, 0.04D, 1.08F);
             return;
         }
 
