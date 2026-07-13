@@ -2,7 +2,6 @@ package com.akitaattribute.mobfarmblock.client;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.item.MobFarmBlockItemData;
-import com.akitaattribute.mobfarmblock.mob.MobKind;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
 import com.akitaattribute.mobfarmblock.registry.ModBlocks;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -36,10 +35,7 @@ public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
         if (!MobFarmBlockItemData.hasStoredMob(stack) || !slotContext) return;
         StoredMob stored = MobFarmBlockItemData.getStoredMob(stack);
         Entity entity = safeGetRenderEntity(stored);
-        if (entity == null) {
-            if (stored.kind == MobKind.PIXELMON) PixelmonSpriteRenderer.renderGuiSprite(stored, poseStack, buffer, 0.50D, 0.72D, 0.04D, 1.08F);
-            return;
-        }
+        if (entity == null) return;
 
         poseStack.pushPose();
         float scale = entityScale(entity, stored);
@@ -48,10 +44,9 @@ public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
         poseStack.translate(0.0D, -entity.getBbHeight() * 0.45D, 0.0D);
         ClientEntityRenderCache.freezeForRender(entity);
         try {
-            minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, 0.0F, poseStack, buffer, LightTexture.FULL_BRIGHT);
+            minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0F, 0.0F, 0.0F, poseStack, buffer, LightTexture.FULL_BRIGHT);
         } catch (Throwable error) {
             warnRenderFailure(stored, error);
-            if (stored.kind == MobKind.PIXELMON) PixelmonSpriteRenderer.renderGuiSprite(stored, poseStack, buffer, 0.50D, 0.72D, 0.04D, 1.08F);
         }
         poseStack.popPose();
     }
