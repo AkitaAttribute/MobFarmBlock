@@ -2,7 +2,6 @@ package com.akitaattribute.mobfarmblock.client;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.item.CaptureToolItem;
-import com.akitaattribute.mobfarmblock.mob.MobKind;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
@@ -37,10 +36,7 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
         if (!filled || !slotContext) return;
         StoredMob stored = CaptureToolItem.getStoredMob(stack);
         Entity entity = safeGetRenderEntity(stored);
-        if (entity == null) {
-            if (stored.kind == MobKind.PIXELMON) PixelmonSpriteRenderer.renderGuiSprite(stored, poseStack, buffer, 0.68D, 0.80D, 0.03D, 1.28F);
-            return;
-        }
+        if (entity == null) return;
 
         poseStack.pushPose();
         float scale = entityScale(entity, stored);
@@ -53,7 +49,6 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
             minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, 0.0F, poseStack, buffer, LightTexture.FULL_BRIGHT);
         } catch (Throwable error) {
             warnRenderFailure(stored, error);
-            if (stored.kind == MobKind.PIXELMON) PixelmonSpriteRenderer.renderGuiSprite(stored, poseStack, buffer, 0.68D, 0.80D, 0.03D, 1.28F);
         }
         poseStack.popPose();
     }
