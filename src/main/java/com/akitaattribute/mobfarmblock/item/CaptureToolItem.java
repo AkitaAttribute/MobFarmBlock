@@ -41,6 +41,7 @@ public class CaptureToolItem extends Item {
                 return InteractionResult.FAIL;
             }
             existing.count += captured.count;
+            existing.mergeDiscoveredProfileFrom(captured);
             setStoredMob(stack, existing);
         } else if (stack.getCount() > 1) {
             stack.shrink(1);
