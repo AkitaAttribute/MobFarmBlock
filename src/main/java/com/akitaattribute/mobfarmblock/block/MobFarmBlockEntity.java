@@ -28,6 +28,7 @@ public class MobFarmBlockEntity extends BlockEntity {
         if (stored.isUnknownCobblemonPokemon()) return new InsertResult(false, false, previous, stored, "Stored Cobblemon species ID unavailable; refused merge to avoid mixing Pokemon species");
         if (!stored.isSameType(incoming)) return new InsertResult(false, false, previous, stored, "different mob");
         stored.count += incoming.count;
+        stored.mergeDiscoveredProfileFrom(incoming);
         sync();
         return new InsertResult(true, true, previous, stored, "merged");
     }
