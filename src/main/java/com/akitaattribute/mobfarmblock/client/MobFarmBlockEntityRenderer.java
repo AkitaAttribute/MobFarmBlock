@@ -63,8 +63,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         if (entity != null) {
             poseStack.pushPose();
             poseStack.translate(0.5D, 0.58D, 0.5D);
-            float scale = 0.32F;
-            if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, entity.getBbHeight()));
+            float scale = placedEntityScale(stored, entity, inspected);
             poseStack.scale(scale, scale, scale);
             poseStack.mulPose(Axis.YP.rotationDegrees(blockEntity.getBlockState().getValue(MobFarmBlock.FACING).toYRot()));
             ClientEntityRenderCache.freezeForRender(entity);
@@ -82,6 +81,19 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         if ("minecraft:sheep".equals(stored.mobId.toString())) return sheepRenderEntity(stored, minecraft);
         if (PixelmonEntityRenderCache.isPixelmonStored(stored)) return PixelmonEntityRenderCache.getOrCreate(stored);
         return ClientEntityRenderCache.getOrCreate(stored);
+    }
+
+    private static float placedEntityScale(StoredMob stored, Entity entity, boolean inspected) {
+        if (PixelmonEntityRenderCache.isPixelmonStored(stored)) {
+            float displayScale = stored.display.scale() > 0 ? stored.display.scale() : 1.0F;
+            float height = Math.max(entity.getBbHeight(), 0.35F) * displayScale;
+            float width = Math.max(entity.getBbWidth(), 0.35F) * displayScale;
+            float fit = 2.40F / Math.max(0.1F, Math.max(height, width));
+            return Math.max(1.15F, Math.min(3.00F, fit));
+        }
+        float scale = 0.32F;
+        if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, entity.getBbHeight()));
+        return scale;
     }
 
     private static Entity sheepRenderEntity(StoredMob stored, Minecraft minecraft) {
@@ -246,7 +258,10 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
             LookRow row = compactRow(stored, definition, now);
             if (row != null) rows.add(row);
         }
-        if (rows.isEmpty() && stored.dropProfile.drops().isEmpty()) rows.add(new LookRow(new ItemStack(Items.BARRIER), "No Drops", "", TEXT_GRAY, TEXT_GRAY));
+        if (rows.isEmpty() && stored.dropProfile.drops().isEmpty()) {
+            if (hasNativePixelmonDrops(stored)) rows.add(new LookRow(new ItemStack(Items.CHEST), "Pixelmon Drops", "Native", TEXT_WHITE, TEXT_GREEN));
+            else rows.add(new LookRow(new ItemStack(Items.BARRIER), "No Drops", "", TEXT_GRAY, TEXT_GRAY));
+        }
         return rows;
     }
 
@@ -267,8 +282,15 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
             if (row != null) rows.add(row);
         }
         for (DropRule rule : stored.dropProfile.drops()) rows.add(new LookRow(new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId())), "Drop", formatChance(rule.chance()), TEXT_WHITE, TEXT_YELLOW));
-        if (rows.isEmpty()) rows.add(new LookRow(new ItemStack(Items.BARRIER), "No Drops", "", TEXT_GRAY, TEXT_GRAY));
+        if (rows.isEmpty()) {
+            if (hasNativePixelmonDrops(stored)) rows.add(new LookRow(new ItemStack(Items.CHEST), "Native Drops", "Pixelmon UI", TEXT_WHITE, TEXT_GREEN));
+            else rows.add(new LookRow(new ItemStack(Items.BARRIER), "No Drops", "", TEXT_GRAY, TEXT_GRAY));
+        }
         return rows;
+    }
+
+    private static boolean hasNativePixelmonDrops(StoredMob stored) {
+        return PixelmonEntityRenderCache.isPixelmonStored(stored) && stored.dropProfile.drops().isEmpty() && stored.dropProfileSource != null && stored.dropProfileSource.startsWith("pixelmon:");
     }
 
     private static ItemStack breedIcon(InteractionDefinition definition) {
