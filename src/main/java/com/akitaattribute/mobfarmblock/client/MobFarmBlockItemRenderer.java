@@ -83,7 +83,7 @@ public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
         float width = Math.max(entity.getBbWidth(), 0.35F) * displayScale;
         float bounding = Math.max(height, width);
         float fit = 0.62F / Math.max(0.1F, bounding);
-        if (PixelmonEntityRenderCache.isPixelmonStored(stored)) fit *= 3.25F;
-        return PixelmonEntityRenderCache.isPixelmonStored(stored) ? Math.max(0.80F, Math.min(2.60F, fit)) : Math.max(0.24F, Math.min(0.74F, fit));
+        if (PixelmonEntityRenderCache.isPixelmonStored(stored)) fit *= 5.50F;
+        return PixelmonEntityRenderCache.isPixelmonStored(stored) ? Math.max(1.40F, Math.min(4.80F, fit)) : Math.max(0.24F, Math.min(0.74F, fit));
     }
 }
