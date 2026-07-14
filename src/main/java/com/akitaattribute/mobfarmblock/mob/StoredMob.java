@@ -88,6 +88,23 @@ public class StoredMob {
                 new HashMap<>(readyAtTicks), speciesId, dropProfileSource, cobblemonRenderSnapshot, pixelmonRenderSnapshot);
     }
 
+    public void mergeDiscoveredProfileFrom(StoredMob incoming) {
+        if (incoming == null) return;
+        this.dropProfile = this.dropProfile.mergeDiscovered(incoming.dropProfile);
+        this.dropProfileSource = mergeDropProfileSource(this.dropProfileSource, incoming.dropProfileSource);
+        if (this.pixelmonRenderSnapshot == null) this.pixelmonRenderSnapshot = incoming.pixelmonRenderSnapshot;
+        if (this.cobblemonRenderSnapshot == null) this.cobblemonRenderSnapshot = incoming.cobblemonRenderSnapshot;
+    }
+
+    private static String mergeDropProfileSource(String existing, String incoming) {
+        if (incoming == null || incoming.isBlank() || "empty".equals(incoming)) return existing == null ? "empty" : existing;
+        if (existing == null || existing.isBlank() || "empty".equals(existing)) return incoming;
+        if (existing.equals(incoming)) return existing;
+        if (existing.contains(incoming)) return existing;
+        if (incoming.contains(existing)) return incoming;
+        return existing + "+" + incoming;
+    }
+
     public CompoundTag toNbt() {
         CompoundTag tag = new CompoundTag();
         tag.putString("mobId", mobId.toString());
