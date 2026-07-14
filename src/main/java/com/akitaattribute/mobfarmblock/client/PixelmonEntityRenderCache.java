@@ -15,19 +15,19 @@ import com.akitaattribute.mobfarmblock.mob.StoredMob;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.TagParser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.level.Level;
 
-/** Client-only Pixelmon dummy construction. Kept separate from the Cobblemon path. */
+/** Client-only Pixelmon render reconstruction. */
 public final class PixelmonEntityRenderCache {
     private static final Map<String, Entity> CACHE = new HashMap<>();
     private static final java.util.Set<String> WARNED = new java.util.HashSet<>();
 
     public static Entity getOrCreate(StoredMob stored) {
-        if (stored == null || stored.isEmpty() || Minecraft.getInstance().level == null || !isPixelmonStored(stored) || stored.speciesId == null) return null;
+        Minecraft minecraft = Minecraft.getInstance();
+        if (stored == null || stored.isEmpty() || minecraft.level == null || !isPixelmonStored(stored) || stored.speciesId == null) return null;
         String key = stored.mobId + "|" + stored.speciesId + "|" + stored.display.variantKey() + "|" + stored.display.scale() + "|" + payloadHash(stored.pixelmonRenderSnapshot);
         Entity cached = CACHE.get(key);
         if (cached != null) {
@@ -35,25 +35,47 @@ public final class PixelmonEntityRenderCache {
             return cached;
         }
 
-        EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(stored.mobId);
-        if (type == null || type == EntityType.PIG && !stored.mobId.equals(BuiltInRegistries.ENTITY_TYPE.getKey(EntityType.PIG))) {
-            warnOnce("Pixelmon entity type could not be resolved: " + stored.mobId);
-            return null;
-        }
-
-        Entity entity = type.create(Minecraft.getInstance().level);
-        if (entity == null) {
-            warnOnce("Pixelmon dummy entity could not be created: " + stored.mobId);
-            return null;
-        }
-
         try {
-            if (!applyPixelmon(entity, stored)) return null;
+            Optional<Object> species = findPixelmonSpeciesObject(stored.speciesId);
+            Optional<Object> pokemon = createPokemon(stored.speciesId, species.orElse(null));
+            if (pokemon.isEmpty()) pokemon = constructPokemon(stored.speciesId, species.orElse(null));
+            if (pokemon.isEmpty()) {
+                Entity shell = createEmptyPixelmonEntity(stored);
+                if (shell != null) pokemon = readPokemon(shell);
+            }
+            if (pokemon.isEmpty()) {
+                warnOnce("Pixelmon Pokemon object could not be created: " + stored.speciesId);
+                return null;
+            }
+
+            Object pokemonObject = pokemon.get();
+            if (species.isPresent()) applySpeciesToPokemon(pokemonObject, species.get(), stored.speciesId);
+            applyVariantHints(pokemonObject, species.orElse(null), stored.display.variantKey());
+            invoke(pokemonObject, "setSize", (double) Math.max(0.1F, stored.display.scale()));
+            for (String method : java.util.List.of("initialize", "updateForm", "updatePalette", "updateStats", "recalculateStats")) invoke(pokemonObject, method);
+
+            Entity entity = createEntityFromPokemon(pokemonObject, minecraft.level);
+            if (entity == null) {
+                entity = createEmptyPixelmonEntity(stored);
+                if (entity != null) {
+                    bindPokemonToEntity(pokemonObject, entity);
+                    installPokemonOnEntity(entity, pokemonObject);
+                    refreshPixelmonRenderState(entity, pokemonObject);
+                }
+            }
+            if (entity == null) return null;
+
+            Optional<ResourceLocation> readBack = readPokemon(entity).flatMap(PixelmonEntityRenderCache::readPokemonSpeciesId).or(() -> readPokemonSpeciesId(pokemonObject));
+            if (readBack.isEmpty() || !readBack.get().equals(stored.speciesId)) {
+                MobFarmBlockMod.LOGGER.info("Mob Farm Block Debug: Pixelmon 3D render unresolved for storedSpecies={} readBack={} variant={}", stored.speciesId, readBack.map(Object::toString).orElse("unavailable"), stored.display.variantKey());
+                return null;
+            }
             if (!isSafeRenderable(entity, stored)) return null;
+            ClientEntityRenderCache.freezeForRender(entity);
             CACHE.put(key, entity);
             return entity;
         } catch (Throwable error) {
-            warnOnce("Pixelmon render dummy creation failed for " + key, error);
+            warnOnce("Pixelmon render entity creation failed for " + key, error);
             return null;
         }
     }
@@ -62,34 +84,22 @@ public final class PixelmonEntityRenderCache {
         return stored != null && stored.kind == MobKind.PIXELMON && "pixelmon:pixelmon".equals(stored.mobId.toString());
     }
 
-    private static boolean applyPixelmon(Entity entity, StoredMob stored) {
-        Optional<Object> species = findPixelmonSpeciesObject(stored.speciesId);
-        Optional<Object> pokemon = createPokemonFromSnapshot(stored, species.orElse(null));
-        if (pokemon.isEmpty()) pokemon = createPokemon(stored.speciesId, species.orElse(null));
-        if (pokemon.isEmpty()) pokemon = constructPokemon(stored.speciesId, species.orElse(null));
-        if (pokemon.isEmpty()) pokemon = readPokemon(entity);
-        if (pokemon.isEmpty()) {
-            warnOnce("Pixelmon dummy has no Pokemon object and factory creation failed: " + stored.speciesId);
-            return false;
+    private static Entity createEntityFromPokemon(Object pokemon, Level level) {
+        for (Object[] args : java.util.List.<Object[]>of(
+                new Object[] { level, 0.0D, 0.0D, 0.0D, 0.0F, 0.0F },
+                new Object[] { level, 0.0D, 0.0D, 0.0D },
+                new Object[] {}
+        )) {
+            Optional<Object> value = invoke(pokemon, "getOrCreatePixelmon", args);
+            if (value.isPresent() && value.get() instanceof Entity entity) return entity;
         }
+        return null;
+    }
 
-        Object pokemonObject = pokemon.get();
-        boolean changed = false;
-        if (stored.pixelmonRenderSnapshot != null && stored.pixelmonRenderSnapshot.hasPayload()) changed |= applySnapshotPayload(pokemonObject, stored.pixelmonRenderSnapshot);
-        if (species.isPresent()) changed |= applySpeciesToPokemon(pokemonObject, species.get(), stored.speciesId);
-        changed |= applyVariantHints(pokemonObject, species.orElse(null), stored.display.variantKey());
-        changed |= bindPokemonToEntity(pokemonObject, entity);
-        changed |= installPokemonOnEntity(entity, pokemonObject);
-        changed |= refreshPixelmonRenderState(entity, pokemonObject);
-        ClientEntityRenderCache.freezeForRender(entity);
-
-        Optional<ResourceLocation> readBack = readPokemon(entity).flatMap(PixelmonEntityRenderCache::readPokemonSpeciesId)
-                .or(() -> readPokemonSpeciesId(pokemonObject));
-        boolean valid = readBack.isPresent() && readBack.get().equals(stored.speciesId);
-        if (!valid) {
-            MobFarmBlockMod.LOGGER.info("Mob Farm Block Debug: Pixelmon 3D render unresolved for storedSpecies={} readBack={} changed={} variant={} payloadFormat={}", stored.speciesId, readBack.map(Object::toString).orElse("unavailable"), changed, stored.display.variantKey(), stored.pixelmonRenderSnapshot == null ? "" : stored.pixelmonRenderSnapshot.payloadFormat());
-        }
-        return valid;
+    private static Entity createEmptyPixelmonEntity(StoredMob stored) {
+        EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(stored.mobId);
+        if (type == null || type == EntityType.PIG && !stored.mobId.equals(BuiltInRegistries.ENTITY_TYPE.getKey(EntityType.PIG))) return null;
+        return type.create(Minecraft.getInstance().level);
     }
 
     private static boolean isSafeRenderable(Entity entity, StoredMob stored) {
@@ -100,10 +110,8 @@ public final class PixelmonEntityRenderCache {
             if (formName.isBlank()) formName = "base";
             if (invoke(pokemon, "getForm").isEmpty() && invoke(entity, "getForm").isEmpty()) return false;
             if (invoke(pokemon, "getPalette").isEmpty() && invoke(entity, "getPalette").isEmpty()) return false;
-            if (!formName.isBlank()) {
-                setField(pokemon, "formName", formName);
-                setField(entity, "formName", formName);
-            }
+            setField(pokemon, "formName", formName);
+            setField(entity, "formName", formName);
             return true;
         } catch (Throwable error) {
             warnOnce("Pixelmon render validation failed for " + stored.speciesId, error);
@@ -126,7 +134,6 @@ public final class PixelmonEntityRenderCache {
     }
 
     private static boolean applyVariantHints(Object pokemon, Object species, String variantKey) {
-        if (variantKey == null || variantKey.isBlank()) return false;
         boolean changed = false;
         String formName = parseVariantValue(variantKey, "form");
         if (formName.isBlank()) formName = "base";
@@ -162,12 +169,9 @@ public final class PixelmonEntityRenderCache {
     private static Optional<Object> resolveFormObject(Object species, String formName) {
         if (species == null) return Optional.empty();
         String wanted = formName == null || formName.isBlank() ? "base" : formName;
-        Optional<Object> direct = invoke(species, "getForm", wanted)
-                .or(() -> invoke(species, "getForm", wanted.toLowerCase(java.util.Locale.ROOT)))
-                .or(() -> invoke(species, "getDefaultForm"))
-                .or(() -> invoke(species, "getFirstForm"));
+        Optional<Object> direct = invoke(species, "getForm", wanted).or(() -> invoke(species, "getDefaultForm")).or(() -> invoke(species, "getFirstForm"));
         if (direct.isPresent() && formMatches(direct.get(), wanted)) return direct;
-        Optional<Object> forms = invoke(species, "getForms").or(() -> readField(species, "forms")).or(() -> invoke(species, "getDefaultForms"));
+        Optional<Object> forms = invoke(species, "getForms").or(() -> readField(species, "forms"));
         for (Object form : iterable(forms.orElse(null))) if (formMatches(form, wanted)) return Optional.of(form);
         return direct;
     }
@@ -175,7 +179,7 @@ public final class PixelmonEntityRenderCache {
     private static boolean formMatches(Object form, String wanted) {
         if (form == null) return false;
         String name = invoke(form, "getName").or(() -> readField(form, "name")).map(String::valueOf).orElse(String.valueOf(form));
-        return name.toLowerCase(java.util.Locale.ROOT).contains(wanted.toLowerCase(java.util.Locale.ROOT));
+        return name.equalsIgnoreCase(wanted) || name.toLowerCase(java.util.Locale.ROOT).contains(wanted.toLowerCase(java.util.Locale.ROOT));
     }
 
     private static Optional<Object> resolvePaletteObject(Object pokemon, Object form, Object species, String paletteName) {
@@ -183,17 +187,13 @@ public final class PixelmonEntityRenderCache {
         if (current.isPresent() && paletteMatches(current.get(), paletteName)) return current;
         for (Object source : java.util.List.of(form, species)) {
             if (source == null) continue;
-            Optional<Object> direct = invoke(source, "getPalette", paletteName)
-                    .or(() -> invoke(source, "getFirstPaletteProperties"))
-                    .or(() -> invoke(source, "getDefaultPalette"));
-            if (direct.isPresent()) return direct;
+            Optional<Object> direct = invoke(source, "getPalette", paletteName).or(() -> invoke(source, "getFirstPaletteProperties")).or(() -> invoke(source, "getDefaultPalette"));
+            if (direct.isPresent() && paletteMatches(direct.get(), paletteName)) return direct;
             for (String method : java.util.List.of("getGenderProperties", "getDefaultGenderProperties", "getFirstGenderProperties")) {
-                Optional<Object> genderProps = invoke(source, method);
-                for (Object gp : iterable(genderProps.orElse(null))) {
+                for (Object gp : iterable(invoke(source, method).orElse(null))) {
                     Optional<Object> palette = invoke(gp, "getDefaultPalette").or(() -> invoke(gp, "getRandomPalette"));
                     if (palette.isPresent() && paletteMatches(palette.get(), paletteName)) return palette;
-                    Optional<Object> palettes = invoke(gp, "getPalettes");
-                    for (Object p : iterable(palettes.orElse(null))) if (paletteMatches(p, paletteName)) return Optional.of(p);
+                    for (Object p : iterable(invoke(gp, "getPalettes").orElse(null))) if (paletteMatches(p, paletteName)) return Optional.of(p);
                 }
             }
         }
@@ -241,7 +241,6 @@ public final class PixelmonEntityRenderCache {
 
     private static boolean refreshPixelmonRenderState(Entity entity, Object pokemon) {
         boolean changed = false;
-        for (String method : java.util.List.of("initialize", "update", "updateForm", "updatePalette", "updateStats", "recalculateStats", "updateAspects")) changed |= invoke(pokemon, method).isPresent();
         for (String method : java.util.List.of("updatePokemon", "updatePokemonData", "updatePixelmon", "refreshPokemon", "refreshDimensions", "recalculateSize", "updateSize", "updateModel", "reloadModel")) changed |= invoke(entity, method).isPresent();
         readField(entity, "delegate").ifPresent(delegate -> { invoke(delegate, "changePokemon", pokemon); invoke(delegate, "setPokemon", pokemon); invoke(delegate, "updatePokemon", pokemon); });
         return changed;
@@ -261,33 +260,6 @@ public final class PixelmonEntityRenderCache {
         changed |= invoke(target, setter, text).isPresent();
         changed |= setField(target, fieldName, text);
         return changed;
-    }
-
-    private static Optional<Object> createPokemonFromSnapshot(StoredMob stored, Object speciesObject) {
-        PixelmonRenderSnapshot snapshot = stored.pixelmonRenderSnapshot;
-        if (snapshot == null || !snapshot.hasPayload()) return Optional.empty();
-        Optional<Object> pokemon = createPokemon(stored.speciesId, speciesObject).or(() -> constructPokemon(stored.speciesId, speciesObject));
-        if (pokemon.isPresent() && applySnapshotPayload(pokemon.get(), snapshot)) return pokemon;
-        return Optional.empty();
-    }
-
-    private static boolean applySnapshotPayload(Object pokemon, PixelmonRenderSnapshot snapshot) {
-        if (pokemon == null || snapshot == null || !snapshot.hasPayload()) return false;
-        Optional<CompoundTag> tag = parsePayload(snapshot.payload());
-        if (tag.isEmpty()) return false;
-        boolean changed = false;
-        CompoundTag payload = tag.get();
-        for (String method : java.util.List.of("loadFromNBT", "loadFromNbt", "readFromNBT", "readFromNbt", "deserializeNBT", "deserializeNbt", "load", "read", "setFromNBT", "setFromNbt")) {
-            changed |= invoke(pokemon, method, payload).isPresent();
-        }
-        if (!changed) warnOnce("Pixelmon captured Pokemon payload could not be applied via " + snapshot.payloadFormat());
-        return changed;
-    }
-
-    private static Optional<CompoundTag> parsePayload(String payload) {
-        if (payload == null || payload.isBlank() || !payload.trim().startsWith("{")) return Optional.empty();
-        try { return Optional.of(TagParser.parseTag(payload)); }
-        catch (Throwable error) { warnOnce("Pixelmon captured Pokemon payload could not be parsed", error); return Optional.empty(); }
     }
 
     private static Optional<Object> createPokemon(ResourceLocation speciesId, Object speciesObject) {
