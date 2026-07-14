@@ -88,8 +88,8 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
             float displayScale = stored.display.scale() > 0 ? stored.display.scale() : 1.0F;
             float height = Math.max(entity.getBbHeight(), 0.35F) * displayScale;
             float width = Math.max(entity.getBbWidth(), 0.35F) * displayScale;
-            float fit = 2.40F / Math.max(0.1F, Math.max(height, width));
-            return Math.max(1.15F, Math.min(3.00F, fit));
+            float fit = 4.00F / Math.max(0.1F, Math.max(height, width));
+            return Math.max(1.80F, Math.min(5.50F, fit));
         }
         float scale = 0.32F;
         if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, entity.getBbHeight()));
