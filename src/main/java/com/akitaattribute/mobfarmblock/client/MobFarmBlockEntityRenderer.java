@@ -59,10 +59,11 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         if (stored.isEmpty()) return;
         Minecraft minecraft = Minecraft.getInstance();
         boolean inspected = isInspected(minecraft, blockEntity.getBlockPos());
+        boolean pixelmon = PixelmonEntityRenderCache.isPixelmonStored(stored);
         Entity entity = renderEntity(stored, minecraft);
         if (entity != null) {
             poseStack.pushPose();
-            poseStack.translate(0.5D, 0.58D, 0.5D);
+            poseStack.translate(0.5D, pixelmon ? 1.05D : 0.58D, 0.5D);
             float scale = placedEntityScale(stored, entity, inspected);
             poseStack.scale(scale, scale, scale);
             poseStack.mulPose(Axis.YP.rotationDegrees(blockEntity.getBlockState().getValue(MobFarmBlock.FACING).toYRot()));
@@ -258,7 +259,8 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
             LookRow row = compactRow(stored, definition, now);
             if (row != null) rows.add(row);
         }
-        if (rows.isEmpty() && stored.dropProfile.drops().isEmpty()) {
+        for (DropRule rule : stored.dropProfile.drops()) rows.add(new LookRow(new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId())), "Drop", formatChance(rule.chance()), TEXT_WHITE, TEXT_YELLOW));
+        if (rows.isEmpty()) {
             if (hasNativePixelmonDrops(stored)) rows.add(new LookRow(new ItemStack(Items.CHEST), "Pixelmon Drops", "Native", TEXT_WHITE, TEXT_GREEN));
             else rows.add(new LookRow(new ItemStack(Items.BARRIER), "No Drops", "", TEXT_GRAY, TEXT_GRAY));
         }
