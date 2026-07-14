@@ -1,5 +1,7 @@
 package com.akitaattribute.mobfarmblock.integration;
 
+import java.io.DataInputStream;
+import java.io.InputStream;
 import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -25,16 +27,17 @@ import net.minecraft.world.item.Items;
  * Non-destructive Pixelmon drop introspection.
  *
  * This does not call action methods such as dropItems/dropNormalItems. It drills
- * into the rehydrated Pixelmon object graph and records the native drop classes,
- * class members, and item-like accessors so process dumps can point at the next
- * target when a static preview cannot be resolved.
+ * into the rehydrated Pixelmon object graph, records native drop classes, and
+ * reads class-file constant-pool references for the native drop class so the
+ * process dump can reveal likely callees behind dropNormalItems/dropItems.
  */
 public final class PixelmonNativeDropInspector {
     private static final int MAX_DEPTH = 5;
     private static final int MAX_NODES = 192;
-    private static final int MAX_DIAGNOSTIC_CHARS = 32000;
+    private static final int MAX_DIAGNOSTIC_CHARS = 42000;
     private static final int MAX_METHODS_PER_CLASS = 140;
     private static final int MAX_FIELDS_PER_CLASS = 140;
+    private static final int MAX_BYTECODE_REFS = 220;
 
     public record Result(List<DropRule> rules, String diagnostics) {}
 
@@ -48,6 +51,7 @@ public final class PixelmonNativeDropInspector {
         private final StringBuilder diagnostics = new StringBuilder();
         private final List<DropRule> rules = new ArrayList<>();
         private final java.util.Set<Class<?>> classInventoryDumped = new java.util.HashSet<>();
+        private final java.util.Set<Class<?>> bytecodeDumped = new java.util.HashSet<>();
         private int nodes;
 
         void inspectEntity(Entity entity) {
@@ -82,6 +86,7 @@ public final class PixelmonNativeDropInspector {
                 if (!name.toLowerCase(java.util.Locale.ROOT).contains("drop")) continue;
                 line("nativeDrop.method " + methodLabel(method));
                 dumpClassInventory("nativeDrop.declaringClass", method.getDeclaringClass(), entity);
+                dumpClassReferenceInventory("nativeDrop.declaringClass", method.getDeclaringClass());
             }
             line("nativeDropClassInventory end");
         }
@@ -127,6 +132,20 @@ public final class PixelmonNativeDropInspector {
                     line(fieldLabel + " ERROR " + error.getClass().getSimpleName() + ": " + safeMessage(error));
                 }
             }
+        }
+
+        private void dumpClassReferenceInventory(String label, Class<?> type) {
+            if (type == null || !bytecodeDumped.add(type)) return;
+            line(label + ".bytecodeReferences class=" + type.getName());
+            List<String> refs = classMethodReferences(type);
+            int count = 0;
+            for (String ref : refs) {
+                if (!interestingReference(ref)) continue;
+                if (count++ >= MAX_BYTECODE_REFS) { line(label + ".bytecodeReferences truncated"); break; }
+                line(label + ".bytecodeRef " + ref);
+            }
+            if (count == 0) line(label + ".bytecodeReferences none_matching");
+            line(label + ".bytecodeReferences note=constant-pool refs are class-wide likely callees, not guaranteed per-method calls");
         }
 
         private void scanMembers(String label, Object value) {
@@ -224,9 +243,7 @@ public final class PixelmonNativeDropInspector {
             return new ArrayList<>(deduped.values());
         }
 
-        private String diagnostics() {
-            return diagnostics.toString();
-        }
+        private String diagnostics() { return diagnostics.toString(); }
 
         private void line(String text) {
             if (diagnostics.length() >= MAX_DIAGNOSTIC_CHARS) return;
@@ -305,9 +322,7 @@ public final class PixelmonNativeDropInspector {
             if (method == null || !safeAccessor(name)) return Optional.empty();
             method.setAccessible(true);
             return Optional.ofNullable(method.invoke(target));
-        } catch (Throwable ignored) {
-            return Optional.empty();
-        }
+        } catch (Throwable ignored) { return Optional.empty(); }
     }
 
     private static Optional<Object> readField(Object target, String name) {
@@ -316,9 +331,7 @@ public final class PixelmonNativeDropInspector {
             if (field == null) return Optional.empty();
             field.setAccessible(true);
             return Optional.ofNullable(field.get(target));
-        } catch (Throwable ignored) {
-            return Optional.empty();
-        }
+        } catch (Throwable ignored) { return Optional.empty(); }
     }
 
     private static Method findNoArgMethod(Class<?> type, String name) {
@@ -350,6 +363,69 @@ public final class PixelmonNativeDropInspector {
         return fields;
     }
 
+    private static List<String> classMethodReferences(Class<?> type) {
+        List<String> refs = new ArrayList<>();
+        String resource = "/" + type.getName().replace('.', '/') + ".class";
+        try (InputStream stream = type.getResourceAsStream(resource)) {
+            if (stream == null) {
+                refs.add("ERROR class_resource_not_found " + resource);
+                return refs;
+            }
+            try (DataInputStream in = new DataInputStream(stream)) {
+                if (in.readInt() != 0xCAFEBABE) {
+                    refs.add("ERROR not_class_file");
+                    return refs;
+                }
+                in.readUnsignedShort();
+                in.readUnsignedShort();
+                int count = in.readUnsignedShort();
+                Object[] cp = new Object[count];
+                int[] classNameIndex = new int[count];
+                int[] nameAndTypeNameIndex = new int[count];
+                int[] nameAndTypeDescIndex = new int[count];
+                int[] refClassIndex = new int[count];
+                int[] refNameAndTypeIndex = new int[count];
+                for (int i = 1; i < count; i++) {
+                    int tag = in.readUnsignedByte();
+                    switch (tag) {
+                        case 1 -> cp[i] = in.readUTF();
+                        case 3, 4 -> in.readInt();
+                        case 5, 6 -> { in.readLong(); i++; }
+                        case 7 -> classNameIndex[i] = in.readUnsignedShort();
+                        case 8, 16, 19, 20 -> in.readUnsignedShort();
+                        case 9, 10, 11, 18 -> { refClassIndex[i] = in.readUnsignedShort(); refNameAndTypeIndex[i] = in.readUnsignedShort(); }
+                        case 12 -> { nameAndTypeNameIndex[i] = in.readUnsignedShort(); nameAndTypeDescIndex[i] = in.readUnsignedShort(); }
+                        case 15 -> { in.readUnsignedByte(); in.readUnsignedShort(); }
+                        default -> { refs.add("ERROR unknown_cp_tag_" + tag); return refs; }
+                    }
+                }
+                java.util.Set<String> dedupe = new java.util.LinkedHashSet<>();
+                for (int i = 1; i < count; i++) {
+                    if (refClassIndex[i] == 0 || refNameAndTypeIndex[i] == 0) continue;
+                    String owner = utf(cp, classNameIndex[refClassIndex[i]]).replace('/', '.');
+                    int nt = refNameAndTypeIndex[i];
+                    String name = utf(cp, nameAndTypeNameIndex[nt]);
+                    String desc = utf(cp, nameAndTypeDescIndex[nt]);
+                    dedupe.add(owner + "#" + name + desc);
+                }
+                refs.addAll(dedupe);
+            }
+        } catch (Throwable error) {
+            refs.add("ERROR " + error.getClass().getSimpleName() + ": " + safeMessage(error));
+        }
+        return refs;
+    }
+
+    private static String utf(Object[] cp, int index) {
+        Object value = index > 0 && index < cp.length ? cp[index] : null;
+        return value == null ? "" : String.valueOf(value);
+    }
+
+    private static boolean interestingReference(String ref) {
+        String n = ref.toLowerCase(java.util.Locale.ROOT);
+        return n.contains("pixelmonmod") || n.contains("drop") || n.contains("loot") || n.contains("reward") || n.contains("item") || n.contains("held") || n.contains("battle") || n.contains("defeat") || n.contains("screen") || n.contains("container") || n.contains("gui");
+    }
+
     private static boolean isUsefulSignature(Method method) {
         String name = method.getName();
         return interestingName(name) || isPixelmonOwned(method.getDeclaringClass()) && method.getDeclaringClass().getSimpleName().toLowerCase(java.util.Locale.ROOT).contains("holdsitems");
@@ -378,9 +454,7 @@ public final class PixelmonNativeDropInspector {
         return n.contains("held") || n.contains("mainhand") || n.contains("offhand") || n.contains("equipment") || n.contains("armor") || n.contains("bodyarmor") || n.contains("weapon") || n.contains("useitem") || n.contains("itembyslot") || n.contains("lastarmor") || n.contains("lasthand");
     }
 
-    private static boolean isPixelmonOwned(Class<?> type) {
-        return type != null && type.getName().startsWith("com.pixelmonmod.pixelmon");
-    }
+    private static boolean isPixelmonOwned(Class<?> type) { return type != null && type.getName().startsWith("com.pixelmonmod.pixelmon"); }
 
     private static boolean simple(Object value) {
         return value instanceof String || value instanceof Number || value instanceof Boolean || value instanceof Enum<?> || value instanceof ResourceLocation || value instanceof java.util.UUID;
@@ -422,9 +496,7 @@ public final class PixelmonNativeDropInspector {
         return out.append("):").append(method.getReturnType().getName()).toString();
     }
 
-    private static String fieldLabel(Field field) {
-        return field.getDeclaringClass().getName() + "#" + field.getName() + ":" + field.getType().getName();
-    }
+    private static String fieldLabel(Field field) { return field.getDeclaringClass().getName() + "#" + field.getName() + ":" + field.getType().getName(); }
 
     private static String safeText(Object value) {
         String text;
