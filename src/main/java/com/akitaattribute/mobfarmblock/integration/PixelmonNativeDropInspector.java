@@ -33,8 +33,8 @@ public final class PixelmonNativeDropInspector {
     private static final int MAX_DEPTH = 5;
     private static final int MAX_NODES = 192;
     private static final int MAX_DIAGNOSTIC_CHARS = 32000;
-    private static final int MAX_METHODS_PER_CLASS = 120;
-    private static final int MAX_FIELDS_PER_CLASS = 120;
+    private static final int MAX_METHODS_PER_CLASS = 140;
+    private static final int MAX_FIELDS_PER_CLASS = 140;
 
     public record Result(List<DropRule> rules, String diagnostics) {}
 
@@ -65,12 +65,10 @@ public final class PixelmonNativeDropInspector {
                 Object form = firstValue(pokemon, "getForm", "form").orElse(null);
                 Object palette = firstValue(pokemon, "getPalette", "palette").orElse(null);
                 Object renderable = firstValue(pokemon, "asRenderablePokemon").orElse(null);
-                Object held = firstValue(pokemon, "getHeldItem", "heldItem", "getHeldItemAsItemHeld", "heldItemAsItemHeld").orElse(null);
                 inspectAnchor("pokemon.species", species);
                 inspectAnchor("pokemon.form", form);
                 inspectAnchor("pokemon.palette", palette);
                 inspectAnchor("pokemon.renderable", renderable);
-                inspectAnchor("pokemon.held", held);
                 inspectSpeciesJson("pokemon.speciesJson", species);
                 inspectSpeciesJson("pokemon.formSpeciesJson", firstValue(form, "getParentSpecies", "parentSpecies", "parent").orElse(null));
             }
@@ -114,19 +112,19 @@ public final class PixelmonNativeDropInspector {
                 if (fields >= MAX_FIELDS_PER_CLASS) { line(label + ".fields truncated"); break; }
                 if (!interestingName(field.getName()) && !isPixelmonOwned(field.getDeclaringClass())) continue;
                 fields++;
-                String prefix = label + ".field " + fieldLabel(field);
+                String fieldLabel = label + ".field " + fieldLabel(field);
                 Object target = instance != null && field.getDeclaringClass().isAssignableFrom(instance.getClass()) ? instance : null;
                 if (target == null || Modifier.isStatic(field.getModifiers())) {
-                    line(prefix);
+                    line(fieldLabel);
                     continue;
                 }
                 try {
                     field.setAccessible(true);
                     Object value = field.get(target);
-                    line(prefix + " -> " + summarize(value));
+                    line(fieldLabel + " -> " + summarize(value));
                     if (interestingName(field.getName())) collectRules(label + "." + field.getName(), value, 0, new IdentityHashMap<>());
                 } catch (Throwable error) {
-                    line(prefix + " ERROR " + error.getClass().getSimpleName() + ": " + safeMessage(error));
+                    line(fieldLabel + " ERROR " + error.getClass().getSimpleName() + ": " + safeMessage(error));
                 }
             }
         }
@@ -136,7 +134,7 @@ public final class PixelmonNativeDropInspector {
             for (Method method : allMethods(value.getClass())) {
                 String name = method.getName();
                 if (!interestingName(name)) continue;
-                if (++interestingMethods <= 80) line(label + ".method " + methodLabel(method));
+                if (++interestingMethods <= 90) line(label + ".method " + methodLabel(method));
                 if (method.getParameterCount() == 0 && method.getReturnType() != Void.TYPE && safeAccessor(name)) {
                     try {
                         method.setAccessible(true);
@@ -148,12 +146,12 @@ public final class PixelmonNativeDropInspector {
                     }
                 }
             }
-            if (interestingMethods > 80) line(label + ".method truncated count=" + interestingMethods);
+            if (interestingMethods > 90) line(label + ".method truncated count=" + interestingMethods);
 
             int interestingFields = 0;
             for (Field field : allFields(value.getClass())) {
                 if (!interestingName(field.getName())) continue;
-                if (++interestingFields <= 80) line(label + ".field " + fieldLabel(field));
+                if (++interestingFields <= 90) line(label + ".field " + fieldLabel(field));
                 try {
                     field.setAccessible(true);
                     Object result = field.get(value);
@@ -163,7 +161,7 @@ public final class PixelmonNativeDropInspector {
                     line(label + "." + field.getName() + " ERROR " + error.getClass().getSimpleName() + ": " + safeMessage(error));
                 }
             }
-            if (interestingFields > 80) line(label + ".field truncated count=" + interestingFields);
+            if (interestingFields > 90) line(label + ".field truncated count=" + interestingFields);
         }
 
         private void inspectSpeciesJson(String label, Object species) {
@@ -181,10 +179,14 @@ public final class PixelmonNativeDropInspector {
         private void collectRules(String label, Object value, int depth, IdentityHashMap<Object, Boolean> seen) {
             if (value == null || depth > MAX_DEPTH || nodes++ > MAX_NODES) return;
             if (!simple(value) && seen.put(value, Boolean.TRUE) != null) return;
-            dropRuleFromEntry(value).ifPresent(rule -> {
-                rules.add(rule);
-                line(label + " RULE item=" + rule.itemId() + " chance=" + rule.chance() + " count=" + rule.minCount() + "-" + rule.maxCount());
-            });
+            if (!ignoredItemContext(label)) {
+                dropRuleFromEntry(value).ifPresent(rule -> {
+                    rules.add(rule);
+                    line(label + " RULE item=" + rule.itemId() + " chance=" + rule.chance() + " count=" + rule.minCount() + "-" + rule.maxCount());
+                });
+            } else if (value instanceof ItemStack || value instanceof Item || value instanceof ResourceLocation) {
+                line(label + " ignored item-like value from held/equipment context -> " + summarize(value));
+            }
             if (simple(value)) return;
 
             if (value instanceof Map<?, ?> map) {
@@ -235,8 +237,8 @@ public final class PixelmonNativeDropInspector {
 
     private static final String[] CHILD_ACCESSORS = new String[] {
             "getEntries", "entries", "getEntry", "entry", "getDrops", "drops", "getDrop", "drop", "getDropItems", "dropItems",
-            "getRewards", "rewards", "getReward", "reward", "getItems", "items", "getItem", "item", "getHeldItem", "heldItem",
-            "getHeldItemAsItemHeld", "heldItemAsItemHeld", "getStack", "stack", "getItemStack", "itemStack", "getLootTable", "lootTable",
+            "getRewards", "rewards", "getReward", "reward", "getItems", "items", "getItem", "item",
+            "getStack", "stack", "getItemStack", "itemStack", "getLootTable", "lootTable",
             "getDropTable", "dropTable", "getTable", "table", "getPools", "pools", "getPool", "pool", "getRolls", "rolls",
             "getQuantity", "quantity", "getQuantityRange", "quantityRange", "getPercentage", "percentage", "getChance", "chance"
     };
@@ -282,6 +284,7 @@ public final class PixelmonNativeDropInspector {
             catch (Throwable ignored) { return Optional.empty(); }
         }
         if (id == null || id.equals(BuiltInRegistries.ITEM.getKey(Items.AIR))) return Optional.empty();
+        if ("pixelmon".equals(id.getNamespace()) && ("no_item".equals(id.getPath()) || "none".equals(id.getPath()))) return Optional.empty();
         return BuiltInRegistries.ITEM.getOptional(id).isPresent() ? Optional.of(id) : Optional.empty();
     }
 
@@ -368,6 +371,11 @@ public final class PixelmonNativeDropInspector {
         String n = name.toLowerCase(java.util.Locale.ROOT);
         if (n.startsWith("drop") || n.startsWith("remove") || n.startsWith("clear") || n.startsWith("add") || n.startsWith("set") || n.startsWith("put") || n.startsWith("load") || n.startsWith("save") || n.startsWith("update") || n.startsWith("tick") || n.startsWith("open") || n.startsWith("send") || n.startsWith("give") || n.startsWith("claim")) return false;
         return n.startsWith("get") || n.startsWith("is") || n.startsWith("has") || n.startsWith("can") || n.startsWith("should") || n.startsWith("as") || n.equals("pokemon") || n.equals("species") || n.equals("form") || n.equals("palette") || n.equals("drops") || n.equals("items") || n.equals("rewards") || n.equals("entries");
+    }
+
+    private static boolean ignoredItemContext(String label) {
+        String n = label.toLowerCase(java.util.Locale.ROOT);
+        return n.contains("held") || n.contains("mainhand") || n.contains("offhand") || n.contains("equipment") || n.contains("armor") || n.contains("bodyarmor") || n.contains("weapon") || n.contains("useitem") || n.contains("itembyslot") || n.contains("lastarmor") || n.contains("lasthand");
     }
 
     private static boolean isPixelmonOwned(Class<?> type) {
