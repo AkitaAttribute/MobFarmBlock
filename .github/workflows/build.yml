@@ -4,13 +4,14 @@ on:
   pull_request:
 permissions:
   contents: read
-  actions: read
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -24,35 +25,38 @@ jobs:
         run: ./gradlew --no-daemon clean build
       - name: Compute branch artifact version
         id: artifact_version
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const branch = context.payload.pull_request?.head?.ref || context.ref.replace('refs/heads/', '');
-            const currentRunId = context.runId;
-            let runs = [];
-            try {
-              runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'build.yml',
-                branch,
-                per_page: 100
-              });
-            } catch (error) {
-              core.warning(`Unable to list workflow runs for branch ${branch}; using global run number ${context.runNumber}: ${error.message}`);
-            }
-            const currentRun = runs.find(run => run.id === currentRunId);
-            const currentTime = currentRun?.created_at ? Date.parse(currentRun.created_at) : Date.now();
-            const branchRunNumber = runs.length
-              ? Math.max(1, runs.filter(run => Date.parse(run.created_at) <= currentTime).length)
-              : context.runNumber;
-            const safeBranch = branch.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'branch';
-            const fileName = `mob-farm-block-${branchRunNumber}.jar`;
-            const artifactName = `mob-farm-block-${safeBranch}-${branchRunNumber}`;
-            core.info(`Branch ${branch} artifact version: ${branchRunNumber}`);
-            core.setOutput('branch_run_number', String(branchRunNumber));
-            core.setOutput('file_name', fileName);
-            core.setOutput('artifact_name', artifactName);
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          branch="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          base_ref="${GITHUB_BASE_REF:-}"
+
+          if [ -n "$base_ref" ]; then
+            git fetch --no-tags --prune --depth=1 origin "$base_ref"
+            base="origin/$base_ref"
+          else
+            default_branch="$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')"
+            git fetch --no-tags --prune --depth=1 origin "$default_branch"
+            base="origin/$default_branch"
+          fi
+
+          merge_base="$(git merge-base HEAD "$base" || true)"
+          if [ -n "$merge_base" ]; then
+            branch_version="$(git rev-list --count "${merge_base}..HEAD")"
+          else
+            branch_version="$(git rev-list --count HEAD)"
+          fi
+          if [ -z "$branch_version" ] || [ "$branch_version" -lt 1 ]; then
+            branch_version=1
+          fi
+
+          file_name="mob-farm-block-${branch_version}.jar"
+
+          echo "Branch: $branch"
+          echo "Base: $base"
+          echo "Branch artifact version: $branch_version"
+          echo "file_name=$file_name" >> "$GITHUB_OUTPUT"
       - name: Prepare numbered jar
         run: |
           set -euo pipefail
@@ -72,6 +76,6 @@ jobs:
       - name: Upload mod jar
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.artifact_version.outputs.artifact_name }}
+          name: ${{ steps.artifact_version.outputs.file_name }}
           path: build/numbered-libs/${{ steps.artifact_version.outputs.file_name }}
           if-no-files-found: error
