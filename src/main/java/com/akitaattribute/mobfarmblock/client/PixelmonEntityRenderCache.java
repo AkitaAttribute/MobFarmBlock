@@ -15,6 +15,8 @@ import com.akitaattribute.mobfarmblock.mob.StoredMob;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.TagParser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -36,6 +38,10 @@ public final class PixelmonEntityRenderCache {
         }
 
         try {
+            Entity payloadEntity = createEntityFromSavedPayload(stored);
+            Entity validatedPayloadEntity = validateAndCache(payloadEntity, stored, key, "saved_entity_payload");
+            if (validatedPayloadEntity != null) return validatedPayloadEntity;
+
             Optional<Object> species = findPixelmonSpeciesObject(stored.speciesId);
             Optional<Object> pokemon = createPokemon(stored.speciesId, species.orElse(null));
             if (pokemon.isEmpty()) pokemon = constructPokemon(stored.speciesId, species.orElse(null));
@@ -51,8 +57,8 @@ public final class PixelmonEntityRenderCache {
             Object pokemonObject = pokemon.get();
             if (species.isPresent()) applySpeciesToPokemon(pokemonObject, species.get(), stored.speciesId);
             applyVariantHints(pokemonObject, species.orElse(null), stored.display.variantKey());
-            invoke(pokemonObject, "setSize", (double) Math.max(0.1F, stored.display.scale()));
-            for (String method : java.util.List.of("initialize", "updateForm", "updatePalette", "updateStats", "recalculateStats")) invoke(pokemonObject, method);
+            invokeAny(pokemonObject, "setSize", (double) Math.max(0.1F, stored.display.scale()));
+            for (String method : java.util.List.of("initialize", "updateForm", "updatePalette", "updateStats", "recalculateStats")) invokeAny(pokemonObject, method);
 
             Entity entity = createEntityFromPokemon(pokemonObject, minecraft.level);
             if (entity == null) {
@@ -63,17 +69,7 @@ public final class PixelmonEntityRenderCache {
                     refreshPixelmonRenderState(entity, pokemonObject);
                 }
             }
-            if (entity == null) return null;
-
-            Optional<ResourceLocation> readBack = readPokemon(entity).flatMap(PixelmonEntityRenderCache::readPokemonSpeciesId).or(() -> readPokemonSpeciesId(pokemonObject));
-            if (readBack.isEmpty() || !readBack.get().equals(stored.speciesId)) {
-                MobFarmBlockMod.LOGGER.info("Mob Farm Block Debug: Pixelmon 3D render unresolved for storedSpecies={} readBack={} variant={}", stored.speciesId, readBack.map(Object::toString).orElse("unavailable"), stored.display.variantKey());
-                return null;
-            }
-            if (!isSafeRenderable(entity, stored)) return null;
-            ClientEntityRenderCache.freezeForRender(entity);
-            CACHE.put(key, entity);
-            return entity;
+            return validateAndCache(entity, stored, key, "pokemon_factory");
         } catch (Throwable error) {
             warnOnce("Pixelmon render entity creation failed for " + key, error);
             return null;
@@ -82,6 +78,39 @@ public final class PixelmonEntityRenderCache {
 
     public static boolean isPixelmonStored(StoredMob stored) {
         return stored != null && stored.kind == MobKind.PIXELMON && "pixelmon:pixelmon".equals(stored.mobId.toString());
+    }
+
+    private static Entity createEntityFromSavedPayload(StoredMob stored) {
+        PixelmonRenderSnapshot snapshot = stored.pixelmonRenderSnapshot;
+        if (snapshot == null || snapshot.payload() == null || snapshot.payload().isBlank() || !snapshot.payloadFormat().startsWith("entity:")) return null;
+        try {
+            Entity entity = createEmptyPixelmonEntity(stored);
+            if (entity == null) return null;
+            CompoundTag tag = TagParser.parseTag(snapshot.payload());
+            invokeAny(entity, "load", tag);
+            readPokemon(entity).ifPresent(pokemon -> {
+                applyVariantHints(pokemon, invoke(pokemon, "getSpecies").orElse(null), stored.display.variantKey());
+                invokeAny(pokemon, "setSize", (double) Math.max(0.1F, stored.display.scale()));
+                refreshPixelmonRenderState(entity, pokemon);
+            });
+            return entity;
+        } catch (Throwable error) {
+            warnOnce("Pixelmon saved entity payload could not be loaded for " + stored.speciesId, error);
+            return null;
+        }
+    }
+
+    private static Entity validateAndCache(Entity entity, StoredMob stored, String key, String source) {
+        if (entity == null) return null;
+        Optional<ResourceLocation> readBack = readPokemon(entity).flatMap(PixelmonEntityRenderCache::readPokemonSpeciesId);
+        if (readBack.isEmpty() || !readBack.get().equals(stored.speciesId)) {
+            MobFarmBlockMod.LOGGER.info("Mob Farm Block Debug: Pixelmon 3D render unresolved via {} for storedSpecies={} readBack={} variant={}", source, stored.speciesId, readBack.map(Object::toString).orElse("unavailable"), stored.display.variantKey());
+            return null;
+        }
+        if (!isSafeRenderable(entity, stored)) return null;
+        ClientEntityRenderCache.freezeForRender(entity);
+        CACHE.put(key, entity);
+        return entity;
     }
 
     private static Entity createEntityFromPokemon(Object pokemon, Level level) {
@@ -123,7 +152,13 @@ public final class PixelmonEntityRenderCache {
         boolean changed = false;
         Optional<Object> registryValue = invoke(species, "getRegistryValue").or(() -> readField(species, "registryValue"));
         changed |= invoke(pokemon, "setSpecies", species).isPresent();
-        if (registryValue.isPresent()) changed |= invoke(pokemon, "setSpecies", registryValue.get()).isPresent();
+        changed |= invokeAny(pokemon, "setSpecies", species, false);
+        changed |= invokeAny(pokemon, "setSpecies", species, true);
+        if (registryValue.isPresent()) {
+            changed |= invoke(pokemon, "setSpecies", registryValue.get()).isPresent();
+            changed |= invokeAny(pokemon, "setSpecies", registryValue.get(), false);
+            changed |= invokeAny(pokemon, "setSpecies", registryValue.get(), true);
+        }
         changed |= invoke(pokemon, "setSpecies", titleCase(speciesId.getPath())).isPresent();
         changed |= invoke(pokemon, "setSpecies", speciesId.getPath()).isPresent();
         changed |= invoke(pokemon, "setSpecies", speciesId.toString()).isPresent();
@@ -150,7 +185,7 @@ public final class PixelmonEntityRenderCache {
 
         Optional<Object> form = resolveFormObject(species, formName);
         if (form.isPresent()) {
-            changed |= invoke(pokemon, "setForm", form.get()).isPresent();
+            changed |= invokeAny(pokemon, "setForm", form.get());
             changed |= setField(pokemon, "form", form.get());
         }
         changed |= invoke(pokemon, "setForm", formName).isPresent();
@@ -218,9 +253,9 @@ public final class PixelmonEntityRenderCache {
 
     private static boolean bindPokemonToEntity(Object pokemon, Entity entity) {
         boolean changed = false;
-        changed |= invoke(pokemon, "setEntity", entity).isPresent();
-        changed |= invoke(pokemon, "setPixelmonEntity", entity).isPresent();
-        changed |= invoke(pokemon, "setEntityID", entity.getId()).isPresent();
+        changed |= invokeAny(pokemon, "setEntity", entity);
+        changed |= invokeAny(pokemon, "setPixelmonEntity", entity);
+        changed |= invokeAny(pokemon, "setEntityID", entity.getId());
         changed |= setField(pokemon, "entity", entity);
         changed |= setField(pokemon, "pixelmonEntity", entity);
         changed |= setField(pokemon, "entityID", entity.getId());
@@ -229,10 +264,10 @@ public final class PixelmonEntityRenderCache {
 
     private static boolean installPokemonOnEntity(Entity entity, Object pokemon) {
         boolean changed = false;
-        changed |= invoke(entity, "setPokemon", pokemon).isPresent();
-        changed |= invoke(entity, "setPixelmon", pokemon).isPresent();
-        changed |= invoke(entity, "setPokemonData", pokemon).isPresent();
-        changed |= invoke(entity, "updatePokemon", pokemon).isPresent();
+        changed |= invokeAny(entity, "setPokemon", pokemon);
+        changed |= invokeAny(entity, "setPixelmon", pokemon);
+        changed |= invokeAny(entity, "setPokemonData", pokemon);
+        changed |= invokeAny(entity, "updatePokemon", pokemon);
         changed |= setField(entity, "pokemon", pokemon);
         changed |= setField(entity, "pixelmon", pokemon);
         changed |= setField(entity, "pokemonData", pokemon);
@@ -241,8 +276,8 @@ public final class PixelmonEntityRenderCache {
 
     private static boolean refreshPixelmonRenderState(Entity entity, Object pokemon) {
         boolean changed = false;
-        for (String method : java.util.List.of("updatePokemon", "updatePokemonData", "updatePixelmon", "refreshPokemon", "refreshDimensions", "recalculateSize", "updateSize", "updateModel", "reloadModel")) changed |= invoke(entity, method).isPresent();
-        readField(entity, "delegate").ifPresent(delegate -> { invoke(delegate, "changePokemon", pokemon); invoke(delegate, "setPokemon", pokemon); invoke(delegate, "updatePokemon", pokemon); });
+        for (String method : java.util.List.of("updatePokemon", "updatePokemonData", "updatePixelmon", "refreshPokemon", "refreshDimensions", "recalculateSize", "updateSize", "updateModel", "reloadModel")) changed |= invokeAny(entity, method);
+        readField(entity, "delegate").ifPresent(delegate -> { invokeAny(delegate, "changePokemon", pokemon); invokeAny(delegate, "setPokemon", pokemon); invokeAny(delegate, "updatePokemon", pokemon); });
         return changed;
     }
 
@@ -252,7 +287,7 @@ public final class PixelmonEntityRenderCache {
         if (current.isPresent() && current.get().getClass().isEnum()) {
             try {
                 @SuppressWarnings({"rawtypes", "unchecked"}) Object enumValue = Enum.valueOf((Class<Enum>) current.get().getClass(), text.toUpperCase(java.util.Locale.ROOT));
-                changed |= invoke(target, setter, enumValue).isPresent();
+                changed |= invokeAny(target, setter, enumValue);
                 changed |= setField(target, fieldName, enumValue);
                 return changed;
             } catch (Throwable error) { warnOnce("Pixelmon enum conversion failed: " + fieldName + "=" + text, error); }
@@ -348,6 +383,7 @@ public final class PixelmonEntityRenderCache {
     private static Optional<Object> invoke(Object target, String name, Object... args) { if (target == null) return Optional.empty(); try { Method method = findMethod(target.getClass(), name, args); if (method == null) return Optional.empty(); method.setAccessible(true); return Optional.ofNullable(method.invoke(target, args)); } catch (Throwable error) { warnOnce("invoke:" + target.getClass().getName() + "." + name, error); return Optional.empty(); } }
     private static Optional<Object> invokeStatic(Class<?> type, String name, Object... args) { try { Method method = findMethod(type, name, args); if (method == null || !Modifier.isStatic(method.getModifiers())) return Optional.empty(); method.setAccessible(true); return Optional.ofNullable(method.invoke(null, args)); } catch (Throwable error) { warnOnce("invokeStatic:" + type.getName() + "." + name, error); return Optional.empty(); } }
     private static Optional<Object> invokeStaticOrSingleton(Class<?> type, String name, Object... args) { Optional<Object> direct = invokeStatic(type, name, args); if (direct.isPresent()) return direct; for (Object singleton : singletonObjects(type)) { Optional<Object> value = invoke(singleton, name, args); if (value.isPresent()) return value; } return Optional.empty(); }
+    private static boolean invokeAny(Object target, String name, Object... args) { if (target == null) return false; try { Method method = findMethod(target.getClass(), name, args); if (method == null) return false; method.setAccessible(true); method.invoke(target, args); return true; } catch (Throwable error) { warnOnce("invokeAny:" + target.getClass().getName() + "." + name, error); return false; } }
     private static Optional<Object> construct(Class<?> type, Object... args) { try { Constructor<?> constructor = findConstructor(type, args); if (constructor == null) return Optional.empty(); constructor.setAccessible(true); return Optional.ofNullable(constructor.newInstance(args)); } catch (Throwable error) { warnOnce("construct:" + type.getName(), error); return Optional.empty(); } }
     private static java.util.List<Object> singletonObjects(Class<?> type) { java.util.List<Object> singletons = new java.util.ArrayList<>(); for (String fieldName : java.util.List.of("INSTANCE", "Companion")) { try { Field field = type.getDeclaredField(fieldName); field.setAccessible(true); Object value = field.get(null); if (value != null) singletons.add(value); } catch (Throwable ignored) {} } return singletons; }
     private static Optional<Object> readStaticField(Class<?> type, String name) { try { Field field = findField(type, name); if (field == null || !Modifier.isStatic(field.getModifiers())) return Optional.empty(); field.setAccessible(true); return Optional.ofNullable(field.get(null)); } catch (Throwable error) { warnOnce("staticField:" + type.getName() + "." + name, error); return Optional.empty(); } }
