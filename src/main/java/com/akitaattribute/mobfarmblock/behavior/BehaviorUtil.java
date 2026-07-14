@@ -1,5 +1,9 @@
 package com.akitaattribute.mobfarmblock.behavior;
 
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.Optional;
+
 import com.akitaattribute.mobfarmblock.debug.MobFarmDebug;
 import com.akitaattribute.mobfarmblock.debug.CobblemonDebugDumper;
 import com.akitaattribute.mobfarmblock.mob.DropRule;
@@ -8,10 +12,15 @@ import com.akitaattribute.mobfarmblock.mob.XpProfile;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.TagParser;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.TagKey;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -41,39 +50,67 @@ final class BehaviorUtil {
         int lootingLevel = getLootingLevel(context);
         StringBuilder details = new StringBuilder();
         StringBuilder rolled = new StringBuilder();
+        boolean nativePixelmonDrops = context.stored().dropProfile.drops().isEmpty() && tryNativePixelmonDrops(context, details);
         int index = 0;
-        for (DropRule rule : context.stored().dropProfile.drops()) {
-            RollResult result = rollDrop(context, rule, lootingLevel);
-            details.append("\n  #").append(index++)
-                    .append(" itemId=").append(rule.itemId())
-                    .append(" chance=").append(rule.chance())
-                    .append(" min=").append(rule.minCount())
-                    .append(" max=").append(rule.maxCount())
-                    .append(" affectedByLooting=").append(rule.affectedByLooting())
-                    .append(" lootingChanceBonus=").append(rule.lootingChanceBonus())
-                    .append(" lootingMaxBonus=").append(rule.lootingMaxBonus())
-                    .append(" roll=").append(String.format(java.util.Locale.ROOT, "%.5f", result.roll()))
-                    .append(" success=").append(result.success())
-                    .append(" finalCount=").append(result.finalCount())
-                    .append(" output=").append(result.outputTarget());
-            if (result.success() && result.finalCount() > 0) {
-                if (!rolled.isEmpty()) rolled.append(", ");
-                rolled.append(rule.itemId()).append(" x").append(result.finalCount());
+        if (!nativePixelmonDrops) {
+            for (DropRule rule : context.stored().dropProfile.drops()) {
+                RollResult result = rollDrop(context, rule, lootingLevel);
+                details.append("\n  #").append(index++)
+                        .append(" itemId=").append(rule.itemId())
+                        .append(" chance=").append(rule.chance())
+                        .append(" min=").append(rule.minCount())
+                        .append(" max=").append(rule.maxCount())
+                        .append(" affectedByLooting=").append(rule.affectedByLooting())
+                        .append(" lootingChanceBonus=").append(rule.lootingChanceBonus())
+                        .append(" lootingMaxBonus=").append(rule.lootingMaxBonus())
+                        .append(" roll=").append(String.format(java.util.Locale.ROOT, "%.5f", result.roll()))
+                        .append(" success=").append(result.success())
+                        .append(" finalCount=").append(result.finalCount())
+                        .append(" output=").append(result.outputTarget());
+                if (result.success() && result.finalCount() > 0) {
+                    if (!rolled.isEmpty()) rolled.append(", ");
+                    rolled.append(rule.itemId()).append(" x").append(result.finalCount());
+                }
             }
+        } else {
+            rolled.append("native Pixelmon drop routine");
         }
         int xp = awardXp(context);
-        if ("cobblemon:pokemon".equals(context.stored().mobId.toString())) CobblemonDebugDumper.writeProcessingDump(context.player(), context.stored(), details.toString());
+        if ("cobblemon:pokemon".equals(context.stored().mobId.toString()) || "pixelmon:pixelmon".equals(context.stored().mobId.toString())) CobblemonDebugDumper.writeProcessingDump(context.player(), context.stored(), details.toString());
         MobFarmDebug.send(context.player(), Component.literal("Mob Farm Block Debug:\nProcessed mob"
                 + "\n- mob id: " + context.stored().mobId
                 + "\n- kind: " + context.stored().kind
                 + "\n- species id: " + (context.stored().speciesId == null ? "unavailable" : context.stored().speciesId)
                 + "\n- drop profile source: " + context.stored().dropProfileSource
                 + "\n- drop rule count: " + context.stored().dropProfile.drops().size()
+                + "\n- native Pixelmon drops: " + nativePixelmonDrops
                 + "\n- xp range: " + context.stored().dropProfile.xp().minXp() + "-" + context.stored().dropProfile.xp().maxXp()
                 + "\n- xp rolled: " + xp
                 + "\n- rolled drops: " + (rolled.isEmpty() ? "none" : rolled)
                 + "\n- drop rule details:" + (details.isEmpty() ? " none" : details)));
         return AttackResult.SUCCESS;
+    }
+
+    private static boolean tryNativePixelmonDrops(MobFarmContext context, StringBuilder details) {
+        if (!"pixelmon:pixelmon".equals(context.stored().mobId.toString())) return false;
+        if (!(context.level() instanceof ServerLevel) || !(context.player() instanceof ServerPlayer serverPlayer)) return false;
+        if (context.stored().pixelmonRenderSnapshot == null || context.stored().pixelmonRenderSnapshot.payload() == null || context.stored().pixelmonRenderSnapshot.payload().isBlank()) return false;
+        try {
+            EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(context.stored().mobId);
+            if (type == null) return false;
+            Entity entity = type.create(context.level());
+            if (entity == null) return false;
+            CompoundTag tag = TagParser.parseTag(context.stored().pixelmonRenderSnapshot.payload());
+            if (!invokeAny(entity, "load", tag)) details.append("\n  nativePixelmon=load method not found");
+            entity.setPos(Vec3.atCenterOf(context.pos()).add(0.0D, 0.75D, 0.0D));
+            boolean dropped = invokeAny(entity, "dropNormalItems", serverPlayer);
+            if (!dropped) dropped = invokeAny(entity, "dropItems", serverPlayer);
+            details.append("\n  nativePixelmon=used actual Pixelmon entity drop method result=").append(dropped ? "called" : "not_found");
+            return dropped;
+        } catch (Throwable error) {
+            details.append("\n  nativePixelmon=failed ").append(error.getClass().getSimpleName()).append(": ").append(error.getMessage());
+            return false;
+        }
     }
 
     static String output(MobFarmContext context, ItemStack stack) {
@@ -147,6 +184,52 @@ final class BehaviorUtil {
         var registry = context.level().registryAccess().registryOrThrow(Registries.ENCHANTMENT);
         Holder.Reference<Enchantment> looting = registry.getHolderOrThrow(Enchantments.LOOTING);
         return context.heldItem().getEnchantmentLevel(looting);
+    }
+
+    private static boolean invokeAny(Object target, String name, Object... args) {
+        if (target == null) return false;
+        try {
+            Method method = findMethod(target.getClass(), name, args);
+            if (method == null) return false;
+            method.setAccessible(true);
+            method.invoke(target, args);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static Method findMethod(Class<?> type, String name, Object... args) {
+        for (Class<?> c = type; c != null; c = c.getSuperclass()) {
+            for (Method method : c.getDeclaredMethods()) {
+                if (!method.getName().equals(name) || method.getParameterCount() != args.length) continue;
+                if (parametersCompatible(method.getParameterTypes(), args)) return method;
+            }
+        }
+        return null;
+    }
+
+    private static boolean parametersCompatible(Class<?>[] parameterTypes, Object[] args) {
+        for (int i = 0; i < parameterTypes.length; i++) {
+            if (args[i] == null) continue;
+            Class<?> parameter = wrapPrimitive(parameterTypes[i]);
+            Class<?> actual = wrapPrimitive(args[i].getClass());
+            if (!parameter.isAssignableFrom(actual)) return false;
+        }
+        return true;
+    }
+
+    private static Class<?> wrapPrimitive(Class<?> type) {
+        if (!type.isPrimitive()) return type;
+        if (type == int.class) return Integer.class;
+        if (type == long.class) return Long.class;
+        if (type == float.class) return Float.class;
+        if (type == double.class) return Double.class;
+        if (type == boolean.class) return Boolean.class;
+        if (type == byte.class) return Byte.class;
+        if (type == short.class) return Short.class;
+        if (type == char.class) return Character.class;
+        return type;
     }
 
     private record RollResult(double roll, boolean success, int finalCount, String outputTarget) {}
