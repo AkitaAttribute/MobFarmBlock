@@ -1,11 +1,11 @@
 package com.akitaattribute.mobfarmblock.behavior;
 
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.util.Optional;
 
 import com.akitaattribute.mobfarmblock.debug.MobFarmDebug;
 import com.akitaattribute.mobfarmblock.debug.CobblemonDebugDumper;
+import com.akitaattribute.mobfarmblock.integration.PixelmonNativeDropInspector;
 import com.akitaattribute.mobfarmblock.mob.DropRule;
 import com.akitaattribute.mobfarmblock.mob.XpProfile;
 
@@ -103,6 +103,19 @@ final class BehaviorUtil {
             CompoundTag tag = TagParser.parseTag(context.stored().pixelmonRenderSnapshot.payload());
             if (!invokeAny(entity, "load", tag)) details.append("\n  nativePixelmon=load method not found");
             entity.setPos(Vec3.atCenterOf(context.pos()).add(0.0D, 0.75D, 0.0D));
+
+            PixelmonNativeDropInspector.Result preview = PixelmonNativeDropInspector.inspect(entity);
+            details.append("\n  nativePixelmonDropReflection rules=").append(preview.rules().size());
+            int previewIndex = 0;
+            for (DropRule rule : preview.rules()) {
+                details.append("\n    preview#").append(previewIndex++)
+                        .append(" itemId=").append(rule.itemId())
+                        .append(" chance=").append(rule.chance())
+                        .append(" min=").append(rule.minCount())
+                        .append(" max=").append(rule.maxCount());
+            }
+            details.append("\n  nativePixelmonDropReflection diagnostics:\n").append(preview.diagnostics());
+
             boolean dropped = invokeAny(entity, "dropNormalItems", serverPlayer);
             if (!dropped) dropped = invokeAny(entity, "dropItems", serverPlayer);
             details.append("\n  nativePixelmon=used actual Pixelmon entity drop method result=").append(dropped ? "called" : "not_found");
