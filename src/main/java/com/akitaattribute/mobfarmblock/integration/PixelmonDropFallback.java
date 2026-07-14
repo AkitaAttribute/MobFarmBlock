@@ -19,6 +19,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 /**
  * Conservative Pixelmon drop fallback.
@@ -37,6 +38,7 @@ public final class PixelmonDropFallback {
         if (pokemon.isEmpty()) return Optional.empty();
 
         List<DropRule> rules = new ArrayList<>();
+        rules.addAll(rulesFromNativeDropRegistry(entity));
         rules.addAll(rulesFromDropSources(entity));
         rules.addAll(rulesFromDropSources(pokemon.get()));
         value(pokemon.get(), "getForm", "form").ifPresent(form -> rules.addAll(rulesFromDropSources(form)));
@@ -45,6 +47,14 @@ public final class PixelmonDropFallback {
         int xp = baseExp(pokemon.get()).orElse(0);
         if (rules.isEmpty() && xp <= 0) return Optional.empty();
         return Optional.of(new DropProfile(List.copyOf(dedupe(rules)), xp > 0 ? new XpProfile(xp, xp) : XpProfile.NONE));
+    }
+
+    private static List<DropRule> rulesFromNativeDropRegistry(Entity entity) {
+        Optional<Object> registryDrops = invokeStaticCompatible("com.pixelmonmod.pixelmon.entities.npcs.registry.DropItemRegistry", "getDropsForPokemon", entity);
+        if (registryDrops.isEmpty()) return List.of();
+        List<DropRule> rules = rulesFromDropTable(registryDrops.get());
+        if (rules.isEmpty()) warnOnce("Pixelmon native DropItemRegistry returned no convertible rules: " + registryDrops.get().getClass().getName(), null);
+        return rules;
     }
 
     private static List<DropRule> rulesFromDropSources(Object target) {
@@ -117,14 +127,22 @@ public final class PixelmonDropFallback {
 
     private static Optional<ResourceLocation> coerceItemId(Object value) {
         if (value == null) return Optional.empty();
-        if (value instanceof ItemStack stack) return stack.isEmpty() ? Optional.empty() : Optional.of(BuiltInRegistries.ITEM.getKey(stack.getItem()));
-        if (value instanceof Item item) return Optional.of(BuiltInRegistries.ITEM.getKey(item));
-        String text = String.valueOf(value).trim();
-        if (text.isBlank() || text.contains("@") && text.contains(".")) return Optional.empty();
-        try {
-            ResourceLocation id = text.contains(":") ? ResourceLocation.parse(text) : ResourceLocation.withDefaultNamespace(text);
-            return BuiltInRegistries.ITEM.getOptional(id).isPresent() ? Optional.of(id) : Optional.empty();
-        } catch (Throwable ignored) { return Optional.empty(); }
+        ResourceLocation id;
+        if (value instanceof ItemStack stack) {
+            if (stack.isEmpty() || stack.is(Items.AIR)) return Optional.empty();
+            id = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        } else if (value instanceof Item item) {
+            if (item == Items.AIR) return Optional.empty();
+            id = BuiltInRegistries.ITEM.getKey(item);
+        } else {
+            String text = String.valueOf(value).trim();
+            if (text.isBlank() || text.contains("@") && text.contains(".")) return Optional.empty();
+            try { id = text.contains(":") ? ResourceLocation.parse(text) : ResourceLocation.withDefaultNamespace(text); }
+            catch (Throwable ignored) { return Optional.empty(); }
+        }
+        if (id == null || id.equals(BuiltInRegistries.ITEM.getKey(Items.AIR))) return Optional.empty();
+        if ("pixelmon".equals(id.getNamespace()) && ("no_item".equals(id.getPath()) || "none".equals(id.getPath()))) return Optional.empty();
+        return BuiltInRegistries.ITEM.getOptional(id).isPresent() ? Optional.of(id) : Optional.empty();
     }
 
     private static Optional<Integer> baseExp(Object pokemon) {
@@ -151,6 +169,27 @@ public final class PixelmonDropFallback {
         return Optional.empty();
     }
 
+    private static Optional<Object> invokeStaticCompatible(String className, String methodName, Object argument) {
+        try {
+            Class<?> type = Class.forName(className);
+            for (Method method : type.getMethods()) {
+                if (!method.getName().equals(methodName) || method.getParameterCount() != 1) continue;
+                if (!method.getParameterTypes()[0].isAssignableFrom(argument.getClass())) continue;
+                method.setAccessible(true);
+                return Optional.ofNullable(method.invoke(null, argument));
+            }
+            for (Method method : type.getDeclaredMethods()) {
+                if (!method.getName().equals(methodName) || method.getParameterCount() != 1) continue;
+                if (!method.getParameterTypes()[0].isAssignableFrom(argument.getClass())) continue;
+                method.setAccessible(true);
+                return Optional.ofNullable(method.invoke(null, argument));
+            }
+        } catch (Throwable error) {
+            warnOnce("Pixelmon native DropItemRegistry lookup failed", error);
+        }
+        return Optional.empty();
+    }
+
     private static Optional<Integer> coerceInt(Object value) {
         if (value instanceof Number number) return Optional.of(number.intValue());
         try { return Optional.of(Integer.parseInt(String.valueOf(value).replaceAll("[^0-9-]", ""))); } catch (Throwable ignored) { return Optional.empty(); }
@@ -161,6 +200,8 @@ public final class PixelmonDropFallback {
         try { return Optional.of(Double.parseDouble(String.valueOf(value).replace("%", ""))); } catch (Throwable ignored) { return Optional.empty(); }
     }
 
-    private static void warnOnce(String key, Throwable error) { if (WARNED.add(key)) MobFarmBlockMod.LOGGER.debug("Pixelmon fallback drops failed for {}: {}", key, error.toString()); }
+    private static void warnOnce(String key, Throwable error) {
+        if (WARNED.add(key)) MobFarmBlockMod.LOGGER.debug("Pixelmon fallback drops failed for {}{}", key, error == null ? "" : ": " + error);
+    }
     private PixelmonDropFallback() {}
 }
