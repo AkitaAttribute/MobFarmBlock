@@ -2,6 +2,9 @@ name: Build
 on:
   push:
   pull_request:
+permissions:
+  contents: read
+  actions: read
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,14 +22,56 @@ jobs:
           gradle-version: '8.12'
       - name: Build
         run: ./gradlew --no-daemon clean build
+      - name: Compute branch artifact version
+        id: artifact_version
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = context.payload.pull_request?.head?.ref || context.ref.replace('refs/heads/', '');
+            const currentRunId = context.runId;
+            let runs = [];
+            try {
+              runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'build.yml',
+                branch,
+                per_page: 100
+              });
+            } catch (error) {
+              core.warning(`Unable to list workflow runs for branch ${branch}; using global run number ${context.runNumber}: ${error.message}`);
+            }
+            const currentRun = runs.find(run => run.id === currentRunId);
+            const currentTime = currentRun?.created_at ? Date.parse(currentRun.created_at) : Date.now();
+            const branchRunNumber = runs.length
+              ? Math.max(1, runs.filter(run => Date.parse(run.created_at) <= currentTime).length)
+              : context.runNumber;
+            const safeBranch = branch.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'branch';
+            const fileName = `mob-farm-block-${branchRunNumber}.jar`;
+            const artifactName = `mob-farm-block-${safeBranch}-${branchRunNumber}`;
+            core.info(`Branch ${branch} artifact version: ${branchRunNumber}`);
+            core.setOutput('branch_run_number', String(branchRunNumber));
+            core.setOutput('file_name', fileName);
+            core.setOutput('artifact_name', artifactName);
+      - name: Prepare numbered jar
+        run: |
+          set -euo pipefail
+          mkdir -p build/numbered-libs
+          jar_file="$(find build/libs -maxdepth 1 -type f -name '*.jar' \
+            ! -name '*-sources.jar' \
+            ! -name '*-dev.jar' \
+            ! -name '*-deobf.jar' \
+            ! -name '*-api.jar' \
+            | sort | head -n 1)"
+          if [ -z "$jar_file" ]; then
+            echo "No release jar found in build/libs" >&2
+            exit 1
+          fi
+          cp "$jar_file" "build/numbered-libs/${{ steps.artifact_version.outputs.file_name }}"
+          echo "Prepared build/numbered-libs/${{ steps.artifact_version.outputs.file_name }} from $jar_file"
       - name: Upload mod jar
         uses: actions/upload-artifact@v4
         with:
-          name: mob-farm-block-jar
-          path: |
-            build/libs/*.jar
-            !build/libs/*-sources.jar
-            !build/libs/*-dev.jar
-            !build/libs/*-deobf.jar
-            !build/libs/*-api.jar
+          name: ${{ steps.artifact_version.outputs.artifact_name }}
+          path: build/numbered-libs/${{ steps.artifact_version.outputs.file_name }}
           if-no-files-found: error
