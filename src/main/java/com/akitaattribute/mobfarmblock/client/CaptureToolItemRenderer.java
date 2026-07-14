@@ -42,7 +42,7 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
         float scale = entityScale(entity, stored);
         boolean pixelmon = PixelmonEntityRenderCache.isPixelmonStored(stored);
         if (pixelmon) {
-            poseStack.translate(0.50D, 0.80D, 0.62D);
+            poseStack.translate(0.50D, 0.86D, 1.42D);
             poseStack.scale(scale, scale, scale);
             poseStack.translate(0.0D, -entity.getBbHeight() * 0.08D, 0.0D);
         } else {
