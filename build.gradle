@@ -13,6 +13,7 @@ base { archivesName = mod_id }
 java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
 
 repositories {
+    mavenCentral()
     maven { url = 'https://maven.blamejared.com/' }
 }
 
@@ -26,6 +27,7 @@ configurations { runtimeClasspath.extendsFrom localRuntime }
 dependencies {
     compileOnly "mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}"
     localRuntime "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}"
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.3'
 }
 
 processResources {
@@ -42,6 +44,10 @@ processResources {
     ]
     inputs.properties replaceProperties
     filesMatching('META-INF/neoforge.mods.toml') { expand replaceProperties }
+}
+
+test {
+    useJUnitPlatform()
 }
 
 tasks.withType(JavaCompile).configureEach {
