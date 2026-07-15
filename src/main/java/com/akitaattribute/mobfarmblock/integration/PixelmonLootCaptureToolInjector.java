@@ -19,18 +19,40 @@ public final class PixelmonLootCaptureToolInjector {
     private PixelmonLootCaptureToolInjector() {}
 
     public static void appendCaptureTool(Object source, List<Object> drops, ServerPlayer player) {
+        int beforeSize = drops == null ? -1 : drops.size();
+        String playerName = player == null ? "unknown" : player.getGameProfile().getName();
+        String sourceClass = source == null ? "null" : source.getClass().getName();
+        MobFarmBlockMod.LOGGER.info("Mob Farm Pixelmon loot capture injection attempt: sourceClass={} player={} dropsBefore={}", sourceClass, playerName, beforeSize);
         try {
+            if (drops == null) {
+                MobFarmBlockMod.LOGGER.warn("Mob Farm Pixelmon loot capture injection skipped: drops list was null for sourceClass={} player={}", sourceClass, playerName);
+                return;
+            }
+
             LivingEntity entity = resolveLivingEntity(source);
-            if (entity == null || !isPixelmonEntity(entity)) return;
+            if (entity == null) {
+                MobFarmBlockMod.LOGGER.warn("Mob Farm Pixelmon loot capture injection skipped: could not resolve LivingEntity from sourceClass={} player={} dropsBefore={}", sourceClass, playerName, beforeSize);
+                return;
+            }
+
+            ResourceLocation entityType = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+            if (!isPixelmonEntity(entity)) {
+                MobFarmBlockMod.LOGGER.info("Mob Farm Pixelmon loot capture injection skipped: resolved entity type {} from sourceClass={} is not pixelmon:pixelmon", entityType, sourceClass);
+                return;
+            }
 
             StoredMob stored = MobProfileFactory.fromEntity(entity);
-            if (stored == null || stored.isEmpty()) return;
+            if (stored == null || stored.isEmpty()) {
+                MobFarmBlockMod.LOGGER.warn("Mob Farm Pixelmon loot capture injection skipped: MobProfileFactory returned empty profile for entityType={} sourceClass={}", entityType, sourceClass);
+                return;
+            }
 
             ItemStack captureTool = new ItemStack(ModItems.CAPTURE_TOOL.get());
             CaptureToolItem.setStoredMob(captureTool, stored.copyWithCount(1));
             drops.add(captureTool);
+            MobFarmBlockMod.LOGGER.info("Mob Farm Pixelmon loot capture injection appended filled Capture Tool: species={} entityType={} dropsBefore={} dropsAfter={} player={}", stored.speciesId, entityType, beforeSize, drops.size(), playerName);
         } catch (Throwable error) {
-            MobFarmBlockMod.LOGGER.warn("Unable to append Mob Farm capture tool to Pixelmon loot UI", error);
+            MobFarmBlockMod.LOGGER.warn("Unable to append Mob Farm capture tool to Pixelmon loot UI from sourceClass={} player={} dropsBefore={}", sourceClass, playerName, beforeSize, error);
         }
     }
 
@@ -54,8 +76,11 @@ public final class PixelmonLootCaptureToolInjector {
         try {
             Method method = target.getClass().getMethod(methodName);
             method.setAccessible(true);
-            return method.invoke(target);
+            Object result = method.invoke(target);
+            MobFarmBlockMod.LOGGER.info("Mob Farm Pixelmon loot capture injection reflection: {}#{} -> {}", target.getClass().getName(), methodName, result == null ? "null" : result.getClass().getName());
+            return result;
         } catch (ReflectiveOperationException ignored) {
+            MobFarmBlockMod.LOGGER.info("Mob Farm Pixelmon loot capture injection reflection: {}#{} unavailable", target.getClass().getName(), methodName);
             return null;
         }
     }
