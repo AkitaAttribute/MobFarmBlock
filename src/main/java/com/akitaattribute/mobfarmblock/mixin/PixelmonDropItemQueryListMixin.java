@@ -12,7 +12,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import net.minecraft.server.level.ServerPlayer;
 
-@Mixin(targets = "com.pixelmonmod.pixelmon.api.drops.DropItemQueryList", remap = false)
+@Mixin(targets = "com.pixelmonmod.pixelmon.entities.npcs.registry.DropItemQueryList", remap = false)
 public abstract class PixelmonDropItemQueryListMixin {
     static {
         MobFarmBlockMod.LOGGER.info("Mob Farm Pixelmon DropItemQueryList mixin class loaded");
