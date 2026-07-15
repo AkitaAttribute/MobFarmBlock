@@ -30,6 +30,20 @@ class PixelmonMixinTargetTest {
     }
 
     @Test
+    void dropItemQueryListCallbacksAreStaticBecausePixelmonRegisterIsStatic() throws IOException {
+        String mixinSource = read("src/main/java/com/akitaattribute/mobfarmblock/mixin/PixelmonDropItemQueryListMixin.java");
+
+        assertTrue(mixinSource.contains("private static void mobFarmBlock$logRegisterHead"),
+                "Pixelmon DropItemQueryList.register is static, so the HEAD injector callback must also be static.");
+        assertTrue(mixinSource.contains("private static void mobFarmBlock$appendCaptureTool"),
+                "Pixelmon DropItemQueryList.register is static, so the TAIL injector callback must also be static.");
+        assertFalse(mixinSource.contains("private void mobFarmBlock$logRegisterHead"),
+                "A non-static HEAD injector causes Mixin InvalidInjectionException against static Pixelmon register(...).");
+        assertFalse(mixinSource.contains("private void mobFarmBlock$appendCaptureTool"),
+                "A non-static TAIL injector causes Mixin InvalidInjectionException against static Pixelmon register(...).");
+    }
+
+    @Test
     void mixinConfigRegistersDropItemQueryListMixin() throws IOException {
         String mixinConfig = read("src/main/resources/mob_farm_block.mixins.json");
 
