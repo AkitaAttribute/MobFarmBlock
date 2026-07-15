@@ -19,7 +19,7 @@ public abstract class PixelmonDropItemQueryListMixin {
     }
 
     @Inject(method = "register", at = @At("HEAD"), remap = false)
-    private void mobFarmBlock$logRegisterHead(@Coerce Object pixelmonEntity, ArrayList<Object> drops, ServerPlayer player, CallbackInfo ci) {
+    private static void mobFarmBlock$logRegisterHead(@Coerce Object pixelmonEntity, ArrayList<Object> drops, ServerPlayer player, CallbackInfo ci) {
         MobFarmBlockMod.LOGGER.info(
                 "Mob Farm Pixelmon DropItemQueryList.register HEAD: sourceClass={} dropsBefore={} player={}",
                 pixelmonEntity == null ? "null" : pixelmonEntity.getClass().getName(),
@@ -29,7 +29,7 @@ public abstract class PixelmonDropItemQueryListMixin {
     }
 
     @Inject(method = "register", at = @At("TAIL"), remap = false)
-    private void mobFarmBlock$appendCaptureTool(@Coerce Object pixelmonEntity, ArrayList<Object> drops, ServerPlayer player, CallbackInfo ci) {
+    private static void mobFarmBlock$appendCaptureTool(@Coerce Object pixelmonEntity, ArrayList<Object> drops, ServerPlayer player, CallbackInfo ci) {
         MobFarmBlockMod.LOGGER.info(
                 "Mob Farm Pixelmon DropItemQueryList.register TAIL before append: sourceClass={} dropsBefore={} player={}",
                 pixelmonEntity == null ? "null" : pixelmonEntity.getClass().getName(),
