@@ -21,6 +21,7 @@ import net.minecraft.world.item.component.CustomData;
 
 public class CaptureToolItem extends Item {
     private static final String STORED_MOB_KEY = "StoredMob";
+    private static final String DISCARD_ON_DEPOSIT_KEY = "DiscardOnDeposit";
 
     public CaptureToolItem(Properties properties) { super(properties); }
 
@@ -88,6 +89,19 @@ public class CaptureToolItem extends Item {
     public static void clearStoredMob(ItemStack stack) {
         CompoundTag tag = getOrCreateCustomNbt(stack);
         tag.remove(STORED_MOB_KEY);
+        tag.remove(DISCARD_ON_DEPOSIT_KEY);
+        stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+    }
+
+    public static boolean shouldDiscardOnDeposit(ItemStack stack) {
+        CompoundTag tag = getCustomNbt(stack);
+        return tag != null && tag.getBoolean(DISCARD_ON_DEPOSIT_KEY);
+    }
+
+    public static void setDiscardOnDeposit(ItemStack stack, boolean discardOnDeposit) {
+        CompoundTag tag = getOrCreateCustomNbt(stack);
+        if (discardOnDeposit) tag.putBoolean(DISCARD_ON_DEPOSIT_KEY, true);
+        else tag.remove(DISCARD_ON_DEPOSIT_KEY);
         stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
     }
 
