@@ -34,12 +34,11 @@ public abstract class PixelmonDropItemQueryListMixin {
     }
 
     @Inject(method = "register", at = @At("TAIL"), remap = false)
-    private static void mobFarmBlock$logRegisterTail(@Coerce Object pixelmonEntity, ArrayList<Object> drops, ServerPlayer player, CallbackInfo ci) {
+    private static void mobFarmBlock$updateCaptureToolAfterRegister(@Coerce Object pixelmonEntity, ArrayList<Object> drops, ServerPlayer player, CallbackInfo ci) {
+        PixelmonLootCaptureToolInjector.updateCaptureToolObservedLoot(pixelmonEntity, drops, player);
         MobFarmBlockMod.LOGGER.info(
-                "Mob Farm Pixelmon DropItemQueryList.register TAIL observed: sourceClass={} dropsFinal={} player={}",
-                pixelmonEntity == null ? "null" : pixelmonEntity.getClass().getName(),
-                drops == null ? -1 : drops.size(),
-                player == null ? "null" : player.getGameProfile().getName()
+                "Mob Farm Pixelmon DropItemQueryList.register TAIL after observed-loot update: dropsAfter={}",
+                drops == null ? -1 : drops.size()
         );
     }
 }
