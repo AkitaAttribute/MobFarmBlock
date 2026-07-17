@@ -69,6 +69,20 @@ class PixelmonMixinTargetTest {
     }
 
     @Test
+    void captureToolUsesObservedBattleLootRatherThanRerollingPixelmonDrops() throws IOException {
+        String injectorSource = read("src/main/java/com/akitaattribute/mobfarmblock/integration/PixelmonLootCaptureToolInjector.java");
+
+        assertTrue(injectorSource.contains("observedLootProfile(drops"),
+                "The stored Capture Tool profile should be derived from the actual Pixelmon loot list for the defeated Pokemon.");
+        assertTrue(injectorSource.contains("stored.dropProfile = observedLootProfile"),
+                "The injected Capture Tool must use observed battle loot, not a fresh DropItemRegistry roll.");
+        assertTrue(injectorSource.contains("pixelmon:loot_ui_observed"),
+                "Observed Pixelmon loot profiles should be marked distinctly for debugging.");
+        assertTrue(injectorSource.contains("extractItemStack"),
+                "Observed Pixelmon DroppedItem entries must be inspected to recover the actual ItemStack drops.");
+    }
+
+    @Test
     void mixinConfigRegistersDropItemQueryListMixin() throws IOException {
         String mixinConfig = read("src/main/resources/mob_farm_block.mixins.json");
 
