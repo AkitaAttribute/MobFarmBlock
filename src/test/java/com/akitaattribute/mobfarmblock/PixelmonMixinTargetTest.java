@@ -34,14 +34,26 @@ class PixelmonMixinTargetTest {
     void dropItemQueryListCallbacksAreStaticBecausePixelmonRegisterIsStatic() throws IOException {
         String mixinSource = read("src/main/java/com/akitaattribute/mobfarmblock/mixin/PixelmonDropItemQueryListMixin.java");
 
-        assertTrue(mixinSource.contains("private static void mobFarmBlock$logRegisterHead"),
+        assertTrue(mixinSource.contains("private static void mobFarmBlock$appendCaptureToolBeforeRegister"),
                 "Pixelmon DropItemQueryList.register is static, so the HEAD injector callback must also be static.");
-        assertTrue(mixinSource.contains("private static void mobFarmBlock$appendCaptureTool"),
-                "Pixelmon DropItemQueryList.register is static, so the TAIL injector callback must also be static.");
-        assertFalse(mixinSource.contains("private void mobFarmBlock$logRegisterHead"),
-                "A non-static HEAD injector causes Mixin InvalidInjectionException against static Pixelmon register(...).");
-        assertFalse(mixinSource.contains("private void mobFarmBlock$appendCaptureTool"),
-                "A non-static TAIL injector causes Mixin InvalidInjectionException against static Pixelmon register(...).");
+        assertTrue(mixinSource.contains("private static void mobFarmBlock$logRegisterTail"),
+                "Pixelmon DropItemQueryList.register is static, so the TAIL logging callback must also be static.");
+        assertFalse(mixinSource.contains("private void mobFarmBlock$"),
+                "Non-static callbacks cause Mixin InvalidInjectionException against static Pixelmon register(...).");
+    }
+
+    @Test
+    void captureToolIsInjectedBeforePixelmonRegistersLootUi() throws IOException {
+        String mixinSource = read("src/main/java/com/akitaattribute/mobfarmblock/mixin/PixelmonDropItemQueryListMixin.java");
+
+        assertTrue(mixinSource.contains("@Inject(method = \"register\", at = @At(\"HEAD\"), remap = false)"),
+                "The Capture Tool must be added before Pixelmon registers/displays the loot UI list.");
+        assertTrue(mixinSource.contains("mobFarmBlock$appendCaptureToolBeforeRegister"),
+                "The HEAD callback should append the Capture Tool before Pixelmon builds the visible loot UI state.");
+        assertTrue(mixinSource.contains("@Inject(method = \"register\", at = @At(\"TAIL\"), remap = false)"),
+                "A TAIL callback may remain for final state logging.");
+        assertFalse(mixinSource.contains("TAIL before append"),
+                "Appending only at TAIL makes Take All receive the Capture Tool while the visible Pixelmon loot UI omits it.");
     }
 
     @Test
