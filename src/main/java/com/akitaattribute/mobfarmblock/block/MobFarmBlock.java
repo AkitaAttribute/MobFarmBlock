@@ -87,7 +87,8 @@ public class MobFarmBlock extends BaseEntityBlock {
         StoredMob incoming = CaptureToolItem.getStoredMob(stack);
         MobFarmBlockEntity.InsertResult result = blockEntity.insertOrMergeDetailed(incoming);
         if (result.success()) {
-            CaptureToolItem.clearStoredMob(stack);
+            if (CaptureToolItem.shouldDiscardOnDeposit(stack)) stack.shrink(1);
+            else CaptureToolItem.clearStoredMob(stack);
             player.displayClientMessage(Component.translatable("block.mob_farm_block.mob_farm_block.inserted"), true);
             CobblemonDebugDumper.writeEntityDump(player, null, incoming, "insert");
             if (!"cobblemon:pokemon".equals(incoming.mobId.toString())) MobFarmDebug.insertionSuccess(player, incoming, result.previous(), result.current(), result.merged());
