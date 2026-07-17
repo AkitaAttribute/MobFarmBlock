@@ -19,27 +19,27 @@ public abstract class PixelmonDropItemQueryListMixin {
     }
 
     @Inject(method = "register", at = @At("HEAD"), remap = false)
-    private static void mobFarmBlock$logRegisterHead(@Coerce Object pixelmonEntity, ArrayList<Object> drops, ServerPlayer player, CallbackInfo ci) {
+    private static void mobFarmBlock$appendCaptureToolBeforeRegister(@Coerce Object pixelmonEntity, ArrayList<Object> drops, ServerPlayer player, CallbackInfo ci) {
         MobFarmBlockMod.LOGGER.info(
-                "Mob Farm Pixelmon DropItemQueryList.register HEAD: sourceClass={} dropsBefore={} player={}",
-                pixelmonEntity == null ? "null" : pixelmonEntity.getClass().getName(),
-                drops == null ? -1 : drops.size(),
-                player == null ? "null" : player.getGameProfile().getName()
-        );
-    }
-
-    @Inject(method = "register", at = @At("TAIL"), remap = false)
-    private static void mobFarmBlock$appendCaptureTool(@Coerce Object pixelmonEntity, ArrayList<Object> drops, ServerPlayer player, CallbackInfo ci) {
-        MobFarmBlockMod.LOGGER.info(
-                "Mob Farm Pixelmon DropItemQueryList.register TAIL before append: sourceClass={} dropsBefore={} player={}",
+                "Mob Farm Pixelmon DropItemQueryList.register HEAD before append: sourceClass={} dropsBefore={} player={}",
                 pixelmonEntity == null ? "null" : pixelmonEntity.getClass().getName(),
                 drops == null ? -1 : drops.size(),
                 player == null ? "null" : player.getGameProfile().getName()
         );
         PixelmonLootCaptureToolInjector.appendCaptureTool(pixelmonEntity, drops, player);
         MobFarmBlockMod.LOGGER.info(
-                "Mob Farm Pixelmon DropItemQueryList.register TAIL after append: dropsAfter={}",
+                "Mob Farm Pixelmon DropItemQueryList.register HEAD after append: dropsAfter={}",
                 drops == null ? -1 : drops.size()
+        );
+    }
+
+    @Inject(method = "register", at = @At("TAIL"), remap = false)
+    private static void mobFarmBlock$logRegisterTail(@Coerce Object pixelmonEntity, ArrayList<Object> drops, ServerPlayer player, CallbackInfo ci) {
+        MobFarmBlockMod.LOGGER.info(
+                "Mob Farm Pixelmon DropItemQueryList.register TAIL observed: sourceClass={} dropsFinal={} player={}",
+                pixelmonEntity == null ? "null" : pixelmonEntity.getClass().getName(),
+                drops == null ? -1 : drops.size(),
+                player == null ? "null" : player.getGameProfile().getName()
         );
     }
 }
