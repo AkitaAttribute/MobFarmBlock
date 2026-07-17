@@ -36,14 +36,14 @@ class PixelmonMixinTargetTest {
 
         assertTrue(mixinSource.contains("private static void mobFarmBlock$appendCaptureToolBeforeRegister"),
                 "Pixelmon DropItemQueryList.register is static, so the HEAD injector callback must also be static.");
-        assertTrue(mixinSource.contains("private static void mobFarmBlock$logRegisterTail"),
-                "Pixelmon DropItemQueryList.register is static, so the TAIL logging callback must also be static.");
+        assertTrue(mixinSource.contains("private static void mobFarmBlock$updateCaptureToolAfterRegister"),
+                "Pixelmon DropItemQueryList.register is static, so the TAIL callback must also be static.");
         assertFalse(mixinSource.contains("private void mobFarmBlock$"),
                 "Non-static callbacks cause Mixin InvalidInjectionException against static Pixelmon register(...).");
     }
 
     @Test
-    void captureToolIsInjectedBeforePixelmonRegistersLootUi() throws IOException {
+    void captureToolIsInjectedBeforePixelmonRegistersLootUiThenUpdatedAfterDropsExist() throws IOException {
         String mixinSource = read("src/main/java/com/akitaattribute/mobfarmblock/mixin/PixelmonDropItemQueryListMixin.java");
 
         assertTrue(mixinSource.contains("@Inject(method = \"register\", at = @At(\"HEAD\"), remap = false)"),
@@ -51,7 +51,9 @@ class PixelmonMixinTargetTest {
         assertTrue(mixinSource.contains("mobFarmBlock$appendCaptureToolBeforeRegister"),
                 "The HEAD callback should append the Capture Tool before Pixelmon builds the visible loot UI state.");
         assertTrue(mixinSource.contains("@Inject(method = \"register\", at = @At(\"TAIL\"), remap = false)"),
-                "A TAIL callback may remain for final state logging.");
+                "A TAIL callback must remain to replace the pending tool profile with the observed battle loot.");
+        assertTrue(mixinSource.contains("updateCaptureToolObservedLoot"),
+                "The TAIL callback should update the Capture Tool from the actual generated Pixelmon loot list.");
         assertFalse(mixinSource.contains("TAIL before append"),
                 "Appending only at TAIL makes Take All receive the Capture Tool while the visible Pixelmon loot UI omits it.");
     }
@@ -69,17 +71,21 @@ class PixelmonMixinTargetTest {
     }
 
     @Test
-    void captureToolUsesObservedBattleLootRatherThanRerollingPixelmonDrops() throws IOException {
+    void lootCaptureToolsAreConfigurableAndConsumedOnDeposit() throws IOException {
+        String configSource = read("src/main/java/com/akitaattribute/mobfarmblock/config/MobFarmConfig.java");
         String injectorSource = read("src/main/java/com/akitaattribute/mobfarmblock/integration/PixelmonLootCaptureToolInjector.java");
+        String blockSource = read("src/main/java/com/akitaattribute/mobfarmblock/block/MobFarmBlock.java");
 
-        assertTrue(injectorSource.contains("observedLootProfile(drops"),
-                "The stored Capture Tool profile should be derived from the actual Pixelmon loot list for the defeated Pokemon.");
-        assertTrue(injectorSource.contains("stored.dropProfile = observedLootProfile"),
-                "The injected Capture Tool must use observed battle loot, not a fresh DropItemRegistry roll.");
-        assertTrue(injectorSource.contains("pixelmon:loot_ui_observed"),
-                "Observed Pixelmon loot profiles should be marked distinctly for debugging.");
-        assertTrue(injectorSource.contains("extractItemStack"),
-                "Observed Pixelmon DroppedItem entries must be inspected to recover the actual ItemStack drops.");
+        assertTrue(configSource.contains("PIXELMON_CAPTURE_TOOL_DROP_CHANCE"),
+                "Pixelmon Capture Tool loot injection should be governed by a common NeoForge config value.");
+        assertTrue(configSource.contains("defineInRange(\"pixelmonCaptureToolDropChance\", 1.0D, 0.0D, 1.0D)"),
+                "The Pixelmon Capture Tool loot chance should default to 100% and allow fractional double precision down to zero.");
+        assertTrue(injectorSource.contains("MobFarmConfig.PIXELMON_CAPTURE_TOOL_DROP_CHANCE.get()"),
+                "The Pixelmon loot injector must roll against the configured chance before adding the Capture Tool.");
+        assertTrue(injectorSource.contains("CaptureToolItem.setDiscardOnDeposit(captureTool, true)"),
+                "Capture Tools created by Pixelmon loot should be marked one-shot so they do not become reusable empty tools.");
+        assertTrue(blockSource.contains("CaptureToolItem.shouldDiscardOnDeposit(stack)"),
+                "Depositing a Pixelmon-loot Capture Tool should consume the stack instead of clearing it to an empty tool.");
     }
 
     @Test
