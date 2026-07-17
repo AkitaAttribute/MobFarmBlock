@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
+import com.akitaattribute.mobfarmblock.config.MobFarmConfig;
 import com.akitaattribute.mobfarmblock.item.CaptureToolItem;
 import com.akitaattribute.mobfarmblock.mob.DropProfile;
 import com.akitaattribute.mobfarmblock.mob.DropRule;
@@ -39,6 +40,16 @@ public final class PixelmonLootCaptureToolInjector {
                 MobFarmBlockMod.LOGGER.warn("Mob Farm Pixelmon loot capture injection skipped: drops list was null for sourceClass={} player={}", sourceClass, playerName);
                 return;
             }
+            double configuredChance = MobFarmConfig.PIXELMON_CAPTURE_TOOL_DROP_CHANCE.get();
+            if (configuredChance <= 0.0D) {
+                MobFarmBlockMod.LOGGER.info("Mob Farm Pixelmon loot capture injection skipped: configured chance is {}", configuredChance);
+                return;
+            }
+            double roll = player == null ? Math.random() : player.level().random.nextDouble();
+            if (roll >= configuredChance) {
+                MobFarmBlockMod.LOGGER.info("Mob Farm Pixelmon loot capture injection skipped by chance: roll={} chance={}", roll, configuredChance);
+                return;
+            }
 
             LivingEntity entity = resolveLivingEntity(source);
             if (entity == null) {
@@ -57,23 +68,49 @@ public final class PixelmonLootCaptureToolInjector {
                 MobFarmBlockMod.LOGGER.warn("Mob Farm Pixelmon loot capture injection skipped: MobProfileFactory returned empty profile for entityType={} sourceClass={}", entityType, sourceClass);
                 return;
             }
-
-            DropProfile observedLootProfile = observedLootProfile(drops, stored.dropProfile.xp());
-            stored.dropProfile = observedLootProfile;
-            stored.dropProfileSource = "pixelmon:loot_ui_observed";
+            stored.dropProfileSource = "pixelmon:loot_ui_pending";
 
             ItemStack captureTool = new ItemStack(ModItems.CAPTURE_TOOL.get());
             CaptureToolItem.setStoredMob(captureTool, stored.copyWithCount(1));
+            CaptureToolItem.setDiscardOnDeposit(captureTool, true);
             Object droppedCaptureTool = createPixelmonDroppedItem(captureTool);
             if (droppedCaptureTool == null) {
                 MobFarmBlockMod.LOGGER.warn("Mob Farm Pixelmon loot capture injection skipped: could not create Pixelmon DroppedItem wrapper for species={} entityType={}", stored.speciesId, entityType);
                 return;
             }
             drops.add(droppedCaptureTool);
-            MobFarmBlockMod.LOGGER.info("Mob Farm Pixelmon loot capture injection appended filled Capture Tool wrapper: species={} entityType={} observedLootRules={} wrapperClass={} dropsBefore={} dropsAfter={} player={}", stored.speciesId, entityType, observedLootProfile.drops().size(), droppedCaptureTool.getClass().getName(), beforeSize, drops.size(), playerName);
+            MobFarmBlockMod.LOGGER.info("Mob Farm Pixelmon loot capture injection appended pending filled Capture Tool wrapper: species={} entityType={} chance={} roll={} wrapperClass={} dropsBefore={} dropsAfter={} player={}", stored.speciesId, entityType, configuredChance, roll, droppedCaptureTool.getClass().getName(), beforeSize, drops.size(), playerName);
         } catch (Throwable error) {
             MobFarmBlockMod.LOGGER.warn("Unable to append Mob Farm capture tool to Pixelmon loot UI from sourceClass={} player={} dropsBefore={}", sourceClass, playerName, beforeSize, error);
         }
+    }
+
+    public static void updateCaptureToolObservedLoot(Object source, List<Object> drops, ServerPlayer player) {
+        int listSize = drops == null ? -1 : drops.size();
+        String playerName = player == null ? "unknown" : player.getGameProfile().getName();
+        try {
+            if (drops == null) return;
+            DropProfile observed = observedLootProfile(drops, XpProfile.NONE);
+            int updated = 0;
+            for (Object drop : drops) {
+                ItemStack stack = extractItemStack(drop);
+                if (stack == null || stack.isEmpty() || !stack.is(ModItems.CAPTURE_TOOL.get()) || !CaptureToolItem.hasStoredMob(stack)) continue;
+                StoredMob stored = CaptureToolItem.getStoredMob(stack);
+                if (stored == null || stored.isEmpty()) continue;
+                stored.dropProfile = withXp(observed, stored.dropProfile.xp());
+                stored.dropProfileSource = "pixelmon:loot_ui_observed";
+                CaptureToolItem.setStoredMob(stack, stored.copyWithCount(1));
+                CaptureToolItem.setDiscardOnDeposit(stack, true);
+                updated++;
+            }
+            MobFarmBlockMod.LOGGER.info("Mob Farm Pixelmon loot capture injection observed-loot update: sourceClass={} player={} listSize={} observedRules={} updatedTools={}", source == null ? "null" : source.getClass().getName(), playerName, listSize, observed.drops().size(), updated);
+        } catch (Throwable error) {
+            MobFarmBlockMod.LOGGER.warn("Unable to update Mob Farm capture tool observed loot from Pixelmon list player={} listSize={}", playerName, listSize, error);
+        }
+    }
+
+    private static DropProfile withXp(DropProfile profile, XpProfile xp) {
+        return new DropProfile(profile.drops(), xp, profile.observations(), profile.observedDropCounts(), profile.observedDropPrototypes());
     }
 
     private static DropProfile observedLootProfile(List<Object> drops, XpProfile xp) {
