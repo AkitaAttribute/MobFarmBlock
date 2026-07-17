@@ -1,5 +1,6 @@
 package com.akitaattribute.mobfarmblock.integration;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.List;
 
@@ -16,6 +17,8 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 
 public final class PixelmonLootCaptureToolInjector {
+    private static final String DROPPED_ITEM_CLASS = "com.pixelmonmod.pixelmon.entities.pixelmon.drops.DroppedItem";
+
     private PixelmonLootCaptureToolInjector() {}
 
     public static void appendCaptureTool(Object source, List<Object> drops, ServerPlayer player) {
@@ -49,10 +52,27 @@ public final class PixelmonLootCaptureToolInjector {
 
             ItemStack captureTool = new ItemStack(ModItems.CAPTURE_TOOL.get());
             CaptureToolItem.setStoredMob(captureTool, stored.copyWithCount(1));
-            drops.add(captureTool);
-            MobFarmBlockMod.LOGGER.info("Mob Farm Pixelmon loot capture injection appended filled Capture Tool: species={} entityType={} dropsBefore={} dropsAfter={} player={}", stored.speciesId, entityType, beforeSize, drops.size(), playerName);
+            Object droppedCaptureTool = createPixelmonDroppedItem(captureTool);
+            if (droppedCaptureTool == null) {
+                MobFarmBlockMod.LOGGER.warn("Mob Farm Pixelmon loot capture injection skipped: could not create Pixelmon DroppedItem wrapper for species={} entityType={}", stored.speciesId, entityType);
+                return;
+            }
+            drops.add(droppedCaptureTool);
+            MobFarmBlockMod.LOGGER.info("Mob Farm Pixelmon loot capture injection appended filled Capture Tool wrapper: species={} entityType={} wrapperClass={} dropsBefore={} dropsAfter={} player={}", stored.speciesId, entityType, droppedCaptureTool.getClass().getName(), beforeSize, drops.size(), playerName);
         } catch (Throwable error) {
             MobFarmBlockMod.LOGGER.warn("Unable to append Mob Farm capture tool to Pixelmon loot UI from sourceClass={} player={} dropsBefore={}", sourceClass, playerName, beforeSize, error);
+        }
+    }
+
+    private static Object createPixelmonDroppedItem(ItemStack stack) {
+        try {
+            Class<?> droppedItemClass = Class.forName(DROPPED_ITEM_CLASS);
+            Constructor<?> constructor = droppedItemClass.getConstructor(ItemStack.class, int.class);
+            constructor.setAccessible(true);
+            return constructor.newInstance(stack, stack.getCount());
+        } catch (Throwable error) {
+            MobFarmBlockMod.LOGGER.warn("Mob Farm Pixelmon loot capture injection failed to wrap ItemStack as Pixelmon DroppedItem", error);
+            return null;
         }
     }
 
