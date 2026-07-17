@@ -11,6 +11,7 @@ public final class MobFarmConfig {
     public static final ModConfigSpec.BooleanValue DEBUG_CHAT_MESSAGES;
     public static final ModConfigSpec.BooleanValue DEBUG_COBBLEMON_JSON_DUMP;
     public static final ModConfigSpec.EnumValue<LookUiStyle> LOOK_UI_STYLE;
+    public static final ModConfigSpec.DoubleValue PIXELMON_CAPTURE_TOOL_DROP_CHANCE;
 
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
@@ -26,6 +27,10 @@ public final class MobFarmConfig {
                 .comment("Look UI Style. NAMETAG is the current floating nametag-style debug overlay.")
                 .translation("mob_farm_block.configuration.lookUiStyle")
                 .defineEnum("lookUiStyle", LookUiStyle.NAMETAG);
+        PIXELMON_CAPTURE_TOOL_DROP_CHANCE = builder
+                .comment("Chance for defeated Pixelmon loot UIs to include a filled Mob Farm Capture Tool. 1.0 = 100%, 0.001 = 0.1%, 0.0 = disabled.")
+                .translation("mob_farm_block.configuration.pixelmonCaptureToolDropChance")
+                .defineInRange("pixelmonCaptureToolDropChance", 1.0D, 0.0D, 1.0D);
         COMMON_SPEC = builder.build();
     }
 
