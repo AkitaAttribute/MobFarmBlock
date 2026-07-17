@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 class PixelmonMixinTargetTest {
     private static final String DROP_QUERY_LIST_TARGET = "com.pixelmonmod.pixelmon.entities.pixelmon.drops.DropItemQueryList";
     private static final String DROP_REGISTRY_TARGET = "com.pixelmonmod.pixelmon.entities.npcs.registry.DropItemRegistry";
+    private static final String DROPPED_ITEM_TARGET = "com.pixelmonmod.pixelmon.entities.pixelmon.drops.DroppedItem";
 
     private static final String[] KNOWN_BAD_DROP_QUERY_LIST_TARGETS = {
             "com.pixelmonmod.pixelmon.api.drops.DropItemQueryList",
@@ -41,6 +42,18 @@ class PixelmonMixinTargetTest {
                 "A non-static HEAD injector causes Mixin InvalidInjectionException against static Pixelmon register(...).");
         assertFalse(mixinSource.contains("private void mobFarmBlock$appendCaptureTool"),
                 "A non-static TAIL injector causes Mixin InvalidInjectionException against static Pixelmon register(...).");
+    }
+
+    @Test
+    void injectedLootUsesPixelmonDroppedItemWrapperNotRawItemStack() throws IOException {
+        String injectorSource = read("src/main/java/com/akitaattribute/mobfarmblock/integration/PixelmonLootCaptureToolInjector.java");
+
+        assertTrue(injectorSource.contains(DROPPED_ITEM_TARGET),
+                "Pixelmon loot lists contain DroppedItem entries, not raw Minecraft ItemStack entries.");
+        assertTrue(injectorSource.contains("getConstructor(ItemStack.class, int.class)"),
+                "The Capture Tool must be wrapped with Pixelmon DroppedItem(ItemStack, int) before adding it to DropItemQueryList.");
+        assertFalse(injectorSource.contains("drops.add(captureTool);"),
+                "Adding a raw ItemStack to the Pixelmon loot list causes ClassCastException and breaks normal Pixelmon drops.");
     }
 
     @Test
