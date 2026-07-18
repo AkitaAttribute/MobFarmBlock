@@ -78,14 +78,34 @@ class PixelmonMixinTargetTest {
 
         assertTrue(configSource.contains("PIXELMON_CAPTURE_TOOL_DROP_CHANCE"),
                 "Pixelmon Capture Tool loot injection should be governed by a common NeoForge config value.");
-        assertTrue(configSource.contains("defineInRange(\"pixelmonCaptureToolDropChance\", 1.0D, 0.0D, 1.0D)"),
-                "The Pixelmon Capture Tool loot chance should default to 100% and allow fractional double precision down to zero.");
+        assertTrue(configSource.contains("defineInRange(\"pixelmonCaptureToolDropChance\", 0.001D, 0.0D, 1.0D)"),
+                "The Pixelmon Capture Tool loot chance should default to 1/1000 and allow fractional double precision down to zero.");
         assertTrue(injectorSource.contains("MobFarmConfig.PIXELMON_CAPTURE_TOOL_DROP_CHANCE.get()"),
                 "The Pixelmon loot injector must roll against the configured chance before adding the Capture Tool.");
         assertTrue(injectorSource.contains("CaptureToolItem.setDiscardOnDeposit(captureTool, true)"),
                 "Capture Tools created by Pixelmon loot should be marked one-shot so they do not become reusable empty tools.");
         assertTrue(blockSource.contains("CaptureToolItem.shouldDiscardOnDeposit(stack)"),
                 "Depositing a Pixelmon-loot Capture Tool should consume the stack instead of clearing it to an empty tool.");
+    }
+
+    @Test
+    void pixelmonPensUseEmptyHandDropHarvestAndProcessingOnlyAwardsXp() throws IOException {
+        String factorySource = read("src/main/java/com/akitaattribute/mobfarmblock/mob/MobProfileFactory.java");
+        String interactionSource = read("src/main/java/com/akitaattribute/mobfarmblock/behavior/InteractionMethodRegistry.java");
+        String behaviorSource = read("src/main/java/com/akitaattribute/mobfarmblock/behavior/BehaviorUtil.java");
+
+        assertTrue(factorySource.contains("\"pixelmon:pixelmon\".equals(id)"),
+                "Stored Pixelmon should receive a built-in pen interaction.");
+        assertTrue(factorySource.contains("MobFarmBlockMod.id(\"pixelmon_drops\")"),
+                "Stored Pixelmon should use the empty-hand Pixelmon drop harvest interaction.");
+        assertTrue(interactionSource.contains("PIXELMON_DROPS"),
+                "The Pixelmon drop harvest method must be registered.");
+        assertTrue(interactionSource.contains("definition.methodId().equals(EGG) || definition.methodId().equals(PIXELMON_DROPS)"),
+                "Pixelmon drop harvesting should match an empty hand like chicken eggs.");
+        assertTrue(interactionSource.contains("context.stored().setCooldown(action, now, definition.cooldownTicks() > 0 ? definition.cooldownTicks() : 6000L)"),
+                "Pixelmon drop harvesting should use the configured five minute cooldown fallback.");
+        assertTrue(behaviorSource.contains("pixelmonProcessing=drop rolls disabled; processing awards XP only"),
+                "Weapon processing stored Pixelmon should not roll drops; it should only award XP.");
     }
 
     @Test
