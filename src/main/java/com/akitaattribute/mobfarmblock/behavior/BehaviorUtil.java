@@ -50,33 +50,39 @@ final class BehaviorUtil {
         int lootingLevel = getLootingLevel(context);
         StringBuilder details = new StringBuilder();
         StringBuilder rolled = new StringBuilder();
-        boolean nativePixelmonDrops = context.stored().dropProfile.drops().isEmpty() && tryNativePixelmonDrops(context, details);
+        boolean pixelmon = "pixelmon:pixelmon".equals(context.stored().mobId.toString());
+        boolean nativePixelmonDrops = false;
         int index = 0;
-        if (!nativePixelmonDrops) {
-            for (DropRule rule : context.stored().dropProfile.drops()) {
-                RollResult result = rollDrop(context, rule, lootingLevel);
-                details.append("\n  #").append(index++)
-                        .append(" itemId=").append(rule.itemId())
-                        .append(" chance=").append(rule.chance())
-                        .append(" min=").append(rule.minCount())
-                        .append(" max=").append(rule.maxCount())
-                        .append(" affectedByLooting=").append(rule.affectedByLooting())
-                        .append(" lootingChanceBonus=").append(rule.lootingChanceBonus())
-                        .append(" lootingMaxBonus=").append(rule.lootingMaxBonus())
-                        .append(" roll=").append(String.format(java.util.Locale.ROOT, "%.5f", result.roll()))
-                        .append(" success=").append(result.success())
-                        .append(" finalCount=").append(result.finalCount())
-                        .append(" output=").append(result.outputTarget());
-                if (result.success() && result.finalCount() > 0) {
-                    if (!rolled.isEmpty()) rolled.append(", ");
-                    rolled.append(rule.itemId()).append(" x").append(result.finalCount());
-                }
-            }
+        if (pixelmon) {
+            details.append("\n  pixelmonProcessing=drop rolls disabled; processing awards XP only");
         } else {
-            rolled.append("native Pixelmon drop routine");
+            nativePixelmonDrops = context.stored().dropProfile.drops().isEmpty() && tryNativePixelmonDrops(context, details);
+            if (!nativePixelmonDrops) {
+                for (DropRule rule : context.stored().dropProfile.drops()) {
+                    RollResult result = rollDrop(context, rule, lootingLevel);
+                    details.append("\n  #").append(index++)
+                            .append(" itemId=").append(rule.itemId())
+                            .append(" chance=").append(rule.chance())
+                            .append(" min=").append(rule.minCount())
+                            .append(" max=").append(rule.maxCount())
+                            .append(" affectedByLooting=").append(rule.affectedByLooting())
+                            .append(" lootingChanceBonus=").append(rule.lootingChanceBonus())
+                            .append(" lootingMaxBonus=").append(rule.lootingMaxBonus())
+                            .append(" roll=").append(String.format(java.util.Locale.ROOT, "%.5f", result.roll()))
+                            .append(" success=").append(result.success())
+                            .append(" finalCount=").append(result.finalCount())
+                            .append(" output=").append(result.outputTarget());
+                    if (result.success() && result.finalCount() > 0) {
+                        if (!rolled.isEmpty()) rolled.append(", ");
+                        rolled.append(rule.itemId()).append(" x").append(result.finalCount());
+                    }
+                }
+            } else {
+                rolled.append("native Pixelmon drop routine");
+            }
         }
         int xp = awardXp(context);
-        if ("cobblemon:pokemon".equals(context.stored().mobId.toString()) || "pixelmon:pixelmon".equals(context.stored().mobId.toString())) CobblemonDebugDumper.writeProcessingDump(context.player(), context.stored(), details.toString());
+        if ("cobblemon:pokemon".equals(context.stored().mobId.toString()) || pixelmon) CobblemonDebugDumper.writeProcessingDump(context.player(), context.stored(), details.toString());
         MobFarmDebug.send(context.player(), Component.literal("Mob Farm Block Debug:\nProcessed mob"
                 + "\n- mob id: " + context.stored().mobId
                 + "\n- kind: " + context.stored().kind
@@ -181,7 +187,7 @@ final class BehaviorUtil {
         return new RollResult(roll, true, count, target);
     }
 
-    private static int randomBetween(MobFarmContext context, int min, int max) {
+    static int randomBetween(MobFarmContext context, int min, int max) {
         return max <= min ? min : min + context.random().nextInt(max - min + 1);
     }
 
