@@ -6,6 +6,7 @@ import java.util.Map;
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.debug.MobFarmDebug;
 import com.akitaattribute.mobfarmblock.mob.DisplaySnapshot;
+import com.akitaattribute.mobfarmblock.mob.DropRule;
 import com.akitaattribute.mobfarmblock.mob.InteractionDefinition;
 
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -28,6 +29,7 @@ public final class InteractionMethodRegistry {
     public static final ResourceLocation HARVEST = MobFarmBlockMod.id("harvest");
     public static final ResourceLocation DYE = MobFarmBlockMod.id("dye");
     public static final ResourceLocation EGG = MobFarmBlockMod.id("egg");
+    public static final ResourceLocation PIXELMON_DROPS = MobFarmBlockMod.id("pixelmon_drops");
     public static final ResourceLocation OUTPUT_ITEM = MobFarmBlockMod.id("output_item");
     public static final ResourceLocation CHANGE_STATE = MobFarmBlockMod.id("change_state");
 
@@ -38,6 +40,7 @@ public final class InteractionMethodRegistry {
         register(HARVEST, InteractionMethodRegistry::harvest);
         register(DYE, InteractionMethodRegistry::dye);
         register(EGG, InteractionMethodRegistry::egg);
+        register(PIXELMON_DROPS, InteractionMethodRegistry::pixelmonDrops);
         register(OUTPUT_ITEM, InteractionMethodRegistry::outputItem);
         register(CHANGE_STATE, InteractionMethodRegistry::changeState);
     }
@@ -64,7 +67,7 @@ public final class InteractionMethodRegistry {
     private static boolean matchesHeldItem(MobFarmContext context, InteractionDefinition definition) {
         if (definition.methodId().equals(SHEAR)) return context.heldItem().is(Items.SHEARS);
         if (definition.methodId().equals(DYE)) return context.heldItem().getItem() instanceof DyeItem;
-        if (definition.methodId().equals(EGG)) return context.heldItem().isEmpty();
+        if (definition.methodId().equals(EGG) || definition.methodId().equals(PIXELMON_DROPS)) return context.heldItem().isEmpty();
         ItemStack held = context.heldItem();
         if (definition.item().isPresent() && !held.is(BuiltInRegistries.ITEM.get(definition.item().get()))) return false;
         if (definition.itemTag().isPresent()) {
@@ -232,7 +235,7 @@ public final class InteractionMethodRegistry {
     }
 
     private static int randomBetween(MobFarmContext context, int min, int max) {
-        return max <= min ? min : min + context.random().nextInt(max - min + 1);
+        return BehaviorUtil.randomBetween(context, min, max);
     }
 
     private static InteractionResult dye(MobFarmContext context, InteractionDefinition definition) {
@@ -249,6 +252,23 @@ public final class InteractionMethodRegistry {
         ResourceLocation action = MobFarmBlockMod.id("egg");
         if (!context.stored().ready(action, now)) return InteractionResult.PASS;
         outputLargeStack(context, Items.EGG, Math.max(1L, context.stored().count));
+        context.stored().setCooldown(action, now, definition.cooldownTicks() > 0 ? definition.cooldownTicks() : 6000L);
+        return InteractionResult.SUCCESS;
+    }
+
+    private static InteractionResult pixelmonDrops(MobFarmContext context, InteractionDefinition definition) {
+        long now = context.level().getGameTime();
+        ResourceLocation action = PIXELMON_DROPS;
+        if (!context.stored().ready(action, now)) return InteractionResult.PASS;
+        for (long mobIndex = 0; mobIndex < Math.max(1L, context.stored().count); mobIndex++) {
+            for (DropRule rule : context.stored().dropProfile.drops()) {
+                double chance = Math.max(0.0D, Math.min(1.0D, rule.chance()));
+                if (context.random().nextDouble() > chance) continue;
+                int amount = randomBetween(context, rule.minCount(), rule.maxCount());
+                if (amount <= 0) continue;
+                outputLargeStack(context, BuiltInRegistries.ITEM.get(rule.itemId()), amount);
+            }
+        }
         context.stored().setCooldown(action, now, definition.cooldownTicks() > 0 ? definition.cooldownTicks() : 6000L);
         return InteractionResult.SUCCESS;
     }
