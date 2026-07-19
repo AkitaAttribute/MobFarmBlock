@@ -78,8 +78,8 @@ class PixelmonMixinTargetTest {
 
         assertTrue(configSource.contains("PIXELMON_CAPTURE_TOOL_DROP_CHANCE"),
                 "Pixelmon Capture Tool loot injection should be governed by a common NeoForge config value.");
-        assertTrue(configSource.contains("defineInRange(\"pixelmonCaptureToolDropChance\", 0.001D, 0.0D, 1.0D)"),
-                "The Pixelmon Capture Tool loot chance should default to 1/1000 and allow fractional double precision down to zero.");
+        assertTrue(configSource.contains("defineInRange(\"pixelmonCaptureToolDropChance\", 0.01D, 0.0D, 1.0D)"),
+                "The Pixelmon Capture Tool loot chance should default to 1/100 and allow fractional double precision down to zero.");
         assertTrue(injectorSource.contains("MobFarmConfig.PIXELMON_CAPTURE_TOOL_DROP_CHANCE.get()"),
                 "The Pixelmon loot injector must roll against the configured chance before adding the Capture Tool.");
         assertTrue(injectorSource.contains("CaptureToolItem.setDiscardOnDeposit(captureTool, true)"),
@@ -120,6 +120,20 @@ class PixelmonMixinTargetTest {
                 "Pixelmon drop rows should show Ready or countdown text from the same cooldown store used by eggs/harvests.");
         assertTrue(rendererSource.contains("readyColor(stored, MobFarmBlockMod.id(\"pixelmon_drops\"), now)"),
                 "Pixelmon drop rows should use the normal ready/cooldown colors.");
+    }
+
+    @Test
+    void pixelmonRendererFacesPlacementAndUsesLookShrinkLimit() throws IOException {
+        String rendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/MobFarmBlockEntityRenderer.java");
+
+        assertTrue(rendererSource.contains("applyPixelmonFacing(entity, yaw)"),
+                "Pixelmon pen renders should apply the block facing to the cached Pixelmon entity instead of always facing north.");
+        assertTrue(rendererSource.contains("minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, pixelmon ? yaw : 0.0F"),
+                "Pixelmon pen renders should pass placement yaw into the renderer path.");
+        assertTrue(rendererSource.contains("float height = Math.max(0.75F, entity.getBbHeight() * displayScale)"),
+                "Tiny Pixelmon should not be blown up by fitting against extremely small dimensions.");
+        assertTrue(rendererSource.contains("if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, maxDimension))"),
+                "Looking at a Pixelmon pen should apply the same maximum visual shrink envelope used by the other render path.");
     }
 
     @Test
