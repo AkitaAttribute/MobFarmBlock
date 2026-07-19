@@ -28,9 +28,9 @@ public final class MobFarmConfig {
                 .translation("mob_farm_block.configuration.lookUiStyle")
                 .defineEnum("lookUiStyle", LookUiStyle.NAMETAG);
         PIXELMON_CAPTURE_TOOL_DROP_CHANCE = builder
-                .comment("Chance for defeated Pixelmon loot UIs to include a filled Mob Farm Capture Tool. 1.0 = 100%, 0.001 = 0.1%, 0.0 = disabled.")
+                .comment("Chance for defeated Pixelmon loot UIs to include a filled Mob Farm Capture Tool. 1.0 = 100%, 0.01 = 1%, 0.0 = disabled.")
                 .translation("mob_farm_block.configuration.pixelmonCaptureToolDropChance")
-                .defineInRange("pixelmonCaptureToolDropChance", 0.001D, 0.0D, 1.0D);
+                .defineInRange("pixelmonCaptureToolDropChance", 0.01D, 0.0D, 1.0D);
         COMMON_SPEC = builder.build();
     }
 
