@@ -109,6 +109,20 @@ class PixelmonMixinTargetTest {
     }
 
     @Test
+    void pixelmonHarvestUiShowsReadyAndCooldownValues() throws IOException {
+        String rendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/MobFarmBlockEntityRenderer.java");
+
+        assertTrue(rendererSource.contains("isPixelmonDropHarvest"),
+                "The Look UI should recognize the Pixelmon empty-hand drop harvest interaction.");
+        assertTrue(rendererSource.contains("pixelmonDropRows"),
+                "Pixelmon drop rows should be produced through the harvest interaction instead of raw chance-only drop rows.");
+        assertTrue(rendererSource.contains("readyValue(stored, MobFarmBlockMod.id(\"pixelmon_drops\"), now)"),
+                "Pixelmon drop rows should show Ready or countdown text from the same cooldown store used by eggs/harvests.");
+        assertTrue(rendererSource.contains("readyColor(stored, MobFarmBlockMod.id(\"pixelmon_drops\"), now)"),
+                "Pixelmon drop rows should use the normal ready/cooldown colors.");
+    }
+
+    @Test
     void mixinConfigRegistersDropItemQueryListMixin() throws IOException {
         String mixinConfig = read("src/main/resources/mob_farm_block.mixins.json");
 
