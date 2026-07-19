@@ -255,11 +255,17 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
 
     private static List<LookRow> compactRows(StoredMob stored, long now) {
         List<LookRow> rows = new ArrayList<>();
+        boolean usesPixelmonDropHarvest = false;
         for (InteractionDefinition definition : stored.interactionProfile.definitions()) {
+            if (isPixelmonDropHarvest(definition)) {
+                usesPixelmonDropHarvest = true;
+                rows.addAll(pixelmonDropRows(stored, now));
+                continue;
+            }
             LookRow row = compactRow(stored, definition, now);
             if (row != null) rows.add(row);
         }
-        for (DropRule rule : stored.dropProfile.drops()) rows.add(new LookRow(new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId())), "Drop", formatChance(rule.chance()), TEXT_WHITE, TEXT_YELLOW));
+        if (!usesPixelmonDropHarvest) for (DropRule rule : stored.dropProfile.drops()) rows.add(new LookRow(new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId())), "Drop", formatChance(rule.chance()), TEXT_WHITE, TEXT_YELLOW));
         if (rows.isEmpty()) {
             if (hasNativePixelmonDrops(stored)) rows.add(new LookRow(new ItemStack(Items.CHEST), "Pixelmon Drops", "Native", TEXT_WHITE, TEXT_GREEN));
             else rows.add(new LookRow(new ItemStack(Items.BARRIER), "No Drops", "", TEXT_GRAY, TEXT_GRAY));
@@ -279,14 +285,38 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
 
     private static List<LookRow> expandedRows(StoredMob stored, long now) {
         List<LookRow> rows = new ArrayList<>();
+        boolean usesPixelmonDropHarvest = false;
         for (InteractionDefinition definition : stored.interactionProfile.definitions()) {
+            if (isPixelmonDropHarvest(definition)) {
+                usesPixelmonDropHarvest = true;
+                rows.addAll(pixelmonDropRows(stored, now));
+                continue;
+            }
             LookRow row = compactRow(stored, definition, now);
             if (row != null) rows.add(row);
         }
-        for (DropRule rule : stored.dropProfile.drops()) rows.add(new LookRow(new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId())), "Drop", formatChance(rule.chance()), TEXT_WHITE, TEXT_YELLOW));
+        if (!usesPixelmonDropHarvest) for (DropRule rule : stored.dropProfile.drops()) rows.add(new LookRow(new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId())), "Drop", formatChance(rule.chance()), TEXT_WHITE, TEXT_YELLOW));
         if (rows.isEmpty()) {
             if (hasNativePixelmonDrops(stored)) rows.add(new LookRow(new ItemStack(Items.CHEST), "Native Drops", "Pixelmon UI", TEXT_WHITE, TEXT_GREEN));
             else rows.add(new LookRow(new ItemStack(Items.BARRIER), "No Drops", "", TEXT_GRAY, TEXT_GRAY));
+        }
+        return rows;
+    }
+
+    private static boolean isPixelmonDropHarvest(InteractionDefinition definition) {
+        return definition.methodId().equals(MobFarmBlockMod.id("pixelmon_drops"));
+    }
+
+    private static List<LookRow> pixelmonDropRows(StoredMob stored, long now) {
+        List<LookRow> rows = new ArrayList<>();
+        String value = readyValue(stored, MobFarmBlockMod.id("pixelmon_drops"), now);
+        int color = readyColor(stored, MobFarmBlockMod.id("pixelmon_drops"), now);
+        if (stored.dropProfile.drops().isEmpty()) {
+            rows.add(new LookRow(new ItemStack(Items.CHEST), "Drops", value, TEXT_WHITE, color));
+            return rows;
+        }
+        for (DropRule rule : stored.dropProfile.drops()) {
+            rows.add(new LookRow(new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId())), "Drop", value, TEXT_WHITE, color));
         }
         return rows;
     }
@@ -334,7 +364,6 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         long seconds = Math.max(1L, (readyAt - now + 19L) / 20L);
         return seconds + "s";
     }
-
     private static int readyColor(StoredMob stored, ResourceLocation action, long now) { return now >= stored.readyAtTicks.getOrDefault(action, 0L) ? TEXT_GREEN : TEXT_YELLOW; }
     private static String formatChance(double chance) { return Math.round(chance * 100.0D) + "%"; }
     private static int rowWidth(Font font, LookRow row, boolean showValue) { return 16 + font.width(row.label()) + (showValue && !row.value().isBlank() ? 6 + font.width(row.value()) : 0); }
