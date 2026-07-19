@@ -31,6 +31,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.animal.Sheep;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemDisplayContext;
@@ -62,14 +63,16 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         boolean pixelmon = PixelmonEntityRenderCache.isPixelmonStored(stored);
         Entity entity = renderEntity(stored, minecraft);
         if (entity != null) {
+            float yaw = blockEntity.getBlockState().getValue(MobFarmBlock.FACING).toYRot();
             poseStack.pushPose();
             poseStack.translate(0.5D, pixelmon ? 1.05D : 0.58D, 0.5D);
             float scale = placedEntityScale(stored, entity, inspected);
             poseStack.scale(scale, scale, scale);
-            poseStack.mulPose(Axis.YP.rotationDegrees(blockEntity.getBlockState().getValue(MobFarmBlock.FACING).toYRot()));
+            if (pixelmon) applyPixelmonFacing(entity, yaw);
+            else poseStack.mulPose(Axis.YP.rotationDegrees(yaw));
             ClientEntityRenderCache.freezeForRender(entity);
             try {
-                minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, 0.0F, poseStack, buffer, 0x00F000F0);
+                minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, pixelmon ? yaw : 0.0F, 0.0F, poseStack, buffer, 0x00F000F0);
             } catch (Throwable error) {
                 MobFarmBlockMod.LOGGER.error("Placed pen mob render failed for {}; skipping entity overlay", stored.speciesId != null ? stored.speciesId : stored.mobId, error);
             }
@@ -84,13 +87,25 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         return ClientEntityRenderCache.getOrCreate(stored);
     }
 
+    private static void applyPixelmonFacing(Entity entity, float yaw) {
+        entity.setYRot(yaw);
+        entity.setYHeadRot(yaw);
+        if (entity instanceof LivingEntity living) {
+            living.yBodyRot = yaw;
+            living.yHeadRot = yaw;
+        }
+    }
+
     private static float placedEntityScale(StoredMob stored, Entity entity, boolean inspected) {
         if (PixelmonEntityRenderCache.isPixelmonStored(stored)) {
             float displayScale = stored.display.scale() > 0 ? stored.display.scale() : 1.0F;
-            float height = Math.max(entity.getBbHeight(), 0.35F) * displayScale;
-            float width = Math.max(entity.getBbWidth(), 0.35F) * displayScale;
-            float fit = 4.00F / Math.max(0.1F, Math.max(height, width));
-            return Math.max(1.80F, Math.min(5.50F, fit));
+            float height = Math.max(0.75F, entity.getBbHeight() * displayScale);
+            float width = Math.max(0.75F, entity.getBbWidth() * displayScale);
+            float maxDimension = Math.max(height, width);
+            float scale = 1.20F / Math.max(0.1F, maxDimension);
+            scale = Math.max(0.25F, Math.min(2.25F, scale));
+            if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, maxDimension));
+            return Math.max(0.08F, scale);
         }
         float scale = 0.32F;
         if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, entity.getBbHeight()));
