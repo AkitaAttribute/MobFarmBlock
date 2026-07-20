@@ -8,6 +8,7 @@
   "item.mob_farm_block.capture_tool.invalid": "That entity cannot be captured",
   "mob_farm_block.configuration.debugChatMessages": "Debug Chat Messages",
   "mob_farm_block.configuration.debugCobblemonJsonDump": "Debug Cobblemon JSON Dump",
+  "mob_farm_block.configuration.pixelmonEntityTrackingLog": "Pixelmon Entity Tracking Log",
   "mob_farm_block.configuration.lookUiStyle": "Look UI Style",
   "mob_farm_block.configuration.pixelmonCaptureToolDropChance": "Pixelmon Capture Tool Drop Chance"
 }
