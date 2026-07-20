@@ -45,11 +45,6 @@ public final class PixelmonLootCaptureToolInjector {
                 MobFarmBlockMod.LOGGER.info("Mob Farm Pixelmon loot capture injection skipped: configured chance is {}", configuredChance);
                 return;
             }
-            double roll = player == null ? Math.random() : player.level().random.nextDouble();
-            if (roll >= configuredChance) {
-                MobFarmBlockMod.LOGGER.info("Mob Farm Pixelmon loot capture injection skipped by chance: roll={} chance={}", roll, configuredChance);
-                return;
-            }
 
             LivingEntity entity = resolveLivingEntity(source);
             if (entity == null) {
@@ -68,6 +63,13 @@ public final class PixelmonLootCaptureToolInjector {
                 MobFarmBlockMod.LOGGER.warn("Mob Farm Pixelmon loot capture injection skipped: MobProfileFactory returned empty profile for entityType={} sourceClass={}", entityType, sourceClass);
                 return;
             }
+
+            DropDecision decision = shouldDropCaptureTool(player, configuredChance);
+            if (!decision.drop()) {
+                if (player != null) PixelmonCaptureToolDropData.get(player).recordMiss(player);
+                MobFarmBlockMod.LOGGER.info("Mob Farm Pixelmon loot capture injection skipped by chance: roll={} chance={} missesBefore={} guaranteeThreshold={}", decision.roll(), configuredChance, decision.missesBefore(), decision.guaranteeThreshold());
+                return;
+            }
             stored.dropProfileSource = "pixelmon:loot_ui_pending";
 
             ItemStack captureTool = new ItemStack(ModItems.CAPTURE_TOOL.get());
@@ -79,7 +81,8 @@ public final class PixelmonLootCaptureToolInjector {
                 return;
             }
             drops.add(droppedCaptureTool);
-            MobFarmBlockMod.LOGGER.info("Mob Farm Pixelmon loot capture injection appended pending filled Capture Tool wrapper: species={} entityType={} chance={} roll={} wrapperClass={} dropsBefore={} dropsAfter={} player={}", stored.speciesId, entityType, configuredChance, roll, droppedCaptureTool.getClass().getName(), beforeSize, drops.size(), playerName);
+            if (player != null) PixelmonCaptureToolDropData.get(player).reset(player);
+            MobFarmBlockMod.LOGGER.info("Mob Farm Pixelmon loot capture injection appended pending filled Capture Tool wrapper: species={} entityType={} chance={} roll={} guaranteed={} missesBefore={} guaranteeThreshold={} wrapperClass={} dropsBefore={} dropsAfter={} player={}", stored.speciesId, entityType, configuredChance, decision.roll(), decision.guaranteed(), decision.missesBefore(), decision.guaranteeThreshold(), droppedCaptureTool.getClass().getName(), beforeSize, drops.size(), playerName);
         } catch (Throwable error) {
             MobFarmBlockMod.LOGGER.warn("Unable to append Mob Farm capture tool to Pixelmon loot UI from sourceClass={} player={} dropsBefore={}", sourceClass, playerName, beforeSize, error);
         }
@@ -107,6 +110,24 @@ public final class PixelmonLootCaptureToolInjector {
         } catch (Throwable error) {
             MobFarmBlockMod.LOGGER.warn("Unable to update Mob Farm capture tool observed loot from Pixelmon list player={} listSize={}", playerName, listSize, error);
         }
+    }
+
+    private static DropDecision shouldDropCaptureTool(ServerPlayer player, double configuredChance) {
+        double chance = Math.max(0.0D, Math.min(1.0D, configuredChance));
+        double roll = player == null ? Math.random() : player.level().random.nextDouble();
+        long missesBefore = player == null ? 0L : PixelmonCaptureToolDropData.get(player).getMisses(player);
+        long guaranteeThreshold = guaranteeThreshold(chance);
+        boolean randomDrop = roll < chance;
+        boolean guaranteed = player != null && guaranteeThreshold > 0L && missesBefore + 1L >= guaranteeThreshold;
+        return new DropDecision(randomDrop || guaranteed, randomDrop, guaranteed, roll, missesBefore, guaranteeThreshold);
+    }
+
+    private static long guaranteeThreshold(double chance) {
+        if (chance <= 0.0D) return Long.MAX_VALUE;
+        if (chance >= 1.0D) return 1L;
+        double inverse = Math.ceil(1.0D / chance);
+        if (!Double.isFinite(inverse) || inverse >= Long.MAX_VALUE) return Long.MAX_VALUE;
+        return Math.max(1L, (long) inverse);
     }
 
     private static DropProfile withXp(DropProfile profile, XpProfile xp) {
@@ -218,6 +239,8 @@ public final class PixelmonLootCaptureToolInjector {
             return null;
         }
     }
+
+    private record DropDecision(boolean drop, boolean randomDrop, boolean guaranteed, double roll, long missesBefore, long guaranteeThreshold) {}
 
     private record ObservedLootRule(int minCount, int maxCount) {
         private static ObservedLootRule merge(ObservedLootRule existing, ObservedLootRule incoming) {
