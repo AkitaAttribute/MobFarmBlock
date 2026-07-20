@@ -148,7 +148,10 @@ class PixelmonMixinTargetTest {
     @Test
     void pixelmonRendererFacesPlacementAndUsesLookShrinkLimit() throws IOException {
         String rendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/MobFarmBlockEntityRenderer.java");
+        String captureToolRendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/CaptureToolItemRenderer.java");
 
+        assertTrue(rendererSource.contains("poseStack.translate(0.5D, 0.58D, 0.5D)"),
+                "Pixelmon pen renders should use the same grounded block anchor as the other placed mob renders, not a high floating Y offset.");
         assertTrue(rendererSource.contains("applyPixelmonFacing(entity, yaw)"),
                 "Pixelmon pen renders should apply the block facing to the cached Pixelmon entity instead of always facing north.");
         assertTrue(rendererSource.contains("minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, pixelmon ? yaw : 0.0F"),
@@ -157,6 +160,10 @@ class PixelmonMixinTargetTest {
                 "Tiny Pixelmon should not be blown up by fitting against extremely small dimensions.");
         assertTrue(rendererSource.contains("if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, maxDimension))"),
                 "Looking at a Pixelmon pen should apply the same maximum visual shrink envelope used by the other render path.");
+        assertTrue(captureToolRendererSource.contains("float fit = 0.90F / Math.max(0.1F, bounding)"),
+                "Pixelmon capture tool overlays should fit to the GUI slot without the old oversized Pixelmon multiplier.");
+        assertFalse(captureToolRendererSource.contains("fit *= 7.25F"),
+                "The old Pixelmon capture tool multiplier makes tiny Pixelmon models massive in the inventory.");
     }
 
     @Test
