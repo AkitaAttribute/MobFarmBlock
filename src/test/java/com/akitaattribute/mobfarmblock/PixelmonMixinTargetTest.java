@@ -112,6 +112,35 @@ class PixelmonMixinTargetTest {
     }
 
     @Test
+    void pixelmonNonPokemonEntityTrackerLogsTrainersAndAge() throws IOException {
+        String trackerSource = read("src/main/java/com/akitaattribute/mobfarmblock/integration/PixelmonEntityTracker.java");
+        String modSource = read("src/main/java/com/akitaattribute/mobfarmblock/MobFarmBlockMod.java");
+        String configSource = read("src/main/java/com/akitaattribute/mobfarmblock/config/MobFarmConfig.java");
+        String langSource = read("src/main/resources/assets/mob_farm_block/lang/en_us.json");
+
+        assertTrue(configSource.contains("PIXELMON_ENTITY_TRACKING_LOG"),
+                "Pixelmon non-Pokemon entity tracking should be controlled by a visible common config option.");
+        assertTrue(langSource.contains("Pixelmon Entity Tracking Log"),
+                "The Pixelmon tracking config option should have a readable name in the config screen.");
+        assertTrue(modSource.contains("PixelmonEntityTracker::onEntityJoinLevel"),
+                "The tracker should identify Pixelmon NPCs/trainers as they join the world.");
+        assertTrue(modSource.contains("PixelmonEntityTracker::onServerTick"),
+                "The tracker should rescan loaded entities so already-existing trainers can be identified and aged.");
+        assertTrue(trackerSource.contains("pixelmon_entities.jsonl"),
+                "Trainer/NPC tracking should write to a separate JSONL log file.");
+        assertTrue(trackerSource.contains("className.contains(\"trainer\")"),
+                "Pixelmon trainer classes should be classified as tracked trainer entities.");
+        assertTrue(trackerSource.contains("path.contains(\"npc\")"),
+                "Pixelmon NPC entity type ids should be classified as tracked NPC entities.");
+        assertTrue(trackerSource.contains("\"pixelmon:pixelmon\".equals(typeText)"),
+                "Normal Pokemon entities should be excluded from the non-Pokemon tracker.");
+        assertTrue(trackerSource.contains("entity.tickCount"),
+                "The tracker should log Minecraft's current entity tick age when identifying Pixelmon NPCs/trainers.");
+        assertTrue(trackerSource.contains("ageSeconds"),
+                "The tracker should also log a readable seconds value derived from the tick age.");
+    }
+
+    @Test
     void pixelmonPensUseEmptyHandDropHarvestAndProcessingOnlyAwardsXp() throws IOException {
         String factorySource = read("src/main/java/com/akitaattribute/mobfarmblock/mob/MobProfileFactory.java");
         String interactionSource = read("src/main/java/com/akitaattribute/mobfarmblock/behavior/InteractionMethodRegistry.java");
