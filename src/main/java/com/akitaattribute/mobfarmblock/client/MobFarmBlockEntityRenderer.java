@@ -327,11 +327,12 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         String value = readyValue(stored, MobFarmBlockMod.id("pixelmon_drops"), now);
         int color = readyColor(stored, MobFarmBlockMod.id("pixelmon_drops"), now);
         if (stored.dropProfile.drops().isEmpty()) {
-            rows.add(new LookRow(new ItemStack(Items.CHEST), "Drops", value, TEXT_WHITE, color));
+            rows.add(new LookRow(new ItemStack(Items.CHEST), "Pixelmon Drops", value, TEXT_WHITE, color));
             return rows;
         }
         for (DropRule rule : stored.dropProfile.drops()) {
-            rows.add(new LookRow(new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId())), "Drop", value, TEXT_WHITE, color));
+            ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId()));
+            rows.add(new LookRow(stack, itemLabel(stack, rule.itemId()), value, TEXT_WHITE, color));
         }
         return rows;
     }
@@ -382,6 +383,22 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     private static int readyColor(StoredMob stored, ResourceLocation action, long now) { return now >= stored.readyAtTicks.getOrDefault(action, 0L) ? TEXT_GREEN : TEXT_YELLOW; }
     private static String formatChance(double chance) { return Math.round(chance * 100.0D) + "%"; }
     private static int rowWidth(Font font, LookRow row, boolean showValue) { return 16 + font.width(row.label()) + (showValue && !row.value().isBlank() ? 6 + font.width(row.value()) : 0); }
-    private static String mobLabel(StoredMob stored) { return stored.speciesId != null ? stored.speciesId.getPath() : stored.mobId.getPath(); }
+    private static String mobLabel(StoredMob stored) { return prettyName(stored.speciesId != null ? stored.speciesId.getPath() : stored.mobId.getPath()); }
+    private static String itemLabel(ItemStack stack, ResourceLocation fallbackId) {
+        String label = stack.getHoverName().getString();
+        return label == null || label.isBlank() ? prettyName(fallbackId.getPath()) : label;
+    }
+    private static String prettyName(String value) {
+        if (value == null || value.isBlank()) return "";
+        String[] parts = value.replace('-', '_').split("_");
+        StringBuilder result = new StringBuilder();
+        for (String part : parts) {
+            if (part.isBlank()) continue;
+            if (!result.isEmpty()) result.append(' ');
+            result.append(Character.toUpperCase(part.charAt(0)));
+            if (part.length() > 1) result.append(part.substring(1));
+        }
+        return result.isEmpty() ? value : result.toString();
+    }
     private record LookRow(ItemStack icon, String label, String value, int labelColor, int valueColor) {}
 }
