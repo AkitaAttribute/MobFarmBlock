@@ -42,9 +42,9 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
         float scale = entityScale(entity, stored);
         boolean pixelmon = PixelmonEntityRenderCache.isPixelmonStored(stored);
         if (pixelmon) {
-            poseStack.translate(0.50D, 0.86D, 1.42D);
+            poseStack.translate(0.50D, 0.74D, 1.08D);
             poseStack.scale(scale, scale, scale);
-            poseStack.translate(0.0D, -entity.getBbHeight() * 0.08D, 0.0D);
+            poseStack.translate(0.0D, -entity.getBbHeight() * 0.50D, 0.0D);
         } else {
             poseStack.translate(0.66D, 0.84D, 0.08D);
             poseStack.scale(scale, scale, scale);
@@ -89,11 +89,17 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
 
     private static float entityScale(Entity entity, StoredMob stored) {
         float displayScale = stored.display.scale() > 0 ? stored.display.scale() : 1.0F;
+        if (PixelmonEntityRenderCache.isPixelmonStored(stored)) {
+            float height = Math.max(0.75F, entity.getBbHeight() * displayScale);
+            float width = Math.max(0.75F, entity.getBbWidth() * displayScale);
+            float bounding = Math.max(height, width);
+            float fit = 0.90F / Math.max(0.1F, bounding);
+            return Math.max(0.20F, Math.min(1.10F, fit));
+        }
         float height = Math.max(entity.getBbHeight(), 0.35F) * displayScale;
         float width = Math.max(entity.getBbWidth(), 0.35F) * displayScale;
         float bounding = Math.max(height, width);
         float fit = 0.98F / Math.max(0.1F, bounding);
-        if (PixelmonEntityRenderCache.isPixelmonStored(stored)) fit *= 7.25F;
-        return PixelmonEntityRenderCache.isPixelmonStored(stored) ? Math.max(2.25F, Math.min(8.50F, fit)) : Math.max(0.36F, Math.min(1.08F, fit));
+        return Math.max(0.36F, Math.min(1.08F, fit));
     }
 }
