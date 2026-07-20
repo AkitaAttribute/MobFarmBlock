@@ -132,7 +132,7 @@ class PixelmonMixinTargetTest {
     }
 
     @Test
-    void pixelmonHarvestUiShowsReadyAndCooldownValues() throws IOException {
+    void pixelmonHarvestUiShowsReadyCooldownItemNamesAndCapitalizedSpecies() throws IOException {
         String rendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/MobFarmBlockEntityRenderer.java");
 
         assertTrue(rendererSource.contains("isPixelmonDropHarvest"),
@@ -143,6 +143,12 @@ class PixelmonMixinTargetTest {
                 "Pixelmon drop rows should show Ready or countdown text from the same cooldown store used by eggs/harvests.");
         assertTrue(rendererSource.contains("readyColor(stored, MobFarmBlockMod.id(\"pixelmon_drops\"), now)"),
                 "Pixelmon drop rows should use the normal ready/cooldown colors.");
+        assertTrue(rendererSource.contains("itemLabel(stack, rule.itemId())"),
+                "Pixelmon drop rows should label drops with the item display name instead of the generic word Drop.");
+        assertTrue(rendererSource.contains("private static String mobLabel(StoredMob stored) { return prettyName"),
+                "Pixelmon species labels should be human-readable instead of raw lowercase resource paths.");
+        assertTrue(rendererSource.contains("Character.toUpperCase(part.charAt(0))"),
+                "Species and fallback item labels should at least capitalize the first letter of each id segment.");
     }
 
     @Test
