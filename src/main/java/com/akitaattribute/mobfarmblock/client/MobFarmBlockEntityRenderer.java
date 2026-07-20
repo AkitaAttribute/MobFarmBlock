@@ -65,7 +65,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         if (entity != null) {
             float yaw = blockEntity.getBlockState().getValue(MobFarmBlock.FACING).toYRot();
             poseStack.pushPose();
-            poseStack.translate(0.5D, pixelmon ? 1.05D : 0.58D, 0.5D);
+            poseStack.translate(0.5D, 0.58D, 0.5D);
             float scale = placedEntityScale(stored, entity, inspected);
             poseStack.scale(scale, scale, scale);
             if (pixelmon) applyPixelmonFacing(entity, yaw);
