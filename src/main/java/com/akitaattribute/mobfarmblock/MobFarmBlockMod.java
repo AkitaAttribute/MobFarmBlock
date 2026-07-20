@@ -4,6 +4,7 @@ import com.akitaattribute.mobfarmblock.behavior.BehaviorRegistry;
 import com.akitaattribute.mobfarmblock.behavior.InteractionMethodRegistry;
 import com.akitaattribute.mobfarmblock.data.MobProfileReloadListener;
 import com.akitaattribute.mobfarmblock.config.MobFarmConfig;
+import com.akitaattribute.mobfarmblock.integration.PixelmonEntityTracker;
 import com.akitaattribute.mobfarmblock.registry.ModBlocks;
 import com.akitaattribute.mobfarmblock.registry.ModItems;
 import org.slf4j.Logger;
@@ -33,6 +34,8 @@ public class MobFarmBlockMod {
         BehaviorRegistry.registerDefaults();
         InteractionMethodRegistry.registerDefaults();
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(this::addReloadListeners);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(PixelmonEntityTracker::onEntityJoinLevel);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(PixelmonEntityTracker::onServerTick);
     }
 
     public static ResourceLocation id(String path) {
