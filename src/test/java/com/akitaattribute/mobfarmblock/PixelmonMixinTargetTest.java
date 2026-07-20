@@ -89,6 +89,29 @@ class PixelmonMixinTargetTest {
     }
 
     @Test
+    void pixelmonCaptureLootGuaranteePersistsMissesAndResetsOnDrop() throws IOException {
+        String dataSource = read("src/main/java/com/akitaattribute/mobfarmblock/integration/PixelmonCaptureToolDropData.java");
+        String injectorSource = read("src/main/java/com/akitaattribute/mobfarmblock/integration/PixelmonLootCaptureToolInjector.java");
+
+        assertTrue(dataSource.contains("extends SavedData"),
+                "Pixelmon Capture Tool miss counters should be persisted in server SavedData.");
+        assertTrue(dataSource.contains("Map<UUID, Long> missesByPlayer"),
+                "Miss counters should be keyed by player UUID.");
+        assertTrue(dataSource.contains("recordMiss(ServerPlayer player)"),
+                "Failed eligible Pixelmon loot rolls should increment the player's miss counter.");
+        assertTrue(dataSource.contains("reset(ServerPlayer player)"),
+                "The player's miss counter should be reset when a Capture Tool drop is given.");
+        assertTrue(injectorSource.contains("guaranteeThreshold(chance)"),
+                "The guarantee threshold should be derived from the configured drop chance.");
+        assertTrue(injectorSource.contains("missesBefore + 1L >= guaranteeThreshold"),
+                "The next eligible defeat should force a drop once the chance-derived threshold is reached.");
+        assertTrue(injectorSource.contains("PixelmonCaptureToolDropData.get(player).recordMiss(player)"),
+                "Skipped eligible drops should increment the persisted miss counter.");
+        assertTrue(injectorSource.contains("PixelmonCaptureToolDropData.get(player).reset(player)"),
+                "Random and guaranteed Capture Tool drops should both reset the persisted miss counter.");
+    }
+
+    @Test
     void pixelmonPensUseEmptyHandDropHarvestAndProcessingOnlyAwardsXp() throws IOException {
         String factorySource = read("src/main/java/com/akitaattribute/mobfarmblock/mob/MobProfileFactory.java");
         String interactionSource = read("src/main/java/com/akitaattribute/mobfarmblock/behavior/InteractionMethodRegistry.java");
