@@ -40,7 +40,7 @@ public class StoredMob {
         this.mobId = mobId;
         this.kind = kind;
         this.count = count;
-        this.display = display == null ? DisplaySnapshot.EMPTY : display;
+        this.display = normalizedDisplay(kind, mobId, display);
         this.state = state == null ? new CompoundTag() : state;
         this.dropProfile = dropProfile == null ? DropProfile.EMPTY : dropProfile;
         this.interactionProfile = interactionProfile == null ? InteractionProfile.EMPTY : interactionProfile;
@@ -49,6 +49,14 @@ public class StoredMob {
         this.dropProfileSource = dropProfileSource == null ? "empty" : dropProfileSource;
         this.cobblemonRenderSnapshot = cobblemonRenderSnapshot;
         this.pixelmonRenderSnapshot = pixelmonRenderSnapshot;
+    }
+
+    private static DisplaySnapshot normalizedDisplay(MobKind kind, ResourceLocation mobId, DisplaySnapshot display) {
+        DisplaySnapshot safe = display == null ? DisplaySnapshot.EMPTY : display;
+        if (kind == MobKind.PIXELMON && mobId != null && "pixelmon:pixelmon".equals(mobId.toString()) && safe.scale() != 1.0F) {
+            return new DisplaySnapshot(safe.entityTypeId(), safe.textureId(), safe.variantKey(), safe.colorKey(), safe.baby(), 1.0F);
+        }
+        return safe;
     }
 
     public static StoredMob empty() {
