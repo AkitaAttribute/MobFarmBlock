@@ -11,6 +11,7 @@ public final class MobFarmConfig {
     public static final ModConfigSpec.BooleanValue DEBUG_CHAT_MESSAGES;
     public static final ModConfigSpec.BooleanValue DEBUG_COBBLEMON_JSON_DUMP;
     public static final ModConfigSpec.BooleanValue PIXELMON_ENTITY_TRACKING_LOG;
+    public static final ModConfigSpec.BooleanValue PIXELMON_NPC_REMOVAL_ENABLED;
     public static final ModConfigSpec.EnumValue<LookUiStyle> LOOK_UI_STYLE;
     public static final ModConfigSpec.DoubleValue PIXELMON_CAPTURE_TOOL_DROP_CHANCE;
 
@@ -25,9 +26,13 @@ public final class MobFarmConfig {
                 .translation("mob_farm_block.configuration.debugCobblemonJsonDump")
                 .define("debugCobblemonJsonDump", true);
         PIXELMON_ENTITY_TRACKING_LOG = builder
-                .comment("Write a separate JSONL log for Pixelmon non-Pokemon entities such as NPCs and trainers, including their Minecraft tick age when identified.")
+                .comment("Write short JSONL logs for Pixelmon NPC tracking and protected NPC identification.")
                 .translation("mob_farm_block.configuration.pixelmonEntityTrackingLog")
                 .define("pixelmonEntityTrackingLog", true);
+        PIXELMON_NPC_REMOVAL_ENABLED = builder
+                .comment("Remove unprotected Pixelmon NPCs after this mod has observed them for five minutes. Protected titled NPCs are not removed.")
+                .translation("mob_farm_block.configuration.pixelmonNpcRemovalEnabled")
+                .define("pixelmonNpcRemovalEnabled", true);
         LOOK_UI_STYLE = builder
                 .comment("Look UI Style. NAMETAG is the current floating nametag-style debug overlay.")
                 .translation("mob_farm_block.configuration.lookUiStyle")
