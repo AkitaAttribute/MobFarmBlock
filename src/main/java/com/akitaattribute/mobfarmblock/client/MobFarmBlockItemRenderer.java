@@ -1,8 +1,9 @@
 package com.akitaattribute.mobfarmblock.client;
 
+import java.lang.reflect.Method;
+
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.item.MobFarmBlockItemData;
-import com.akitaattribute.mobfarmblock.mob.PixelmonRenderSnapshot;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
 import com.akitaattribute.mobfarmblock.registry.ModBlocks;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -20,6 +21,7 @@ import net.minecraft.world.item.ItemStack;
 
 public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
     private static final java.util.Set<String> WARNED_RENDER_FAILURES = new java.util.HashSet<>();
+    private static final java.util.Set<String> LOGGED_PIXELMON_METRICS = new java.util.HashSet<>();
 
     public MobFarmBlockItemRenderer(BlockEntityRenderDispatcher dispatcher, EntityModelSet modelSet) { super(dispatcher, modelSet); }
 
@@ -40,10 +42,17 @@ public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
 
         poseStack.pushPose();
         boolean pixelmon = PixelmonEntityRenderCache.isPixelmonStored(stored);
-        float scale = entityScale(entity, stored);
-        poseStack.translate(0.5D, pixelmon ? 0.60D : 0.64D, 0.18D);
-        poseStack.scale(scale, scale, scale);
-        poseStack.translate(0.0D, -(pixelmon ? renderHeight(entity, stored) : entity.getBbHeight()) * 0.50D, 0.0D);
+        if (pixelmon) {
+            logPixelmonMetrics("pen_item", stored, entity, minecraft);
+            poseStack.translate(0.5D, 0.58D, 0.18D);
+            poseStack.scale(0.50F, 0.50F, 0.50F);
+            poseStack.translate(0.0D, -pixelmonCenterY(entity), 0.0D);
+        } else {
+            float scale = entityScale(entity, stored);
+            poseStack.translate(0.5D, 0.64D, 0.18D);
+            poseStack.scale(scale, scale, scale);
+            poseStack.translate(0.0D, -entity.getBbHeight() * 0.50D, 0.0D);
+        }
         ClientEntityRenderCache.freezeForRender(entity);
         try {
             minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0F, 0.0F, 0.0F, poseStack, buffer, LightTexture.FULL_BRIGHT);
@@ -80,11 +89,6 @@ public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
     }
 
     private static float entityScale(Entity entity, StoredMob stored) {
-        if (PixelmonEntityRenderCache.isPixelmonStored(stored)) {
-            float bounding = Math.max(renderHeight(entity, stored), renderWidth(entity, stored));
-            float fit = 0.62F / Math.max(0.1F, bounding);
-            return Math.max(0.14F, Math.min(0.74F, fit));
-        }
         float displayScale = stored.display.scale() > 0 ? stored.display.scale() : 1.0F;
         float height = Math.max(entity.getBbHeight(), 0.35F) * displayScale;
         float width = Math.max(entity.getBbWidth(), 0.35F) * displayScale;
@@ -93,15 +97,27 @@ public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
         return Math.max(0.24F, Math.min(0.74F, fit));
     }
 
-    private static float renderHeight(Entity entity, StoredMob stored) {
-        PixelmonRenderSnapshot snapshot = stored == null ? null : stored.pixelmonRenderSnapshot;
-        if (snapshot != null && snapshot.capturedHeight() > 0.05F) return snapshot.capturedHeight();
-        return Math.max(entity.getBbHeight(), 0.35F);
+    private static float pixelmonCenterY(Entity entity) {
+        try {
+            Method method = entity.getClass().getMethod("getYCentre");
+            Object value = method.invoke(entity);
+            if (value instanceof Number number && number.floatValue() > 0.0F) return number.floatValue();
+        } catch (Throwable ignored) {
+        }
+        return Math.max(0.35F, entity.getBbHeight()) * 0.50F;
     }
 
-    private static float renderWidth(Entity entity, StoredMob stored) {
-        PixelmonRenderSnapshot snapshot = stored == null ? null : stored.pixelmonRenderSnapshot;
-        if (snapshot != null && snapshot.capturedWidth() > 0.05F) return snapshot.capturedWidth();
-        return Math.max(entity.getBbWidth(), 0.35F);
+    private static void logPixelmonMetrics(String context, StoredMob stored, Entity entity, Minecraft minecraft) {
+        String key = context + "|" + stored.speciesId + "|" + stored.display.variantKey();
+        if (!LOGGED_PIXELMON_METRICS.add(key)) return;
+        String renderer = "unknown";
+        try {
+            renderer = minecraft.getEntityRenderDispatcher().getRenderer(entity).getClass().getName();
+        } catch (Throwable ignored) {
+        }
+        MobFarmBlockMod.LOGGER.info("Mob Farm Pixelmon render metrics: context={} species={} variant={} bbWidth={} bbHeight={} yCentre={} displayScale={} renderer={} snapshotWidth={} snapshotHeight={}",
+                context, stored.speciesId, stored.display.variantKey(), entity.getBbWidth(), entity.getBbHeight(), pixelmonCenterY(entity), stored.display.scale(), renderer,
+                stored.pixelmonRenderSnapshot == null ? 0.0F : stored.pixelmonRenderSnapshot.capturedWidth(),
+                stored.pixelmonRenderSnapshot == null ? 0.0F : stored.pixelmonRenderSnapshot.capturedHeight());
     }
 }
