@@ -8,7 +8,9 @@ public record PixelmonRenderSnapshot(
         ResourceLocation speciesId,
         String variantKey,
         String payloadFormat,
-        String payload
+        String payload,
+        float capturedWidth,
+        float capturedHeight
 ) {
     public CompoundTag toNbt() {
         CompoundTag tag = new CompoundTag();
@@ -16,6 +18,8 @@ public record PixelmonRenderSnapshot(
         tag.putString("variantKey", variantKey == null ? "" : variantKey);
         tag.putString("payloadFormat", payloadFormat == null ? "" : payloadFormat);
         tag.putString("payload", payload == null ? "" : payload);
+        tag.putFloat("capturedWidth", capturedWidth);
+        tag.putFloat("capturedHeight", capturedHeight);
         return tag;
     }
 
@@ -25,7 +29,9 @@ public record PixelmonRenderSnapshot(
                 species.isBlank() ? null : ResourceLocation.parse(species),
                 tag.getString("variantKey"),
                 tag.getString("payloadFormat"),
-                tag.getString("payload")
+                tag.getString("payload"),
+                tag.contains("capturedWidth") ? tag.getFloat("capturedWidth") : 0.0F,
+                tag.contains("capturedHeight") ? tag.getFloat("capturedHeight") : 0.0F
         );
     }
 
