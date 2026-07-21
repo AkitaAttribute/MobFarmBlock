@@ -11,6 +11,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
+import com.akitaattribute.mobfarmblock.config.MobFarmConfig;
 import com.akitaattribute.mobfarmblock.mob.MobKind;
 import com.akitaattribute.mobfarmblock.mob.PixelmonRenderSnapshot;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
@@ -28,12 +29,14 @@ import net.minecraft.world.level.Level;
 public final class PixelmonEntityRenderCache {
     private static final Map<String, Entity> CACHE = new HashMap<>();
     private static final java.util.Set<String> WARNED = new java.util.HashSet<>();
+    private static final java.util.Set<String> LOGGED_REPLAY_METRICS = new java.util.HashSet<>();
     private static final Pattern NUMBER = Pattern.compile("-?\\d+(?:\\.\\d+)?");
 
     public static Entity getOrCreate(StoredMob stored) {
         Minecraft minecraft = Minecraft.getInstance();
         if (stored == null || stored.isEmpty() || minecraft.level == null || !isPixelmonStored(stored) || stored.speciesId == null) return null;
-        String key = stored.mobId + "|" + stored.speciesId + "|" + stored.display.variantKey() + "|cm=" + pixelmonSizeCentimeters(stored).orElse(0.0F) + "|" + payloadHash(stored.pixelmonRenderSnapshot);
+        MobFarmConfig.PixelmonRenderReplayMode mode = MobFarmConfig.PIXELMON_RENDER_REPLAY_MODE.get();
+        String key = mode + "|" + stored.mobId + "|" + stored.speciesId + "|" + stored.display.variantKey() + "|cm=" + pixelmonSizeCentimeters(stored).orElse(0.0F) + "|" + payloadHash(stored.pixelmonRenderSnapshot);
         Entity cached = CACHE.get(key);
         if (cached != null) {
             ClientEntityRenderCache.freezeForRender(cached);
@@ -41,38 +44,23 @@ public final class PixelmonEntityRenderCache {
         }
 
         try {
-            Entity payloadEntity = createEntityFromSavedPayload(stored);
-            Entity validatedPayloadEntity = validateAndCache(payloadEntity, stored, key, "saved_entity_payload");
-            if (validatedPayloadEntity != null) return validatedPayloadEntity;
-
-            Optional<Object> species = findPixelmonSpeciesObject(stored.speciesId);
-            Optional<Object> pokemon = createPokemon(stored.speciesId, species.orElse(null));
-            if (pokemon.isEmpty()) pokemon = constructPokemon(stored.speciesId, species.orElse(null));
-            if (pokemon.isEmpty()) {
-                Entity shell = createEmptyPixelmonEntity(stored);
-                if (shell != null) pokemon = readPokemon(shell);
-            }
-            if (pokemon.isEmpty()) {
-                warnOnce("Pixelmon Pokemon object could not be created: " + stored.speciesId);
-                return null;
+            if (mode == MobFarmConfig.PixelmonRenderReplayMode.ENTITY_PAYLOAD_ONLY
+                    || mode == MobFarmConfig.PixelmonRenderReplayMode.ENTITY_PAYLOAD_SIZE_AFTER_LOAD
+                    || mode == MobFarmConfig.PixelmonRenderReplayMode.HYBRID_ALL) {
+                boolean applySize = mode != MobFarmConfig.PixelmonRenderReplayMode.ENTITY_PAYLOAD_ONLY;
+                Entity payloadEntity = createEntityFromSavedPayload(stored, applySize, mode);
+                Entity validatedPayloadEntity = validateAndCache(payloadEntity, stored, key, "saved_entity_payload:" + mode);
+                if (validatedPayloadEntity != null) return validatedPayloadEntity;
+                if (mode != MobFarmConfig.PixelmonRenderReplayMode.HYBRID_ALL) return null;
             }
 
-            Object pokemonObject = pokemon.get();
-            if (species.isPresent()) applySpeciesToPokemon(pokemonObject, species.get(), stored.speciesId);
-            applyVariantHints(pokemonObject, species.orElse(null), stored.display.variantKey());
-            applyPixelmonSize(pokemonObject, stored);
-            for (String method : java.util.List.of("initialize", "updateForm", "updatePalette", "updateStats", "recalculateStats")) invokeAny(pokemonObject, method);
-
-            Entity entity = createEntityFromPokemon(pokemonObject, minecraft.level);
-            if (entity == null) {
-                entity = createEmptyPixelmonEntity(stored);
-                if (entity != null) {
-                    bindPokemonToEntity(pokemonObject, entity);
-                    installPokemonOnEntity(entity, pokemonObject);
-                    refreshPixelmonRenderState(entity, pokemonObject);
-                }
+            if (mode == MobFarmConfig.PixelmonRenderReplayMode.POKEMON_FACTORY_SIZE_BEFORE_ENTITY) {
+                return validateAndCache(createEntityFromPokemonFactory(stored, true, false, mode), stored, key, "pokemon_factory:size_before_entity");
             }
-            return validateAndCache(entity, stored, key, "pokemon_factory");
+            if (mode == MobFarmConfig.PixelmonRenderReplayMode.POKEMON_FACTORY_SIZE_AFTER_ENTITY) {
+                return validateAndCache(createEntityFromPokemonFactory(stored, false, true, mode), stored, key, "pokemon_factory:size_after_entity");
+            }
+            return validateAndCache(createEntityFromPokemonFactory(stored, true, true, mode), stored, key, "pokemon_factory:hybrid_all");
         } catch (Throwable error) {
             warnOnce("Pixelmon render entity creation failed for " + key, error);
             return null;
@@ -83,7 +71,7 @@ public final class PixelmonEntityRenderCache {
         return stored != null && stored.kind == MobKind.PIXELMON && "pixelmon:pixelmon".equals(stored.mobId.toString());
     }
 
-    private static Entity createEntityFromSavedPayload(StoredMob stored) {
+    private static Entity createEntityFromSavedPayload(StoredMob stored, boolean applySize, MobFarmConfig.PixelmonRenderReplayMode mode) {
         PixelmonRenderSnapshot snapshot = stored.pixelmonRenderSnapshot;
         if (snapshot == null || snapshot.payload() == null || snapshot.payload().isBlank() || !snapshot.payloadFormat().startsWith("entity:")) return null;
         try {
@@ -93,14 +81,48 @@ public final class PixelmonEntityRenderCache {
             invokeAny(entity, "load", tag);
             readPokemon(entity).ifPresent(pokemon -> {
                 applyVariantHints(pokemon, invoke(pokemon, "getSpecies").orElse(null), stored.display.variantKey());
-                applyPixelmonSize(pokemon, stored);
-                refreshPixelmonRenderState(entity, pokemon);
+                if (applySize) applyPixelmonRenderReplay(entity, pokemon, stored, mode, "payload_after_load");
+                else refreshPixelmonRenderState(entity, pokemon);
             });
             return entity;
         } catch (Throwable error) {
             warnOnce("Pixelmon saved entity payload could not be loaded for " + stored.speciesId, error);
             return null;
         }
+    }
+
+    private static Entity createEntityFromPokemonFactory(StoredMob stored, boolean sizeBeforeEntity, boolean sizeAfterEntity, MobFarmConfig.PixelmonRenderReplayMode mode) {
+        Optional<Object> species = findPixelmonSpeciesObject(stored.speciesId);
+        Optional<Object> pokemon = createPokemon(stored.speciesId, species.orElse(null));
+        if (pokemon.isEmpty()) pokemon = constructPokemon(stored.speciesId, species.orElse(null));
+        if (pokemon.isEmpty()) {
+            Entity shell = createEmptyPixelmonEntity(stored);
+            if (shell != null) pokemon = readPokemon(shell);
+        }
+        if (pokemon.isEmpty()) {
+            warnOnce("Pixelmon Pokemon object could not be created: " + stored.speciesId);
+            return null;
+        }
+
+        Object pokemonObject = pokemon.get();
+        if (species.isPresent()) applySpeciesToPokemon(pokemonObject, species.get(), stored.speciesId);
+        applyVariantHints(pokemonObject, species.orElse(null), stored.display.variantKey());
+        if (sizeBeforeEntity) applyPixelmonSizeDeep(null, pokemonObject, stored, mode, "before_entity");
+        for (String method : java.util.List.of("initialize", "updateForm", "updatePalette", "updateStats", "recalculateStats")) invokeAny(pokemonObject, method);
+
+        Entity entity = createEntityFromPokemon(pokemonObject, Minecraft.getInstance().level);
+        if (entity == null) {
+            entity = createEmptyPixelmonEntity(stored);
+            if (entity != null) {
+                bindPokemonToEntity(pokemonObject, entity);
+                installPokemonOnEntity(entity, pokemonObject);
+            }
+        }
+        if (entity != null) {
+            if (sizeAfterEntity) applyPixelmonRenderReplay(entity, pokemonObject, stored, mode, "after_entity");
+            else refreshPixelmonRenderState(entity, pokemonObject);
+        }
+        return entity;
     }
 
     private static Entity validateAndCache(Entity entity, StoredMob stored, String key, String source) {
@@ -204,15 +226,52 @@ public final class PixelmonEntityRenderCache {
         return changed;
     }
 
-    private static void applyPixelmonSize(Object pokemon, StoredMob stored) {
-        Optional<Double> meters = pixelmonSizeMeters(stored);
-        if (meters.isEmpty()) return;
-        double value = meters.get();
-        invokeAny(pokemon, "setSize", value);
-        invokeAny(pokemon, "setSize", (float) value);
-        setField(pokemon, "size", value);
-        setField(pokemon, "actualSize", value);
-        setField(pokemon, "sizeMeters", value);
+    private static void applyPixelmonRenderReplay(Entity entity, Object pokemon, StoredMob stored, MobFarmConfig.PixelmonRenderReplayMode mode, String stage) {
+        applyPixelmonSizeDeep(entity, pokemon, stored, mode, stage + ":before_refresh");
+        refreshPixelmonRenderState(entity, pokemon);
+        applyPixelmonSizeDeep(entity, readPokemon(entity).orElse(pokemon), stored, mode, stage + ":after_refresh");
+        refreshPixelmonRenderState(entity, readPokemon(entity).orElse(pokemon));
+    }
+
+    private static void applyPixelmonSizeDeep(Entity entity, Object pokemon, StoredMob stored, MobFarmConfig.PixelmonRenderReplayMode mode, String stage) {
+        Optional<Float> centimeters = pixelmonSizeCentimeters(stored);
+        if (centimeters.isEmpty()) return;
+        float cm = centimeters.get();
+        double meters = cm / 100.0D;
+        applyPixelmonSizeToObject(pokemon, cm, meters);
+        if (entity != null) {
+            applyPixelmonSizeToObject(entity, cm, meters);
+            readPokemon(entity).ifPresent(entityPokemon -> applyPixelmonSizeToObject(entityPokemon, cm, meters));
+            readField(entity, "delegate").ifPresent(delegate -> {
+                applyPixelmonSizeToObject(delegate, cm, meters);
+                readField(delegate, "pokemon").ifPresent(delegatePokemon -> applyPixelmonSizeToObject(delegatePokemon, cm, meters));
+                invoke(delegate, "getPokemon").ifPresent(delegatePokemon -> applyPixelmonSizeToObject(delegatePokemon, cm, meters));
+            });
+            invokeAny(entity, "refreshDimensions");
+            invokeAny(entity, "recalculateSize");
+            invokeAny(entity, "updateSize");
+        }
+        logReplayMetrics(mode, stage, stored, entity, pokemon, cm);
+    }
+
+    private static void applyPixelmonSizeToObject(Object target, double centimeters, double meters) {
+        if (target == null) return;
+        for (String method : java.util.List.of("setSize", "setActualSize", "setSizeCm", "setSizeCM", "setSizeInCm", "setSizeInCM", "setHeightCm", "setHeightCM")) {
+            invokeAny(target, method, centimeters);
+            invokeAny(target, method, (float) centimeters);
+        }
+        for (String method : java.util.List.of("setSizeMeters", "setSizeMetres", "setHeight", "setHeightMeters", "setHeightMetres")) {
+            invokeAny(target, method, meters);
+            invokeAny(target, method, (float) meters);
+        }
+        for (String field : java.util.List.of("size", "actualSize", "sizeCm", "sizeCM", "sizeInCm", "sizeInCM", "heightCm", "heightCM")) {
+            setField(target, field, centimeters);
+            setField(target, field, (float) centimeters);
+        }
+        for (String field : java.util.List.of("sizeMeters", "sizeMetres", "height", "heightMeters", "heightMetres")) {
+            setField(target, field, meters);
+            setField(target, field, (float) meters);
+        }
     }
 
     private static Optional<Double> pixelmonSizeMeters(StoredMob stored) {
@@ -239,6 +298,24 @@ public final class PixelmonEntityRenderCache {
         } catch (Throwable ignored) {
             return Optional.empty();
         }
+    }
+
+    private static void logReplayMetrics(MobFarmConfig.PixelmonRenderReplayMode mode, String stage, StoredMob stored, Entity entity, Object pokemon, float centimeters) {
+        String key = mode + "|" + stage + "|" + stored.speciesId + "|" + centimeters;
+        if (!LOGGED_REPLAY_METRICS.add(key)) return;
+        MobFarmBlockMod.LOGGER.info("Mob Farm Pixelmon render replay: mode={} stage={} species={} cm={} pokemonSize={} entityPokemonSize={} delegateSize={} bbWidth={} bbHeight={} variant={}",
+                mode, stage, stored.speciesId, centimeters, sizeSummary(pokemon), sizeSummary(entity == null ? null : readPokemon(entity).orElse(null)), sizeSummary(entity == null ? null : readField(entity, "delegate").orElse(null)),
+                entity == null ? 0.0F : entity.getBbWidth(), entity == null ? 0.0F : entity.getBbHeight(), stored.display.variantKey());
+    }
+
+    private static String sizeSummary(Object target) {
+        if (target == null) return "null";
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        for (String name : java.util.List.of("getSize", "size", "getActualSize", "actualSize", "getSizeInCm", "getSizeCM", "sizeCm", "sizeCM", "getHeight", "height")) {
+            Optional<Object> value = name.startsWith("get") ? invoke(target, name) : readField(target, name);
+            value.ifPresent(object -> parts.add(name + "=" + object));
+        }
+        return parts.isEmpty() ? target.getClass().getName() : String.join(",", parts);
     }
 
     private static Optional<Object> resolveFormObject(Object species, String formName) {
@@ -316,8 +393,9 @@ public final class PixelmonEntityRenderCache {
 
     private static boolean refreshPixelmonRenderState(Entity entity, Object pokemon) {
         boolean changed = false;
-        for (String method : java.util.List.of("updatePokemon", "updatePokemonData", "updatePixelmon", "refreshPokemon", "refreshDimensions", "recalculateSize", "updateSize", "updateModel", "reloadModel")) changed |= invokeAny(entity, method);
-        readField(entity, "delegate").ifPresent(delegate -> { invokeAny(delegate, "changePokemon", pokemon); invokeAny(delegate, "setPokemon", pokemon); invokeAny(delegate, "updatePokemon", pokemon); });
+        if (entity != null) for (String method : java.util.List.of("updatePokemon", "updatePokemonData", "updatePixelmon", "refreshPokemon", "refreshDimensions", "recalculateSize", "updateSize", "updateModel", "reloadModel", "onPokemonChanged", "resetModel")) changed |= invokeAny(entity, method);
+        if (pokemon != null) for (String method : java.util.List.of("initialize", "updateForm", "updatePalette", "updateStats", "recalculateStats", "recalculateSize", "updateSize", "updateModel")) changed |= invokeAny(pokemon, method);
+        if (entity != null) readField(entity, "delegate").ifPresent(delegate -> { invokeAny(delegate, "changePokemon", pokemon); invokeAny(delegate, "setPokemon", pokemon); invokeAny(delegate, "updatePokemon", pokemon); invokeAny(delegate, "refreshDimensions"); invokeAny(delegate, "recalculateSize"); });
         return changed;
     }
 
