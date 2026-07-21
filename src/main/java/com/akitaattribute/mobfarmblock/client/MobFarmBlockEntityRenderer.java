@@ -68,11 +68,15 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
             poseStack.translate(0.5D, 0.58D, 0.5D);
             float scale = placedEntityScale(stored, entity, inspected);
             poseStack.scale(scale, scale, scale);
-            if (pixelmon) applyPixelmonFacing(entity, yaw);
-            else poseStack.mulPose(Axis.YP.rotationDegrees(yaw));
+            if (pixelmon) {
+                poseStack.mulPose(Axis.YP.rotationDegrees(yaw));
+                applyPixelmonFacing(entity, 0.0F);
+            } else {
+                poseStack.mulPose(Axis.YP.rotationDegrees(yaw));
+            }
             ClientEntityRenderCache.freezeForRender(entity);
             try {
-                minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, pixelmon ? yaw : 0.0F, 0.0F, poseStack, buffer, 0x00F000F0);
+                minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, 0.0F, poseStack, buffer, 0x00F000F0);
             } catch (Throwable error) {
                 MobFarmBlockMod.LOGGER.error("Placed pen mob render failed for {}; skipping entity overlay", stored.speciesId != null ? stored.speciesId : stored.mobId, error);
             }
@@ -98,11 +102,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
 
     private static float placedEntityScale(StoredMob stored, Entity entity, boolean inspected) {
         if (PixelmonEntityRenderCache.isPixelmonStored(stored)) {
-            float maxDimension = Math.max(renderHeight(entity, stored), renderWidth(entity, stored));
-            float scale = 1.20F / Math.max(0.1F, maxDimension);
-            scale = Math.max(0.18F, Math.min(1.50F, scale));
-            if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, maxDimension));
-            return Math.max(0.08F, scale);
+            return inspected ? 0.24F : 0.34F;
         }
         float scale = 0.32F;
         if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, entity.getBbHeight()));
