@@ -1,12 +1,18 @@
 package com.akitaattribute.mobfarmblock.integration;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -15,6 +21,7 @@ import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.config.MobFarmConfig;
 
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -25,8 +32,11 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 public final class PixelmonEntityTracker {
     private static final long SCAN_INTERVAL_TICKS = 200L;
     private static final long UPDATE_LOG_INTERVAL_TICKS = 1200L;
+    private static final int MAX_PROBE_VALUES = 80;
+    private static final int MAX_PROBE_DEPTH = 3;
     private static final Path LOG_FILE = Path.of("config", "mob_farm_block", "debug", "pixelmon_entity_tracker", "pixelmon_entities.jsonl");
-    private static final Map<UUID, Long> LAST_LOGGED_AGE_TICKS = new HashMap<>();
+    private static final Map<UUID, Long> FIRST_SEEN_GAME_TIME = new HashMap<>();
+    private static final Map<UUID, Long> LAST_LOGGED_OBSERVED_TICKS = new HashMap<>();
     private static long nextScanTick = 0L;
 
     private PixelmonEntityTracker() {}
@@ -52,16 +62,18 @@ public final class PixelmonEntityTracker {
     private static void track(Entity entity, String source) {
         if (!isTrackedPixelmonEntity(entity)) return;
         UUID uuid = entity.getUUID();
-        long ageTicks = Math.max(0L, entity.tickCount);
-        Long lastLogged = LAST_LOGGED_AGE_TICKS.get(uuid);
+        long now = entity.level().getGameTime();
+        long firstSeen = FIRST_SEEN_GAME_TIME.computeIfAbsent(uuid, ignored -> now);
+        long observedTicks = Math.max(0L, now - firstSeen);
+        Long lastLogged = LAST_LOGGED_OBSERVED_TICKS.get(uuid);
         String action;
         if (lastLogged == null) action = "identified";
         else {
-            if (ageTicks - lastLogged < UPDATE_LOG_INTERVAL_TICKS) return;
-            action = "age_update";
+            if (observedTicks - lastLogged < UPDATE_LOG_INTERVAL_TICKS) return;
+            action = "observed_age_update";
         }
-        LAST_LOGGED_AGE_TICKS.put(uuid, ageTicks);
-        writeLog(entity, source, action, ageTicks);
+        LAST_LOGGED_OBSERVED_TICKS.put(uuid, observedTicks);
+        writeLog(entity, source, action, now, firstSeen, observedTicks);
     }
 
     private static boolean isTrackedPixelmonEntity(Entity entity) {
@@ -77,19 +89,23 @@ public final class PixelmonEntityTracker {
         return typeText.startsWith("pixelmon:") && !className.contains("entities.pixelmon.pixelmonentity");
     }
 
-    private static String classification(Entity entity) {
+    private static String classification(Entity entity, Map<String, String> probe) {
         ResourceLocation typeId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
         String path = typeId == null ? "" : typeId.getPath().toLowerCase(Locale.ROOT);
         String className = entity.getClass().getName().toLowerCase(Locale.ROOT);
+        String roleText = String.join(" ", probe.keySet()) + " " + String.join(" ", probe.values());
+        roleText = roleText.toLowerCase(Locale.ROOT);
+        if (roleText.contains("nurse") || roleText.contains("healer")) return "protected_nurse";
+        if (roleText.contains("shopkeeper") || roleText.contains("shop_keeper") || roleText.contains("shop keeper") || roleText.contains("merchant") || roleText.contains("seller")) return "protected_shopkeeper";
         if (path.contains("trainer") || className.contains("trainer")) return "trainer";
         if (path.contains("npc") || className.contains("npc")) return "npc";
         return "pixelmon_non_pokemon";
     }
 
-    private static void writeLog(Entity entity, String source, String action, long ageTicks) {
+    private static void writeLog(Entity entity, String source, String action, long gameTime, long firstSeenGameTime, long observedTicks) {
         try {
             Files.createDirectories(LOG_FILE.toAbsolutePath().getParent());
-            String line = jsonLine(entity, source, action, ageTicks);
+            String line = jsonLine(entity, source, action, gameTime, firstSeenGameTime, observedTicks);
             Files.writeString(LOG_FILE, line + System.lineSeparator(), StandardCharsets.UTF_8,
                     java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
         } catch (IOException error) {
@@ -97,13 +113,14 @@ public final class PixelmonEntityTracker {
         }
     }
 
-    private static String jsonLine(Entity entity, String source, String action, long ageTicks) {
+    private static String jsonLine(Entity entity, String source, String action, long gameTime, long firstSeenGameTime, long observedTicks) {
         ResourceLocation typeId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+        Map<String, String> probe = npcProbe(entity);
         StringBuilder out = new StringBuilder("{");
         prop(out, "time", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME), true);
         prop(out, "source", source, true);
         prop(out, "action", action, true);
-        prop(out, "classification", classification(entity), true);
+        prop(out, "classification", classification(entity, probe), true);
         prop(out, "entityType", typeId == null ? "unknown" : typeId.toString(), true);
         prop(out, "entityClass", entity.getClass().getName(), true);
         prop(out, "uuid", entity.getUUID().toString(), true);
@@ -113,10 +130,150 @@ public final class PixelmonEntityTracker {
         prop(out, "x", round(entity.getX()), true);
         prop(out, "y", round(entity.getY()), true);
         prop(out, "z", round(entity.getZ()), true);
-        prop(out, "ageTicks", ageTicks, true);
-        prop(out, "ageSeconds", round(ageTicks / 20.0D), false);
+        prop(out, "gameTime", gameTime, true);
+        prop(out, "firstSeenGameTime", firstSeenGameTime, true);
+        prop(out, "observedAgeTicks", observedTicks, true);
+        prop(out, "observedAgeSeconds", round(observedTicks / 20.0D), true);
+        prop(out, "minecraftEntityTickCount", Math.max(0L, entity.tickCount), true);
+        prop(out, "minecraftEntityTickCountSeconds", round(Math.max(0L, entity.tickCount) / 20.0D), true);
+        out.append(quote("npcProbe")).append(':').append(mapJson(probe)).append(',');
+        out.append(quote("entityNbtSummary")).append(':').append(nbtSummary(entity));
         out.append('}');
         return out.toString();
+    }
+
+    private static Map<String, String> npcProbe(Entity entity) {
+        Map<String, String> out = new HashMap<>();
+        collectProbe(entity, "entity", out, new IdentityHashMap<>(), 0);
+        return out.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .limit(MAX_PROBE_VALUES)
+                .collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (a, b) -> a, java.util.LinkedHashMap::new));
+    }
+
+    private static void collectProbe(Object value, String path, Map<String, String> out, IdentityHashMap<Object, Boolean> seen, int depth) {
+        if (value == null || depth > MAX_PROBE_DEPTH || out.size() >= MAX_PROBE_VALUES) return;
+        if (simple(value)) {
+            if (interestingProbePath(path) || interestingProbeValue(String.valueOf(value))) out.put(path, safeString(value));
+            return;
+        }
+        if (seen.put(value, Boolean.TRUE) != null) return;
+        Class<?> type = value.getClass();
+        if (interestingProbePath(path) || interestingProbeValue(String.valueOf(value))) out.put(path + ".toString", safeString(value));
+
+        List<Method> methods = new ArrayList<>(List.of(type.getMethods()));
+        methods.sort(Comparator.comparing(Method::getName));
+        for (Method method : methods) {
+            if (out.size() >= MAX_PROBE_VALUES) return;
+            if (method.getParameterCount() != 0 || method.getReturnType() == Void.TYPE) continue;
+            if (!safeAccessor(method.getName())) continue;
+            if (!interestingProbeName(method.getName())) continue;
+            try {
+                method.setAccessible(true);
+                Object result = method.invoke(value);
+                collectProbe(result, path + "." + method.getName() + "()", out, seen, depth + 1);
+            } catch (Throwable error) {
+                out.put(path + "." + method.getName() + "()", "ERROR:" + error.getClass().getSimpleName());
+            }
+        }
+
+        List<Field> fields = allFields(type);
+        fields.sort(Comparator.comparing(Field::getName));
+        for (Field field : fields) {
+            if (out.size() >= MAX_PROBE_VALUES) return;
+            if (!interestingProbeName(field.getName())) continue;
+            try {
+                field.setAccessible(true);
+                Object result = field.get(value);
+                collectProbe(result, path + "." + field.getName(), out, seen, depth + 1);
+            } catch (Throwable error) {
+                out.put(path + "." + field.getName(), "ERROR:" + error.getClass().getSimpleName());
+            }
+        }
+    }
+
+    private static boolean safeAccessor(String name) {
+        return name.startsWith("get") || name.startsWith("is") || name.startsWith("has") || name.equals("toString");
+    }
+
+    private static boolean interestingProbeName(String name) {
+        String lower = name.toLowerCase(Locale.ROOT);
+        return lower.contains("title")
+                || lower.contains("role")
+                || lower.contains("profession")
+                || lower.contains("occupation")
+                || lower.contains("job")
+                || lower.contains("type")
+                || lower.contains("npc")
+                || lower.contains("trainer")
+                || lower.contains("shop")
+                || lower.contains("merchant")
+                || lower.contains("seller")
+                || lower.contains("nurse")
+                || lower.contains("healer")
+                || lower.contains("name");
+    }
+
+    private static boolean interestingProbePath(String path) {
+        return interestingProbeName(path);
+    }
+
+    private static boolean interestingProbeValue(String value) {
+        String lower = value.toLowerCase(Locale.ROOT);
+        return lower.contains("nurse")
+                || lower.contains("shopkeeper")
+                || lower.contains("shop_keeper")
+                || lower.contains("shop keeper")
+                || lower.contains("merchant")
+                || lower.contains("trainer")
+                || lower.contains("npc")
+                || lower.contains("healer");
+    }
+
+    private static String nbtSummary(Entity entity) {
+        try {
+            CompoundTag tag = new CompoundTag();
+            entity.saveWithoutId(tag);
+            StringBuilder out = new StringBuilder("{");
+            int count = 0;
+            for (String key : tag.getAllKeys().stream().sorted().toList()) {
+                if (!interestingProbeName(key) && !interestingProbeValue(String.valueOf(tag.get(key)))) continue;
+                if (count++ > 0) out.append(',');
+                out.append(quote(key)).append(':').append(quote(String.valueOf(tag.get(key))));
+                if (count >= MAX_PROBE_VALUES) break;
+            }
+            return out.append('}').toString();
+        } catch (Throwable error) {
+            return quote("ERROR:" + error.getClass().getSimpleName());
+        }
+    }
+
+    private static List<Field> allFields(Class<?> type) {
+        List<Field> fields = new ArrayList<>();
+        for (Class<?> current = type; current != null && current != Object.class; current = current.getSuperclass()) {
+            fields.addAll(List.of(current.getDeclaredFields()));
+        }
+        return fields;
+    }
+
+    private static boolean simple(Object value) {
+        return value instanceof CharSequence || value instanceof Number || value instanceof Boolean || value instanceof Character || value instanceof Enum<?> || value instanceof ResourceLocation;
+    }
+
+    private static String safeString(Object value) {
+        if (value == null) return "null";
+        String text = String.valueOf(value);
+        return text.length() > 240 ? text.substring(0, 240) + "..." : text;
+    }
+
+    private static String mapJson(Map<String, String> map) {
+        StringBuilder out = new StringBuilder("{");
+        int index = 0;
+        for (Map.Entry<String, String> entry : map.entrySet()) {
+            if (index++ > 0) out.append(',');
+            out.append(quote(entry.getKey())).append(':').append(quote(entry.getValue()));
+        }
+        return out.append('}').toString();
     }
 
     private static double round(double value) {
