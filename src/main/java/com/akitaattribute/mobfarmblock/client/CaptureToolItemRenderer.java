@@ -46,7 +46,7 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
         if (pixelmon) {
             logPixelmonMetrics("capture_tool", stored, entity, minecraft);
             poseStack.translate(0.50D, 0.62D, 1.22D);
-            poseStack.scale(0.72F, 0.72F, 0.72F);
+            poseStack.scale(1.0F, 1.0F, 1.0F);
             poseStack.translate(0.0D, -pixelmonCenterY(entity), 0.0D);
         } else {
             float scale = entityScale(entity, stored);
