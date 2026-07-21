@@ -45,7 +45,7 @@ public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
         if (pixelmon) {
             logPixelmonMetrics("pen_item", stored, entity, minecraft);
             poseStack.translate(0.5D, 0.58D, 0.18D);
-            poseStack.scale(0.50F, 0.50F, 0.50F);
+            poseStack.scale(1.0F, 1.0F, 1.0F);
             poseStack.translate(0.0D, -pixelmonCenterY(entity), 0.0D);
         } else {
             float scale = entityScale(entity, stored);
