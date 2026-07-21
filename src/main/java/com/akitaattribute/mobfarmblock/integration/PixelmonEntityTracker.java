@@ -18,6 +18,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.config.MobFarmConfig;
@@ -36,6 +38,7 @@ public final class PixelmonEntityTracker {
     private static final long UPDATE_LOG_INTERVAL_TICKS = 1200L;
     private static final int MAX_PROBE_VALUES = 80;
     private static final int MAX_PROBE_DEPTH = 3;
+    private static final Pattern TRANSLATION_KEY = Pattern.compile("key='([^']+)'");
     private static final Path LOG_FILE = Path.of("config", "mob_farm_block", "debug", "pixelmon_entity_tracker", "pixelmon_entities.jsonl");
     private static final Path PROTECTED_LOG_FILE = Path.of("config", "mob_farm_block", "debug", "pixelmon_entity_tracker", "protected_pixelmon_npcs.jsonl");
     private static final Map<UUID, Long> FIRST_SEEN_GAME_TIME = new HashMap<>();
@@ -113,8 +116,8 @@ public final class PixelmonEntityTracker {
             String key = entry.getKey() == null ? "" : entry.getKey().toLowerCase(Locale.ROOT);
             String value = entry.getValue() == null ? "" : entry.getValue().toLowerCase(Locale.ROOT);
             String combined = key + " " + value;
-            if (combined.contains("nurse") || combined.contains("healer")) {
-                return new ProtectionInfo(true, "nurse", "Nurse", "role/title probe contains nurse/healer", entry.getKey(), entry.getValue());
+            if (combined.contains("nurse") || combined.contains("healer") || combined.contains("doctor")) {
+                return new ProtectionInfo(true, "nurse", "Nurse", "role/title probe contains nurse/healer/doctor", entry.getKey(), entry.getValue());
             }
             if (combined.contains("shopkeeper") || combined.contains("shop_keeper") || combined.contains("shop keeper") || combined.contains("merchant") || combined.contains("seller")) {
                 return new ProtectionInfo(true, "shopkeeper", "Shopkeeper", "role/title probe contains shopkeeper/merchant/seller", entry.getKey(), entry.getValue());
@@ -123,43 +126,61 @@ public final class PixelmonEntityTracker {
         for (Map.Entry<String, String> entry : probe.entrySet()) {
             String key = entry.getKey() == null ? "" : entry.getKey().toLowerCase(Locale.ROOT);
             String value = entry.getValue() == null ? "" : entry.getValue();
-            if (titleLikeProbe(key) && meaningfulTitleValue(value)) {
-                return new ProtectionInfo(true, "titled_npc", prettyRole(value), "role/title probe contains a Pixelmon NPC title", entry.getKey(), entry.getValue());
+            if (titleProbe(key) && meaningfulTitleValue(value)) {
+                return new ProtectionInfo(true, "titled_npc", prettyRole(value), "non-empty Pixelmon NPC title", entry.getKey(), entry.getValue());
             }
         }
         return ProtectionInfo.NONE;
     }
 
-    private static boolean titleLikeProbe(String key) {
-        return key.contains("title")
-                || key.contains("role")
-                || key.contains("profession")
-                || key.contains("occupation")
-                || key.contains("job");
+    private static boolean titleProbe(String key) {
+        return key.contains("title");
     }
 
     private static boolean meaningfulTitleValue(String value) {
         if (value == null) return false;
         String normalized = value.replace('_', ' ').replace('-', ' ').trim().toLowerCase(Locale.ROOT);
         if (normalized.isBlank()) return false;
-        if (normalized.equals("null") || normalized.equals("none") || normalized.equals("unknown")) return false;
+        if (normalized.equals("empty") || normalized.equals("null") || normalized.equals("none") || normalized.equals("unknown")) return false;
         if (normalized.equals("true") || normalized.equals("false")) return false;
         if (normalized.startsWith("error:")) return false;
         if (normalized.contains("minecraft:") || normalized.contains("pixelmon:npc") || normalized.contains("pixelmon:pixelmon")) return false;
-        return true;
+        return normalized.contains("translation{key='pixelmon.npc.dialogue.") || !normalized.contains("translation{key=");
     }
 
     private static String prettyRole(String value) {
+        String titleKey = translationKey(value);
+        if (titleKey != null) {
+            if (titleKey.contains("shopkeeper")) return "Shopkeeper";
+            if (titleKey.contains("doctor") || titleKey.contains("nurse") || titleKey.contains("healer")) return "Nurse";
+            String[] parts = titleKey.split("\\.");
+            List<String> meaningfulParts = new ArrayList<>();
+            for (String part : parts) {
+                if (part.isBlank() || part.matches("\\d+") || part.equals("pixelmon") || part.equals("npc") || part.equals("dialogue") || part.equals("battle") || part.equals("plate")) continue;
+                meaningfulParts.add(part);
+            }
+            if (!meaningfulParts.isEmpty()) return prettyWords(String.join(" ", meaningfulParts.subList(Math.max(0, meaningfulParts.size() - 2), meaningfulParts.size())));
+        }
         String cleaned = value == null ? "" : value.replace('_', ' ').replace('-', ' ').trim();
         if (cleaned.isEmpty()) return "Titled NPC";
+        return prettyWords(cleaned);
+    }
+
+    private static String translationKey(String value) {
+        if (value == null) return null;
+        Matcher matcher = TRANSLATION_KEY.matcher(value);
+        return matcher.find() ? matcher.group(1).toLowerCase(Locale.ROOT) : null;
+    }
+
+    private static String prettyWords(String value) {
         StringBuilder out = new StringBuilder();
-        for (String part : cleaned.split("\\s+")) {
+        for (String part : value.split("\\s+")) {
             if (part.isBlank()) continue;
             if (!out.isEmpty()) out.append(' ');
             out.append(Character.toUpperCase(part.charAt(0)));
             if (part.length() > 1) out.append(part.substring(1));
         }
-        return out.toString();
+        return out.isEmpty() ? "Titled NPC" : out.toString();
     }
 
     private static void writeLog(Entity entity, String source, String action, long gameTime, long firstSeenGameTime, long observedTicks) {
@@ -305,6 +326,7 @@ public final class PixelmonEntityTracker {
                 || lower.contains("seller")
                 || lower.contains("nurse")
                 || lower.contains("healer")
+                || lower.contains("doctor")
                 || lower.contains("name");
     }
 
@@ -320,6 +342,7 @@ public final class PixelmonEntityTracker {
                 || lower.contains("shop keeper")
                 || lower.contains("merchant")
                 || lower.contains("seller")
+                || lower.contains("doctor")
                 || lower.contains("trainer")
                 || lower.contains("tutor")
                 || lower.contains("professor")
