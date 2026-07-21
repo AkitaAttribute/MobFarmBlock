@@ -133,16 +133,22 @@ class PixelmonMixinTargetTest {
     }
 
     @Test
-    void pixelmonRendererFacesPlacementAndUsesLookShrinkLimit() throws IOException {
+    void pixelmonRenderersUseCapturedBoundingBoxesAndSlotFits() throws IOException {
+        String snapshotSource = read("src/main/java/com/akitaattribute/mobfarmblock/mob/PixelmonRenderSnapshot.java");
+        String snapshotFactorySource = read("src/main/java/com/akitaattribute/mobfarmblock/integration/PixelmonRenderSnapshotFactory.java");
         String rendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/MobFarmBlockEntityRenderer.java");
         String captureToolRendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/CaptureToolItemRenderer.java");
+        String blockItemRendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/MobFarmBlockItemRenderer.java");
         assertTrue(rendererSource.contains("poseStack.translate(0.5D, 0.58D, 0.5D)"));
         assertTrue(rendererSource.contains("applyPixelmonFacing(entity, yaw)"));
         assertTrue(rendererSource.contains("minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, pixelmon ? yaw : 0.0F"));
-        assertTrue(rendererSource.contains("float height = Math.max(0.75F, entity.getBbHeight() * displayScale)"));
-        assertTrue(rendererSource.contains("if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, maxDimension))"));
-        assertTrue(captureToolRendererSource.contains("float fit = 0.90F / Math.max(0.1F, bounding)"));
+        assertTrue(snapshotSource.contains("capturedWidth") && snapshotSource.contains("capturedHeight"));
+        assertTrue(snapshotFactorySource.contains("entity.getBbWidth()") && snapshotFactorySource.contains("entity.getBbHeight()"));
+        assertTrue(rendererSource.contains("snapshot.capturedHeight()") && rendererSource.contains("snapshot.capturedWidth()"));
+        assertTrue(captureToolRendererSource.contains("float fit = 0.78F / Math.max(0.1F, bounding)"));
+        assertTrue(blockItemRendererSource.contains("float fit = 0.62F / Math.max(0.1F, bounding)"));
         assertFalse(captureToolRendererSource.contains("fit *= 7.25F"));
+        assertFalse(blockItemRendererSource.contains("fit *= 5.50F"));
     }
 
     @Test
