@@ -7,11 +7,20 @@ public final class MobFarmConfig {
         NAMETAG
     }
 
+    public enum PixelmonRenderReplayMode {
+        HYBRID_ALL,
+        ENTITY_PAYLOAD_ONLY,
+        ENTITY_PAYLOAD_SIZE_AFTER_LOAD,
+        POKEMON_FACTORY_SIZE_BEFORE_ENTITY,
+        POKEMON_FACTORY_SIZE_AFTER_ENTITY
+    }
+
     public static final ModConfigSpec COMMON_SPEC;
     public static final ModConfigSpec.BooleanValue DEBUG_CHAT_MESSAGES;
     public static final ModConfigSpec.BooleanValue DEBUG_COBBLEMON_JSON_DUMP;
     public static final ModConfigSpec.BooleanValue PIXELMON_ENTITY_TRACKING_LOG;
     public static final ModConfigSpec.BooleanValue PIXELMON_NPC_REMOVAL_ENABLED;
+    public static final ModConfigSpec.EnumValue<PixelmonRenderReplayMode> PIXELMON_RENDER_REPLAY_MODE;
     public static final ModConfigSpec.EnumValue<LookUiStyle> LOOK_UI_STYLE;
     public static final ModConfigSpec.DoubleValue PIXELMON_CAPTURE_TOOL_DROP_CHANCE;
 
@@ -33,6 +42,10 @@ public final class MobFarmConfig {
                 .comment("Remove unprotected Pixelmon NPCs after this mod has observed them for five minutes. Protected titled NPCs are not removed.")
                 .translation("mob_farm_block.configuration.pixelmonNpcRemovalEnabled")
                 .define("pixelmonNpcRemovalEnabled", true);
+        PIXELMON_RENDER_REPLAY_MODE = builder
+                .comment("Pixelmon preview reconstruction strategy. HYBRID_ALL tries saved entity payload first, then Pokemon factory reconstruction, and applies captured size to Pokemon/entity/delegate before and after refresh.")
+                .translation("mob_farm_block.configuration.pixelmonRenderReplayMode")
+                .defineEnum("pixelmonRenderReplayMode", PixelmonRenderReplayMode.HYBRID_ALL);
         LOOK_UI_STYLE = builder
                 .comment("Look UI Style. NAMETAG is the current floating nametag-style debug overlay.")
                 .translation("mob_farm_block.configuration.lookUiStyle")
