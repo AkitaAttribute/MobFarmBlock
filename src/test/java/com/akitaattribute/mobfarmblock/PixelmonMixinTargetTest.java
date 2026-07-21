@@ -139,6 +139,7 @@ class PixelmonMixinTargetTest {
         String rendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/MobFarmBlockEntityRenderer.java");
         String captureToolRendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/CaptureToolItemRenderer.java");
         String blockItemRendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/MobFarmBlockItemRenderer.java");
+        String storedMobSource = read("src/main/java/com/akitaattribute/mobfarmblock/mob/StoredMob.java");
         assertTrue(rendererSource.contains("poseStack.translate(0.5D, 0.58D, 0.5D)"));
         assertTrue(rendererSource.contains("poseStack.mulPose(Axis.YP.rotationDegrees(yaw));"));
         assertTrue(rendererSource.contains("applyPixelmonFacing(entity, 0.0F)"));
@@ -149,6 +150,7 @@ class PixelmonMixinTargetTest {
         assertTrue(snapshotFactorySource.contains("entity.getBbWidth()") && snapshotFactorySource.contains("entity.getBbHeight()"));
         assertTrue(captureToolRendererSource.contains("poseStack.scale(1.0F, 1.0F, 1.0F)"));
         assertTrue(blockItemRendererSource.contains("poseStack.scale(1.0F, 1.0F, 1.0F)"));
+        assertTrue(storedMobSource.contains("normalizedDisplay") && storedMobSource.contains("safe.baby(), 1.0F"));
         assertTrue(captureToolRendererSource.contains("getYCentre") && blockItemRendererSource.contains("getYCentre"));
         assertTrue(captureToolRendererSource.contains("Mob Farm Pixelmon render metrics") && blockItemRendererSource.contains("Mob Farm Pixelmon render metrics"));
         assertFalse(rendererSource.contains("return inspected ? 0.24F : 0.34F"));
