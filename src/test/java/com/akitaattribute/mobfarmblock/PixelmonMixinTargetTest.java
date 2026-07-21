@@ -22,52 +22,34 @@ class PixelmonMixinTargetTest {
     @Test
     void dropItemQueryListMixinTargetsKnownPixelmonLootUiClass() throws IOException {
         String mixinSource = read("src/main/java/com/akitaattribute/mobfarmblock/mixin/PixelmonDropItemQueryListMixin.java");
-
-        assertTrue(mixinSource.contains("@Mixin(targets = \"" + DROP_QUERY_LIST_TARGET + "\""),
-                "Pixelmon loot UI mixin must target the DropItemQueryList class observed in Pixelmon drop bytecode diagnostics.");
-        for (String badTarget : KNOWN_BAD_DROP_QUERY_LIST_TARGETS) {
-            assertFalse(mixinSource.contains(badTarget), "Rejected stale Pixelmon DropItemQueryList mixin target: " + badTarget);
-        }
+        assertTrue(mixinSource.contains("@Mixin(targets = \"" + DROP_QUERY_LIST_TARGET + "\""));
+        for (String badTarget : KNOWN_BAD_DROP_QUERY_LIST_TARGETS) assertFalse(mixinSource.contains(badTarget));
     }
 
     @Test
     void dropItemQueryListCallbacksAreStaticBecausePixelmonRegisterIsStatic() throws IOException {
         String mixinSource = read("src/main/java/com/akitaattribute/mobfarmblock/mixin/PixelmonDropItemQueryListMixin.java");
-
-        assertTrue(mixinSource.contains("private static void mobFarmBlock$appendCaptureToolBeforeRegister"),
-                "Pixelmon DropItemQueryList.register is static, so the HEAD injector callback must also be static.");
-        assertTrue(mixinSource.contains("private static void mobFarmBlock$updateCaptureToolAfterRegister"),
-                "Pixelmon DropItemQueryList.register is static, so the TAIL callback must also be static.");
-        assertFalse(mixinSource.contains("private void mobFarmBlock$"),
-                "Non-static callbacks cause Mixin InvalidInjectionException against static Pixelmon register(...).");
+        assertTrue(mixinSource.contains("private static void mobFarmBlock$appendCaptureToolBeforeRegister"));
+        assertTrue(mixinSource.contains("private static void mobFarmBlock$updateCaptureToolAfterRegister"));
+        assertFalse(mixinSource.contains("private void mobFarmBlock$"));
     }
 
     @Test
     void captureToolIsInjectedBeforePixelmonRegistersLootUiThenUpdatedAfterDropsExist() throws IOException {
         String mixinSource = read("src/main/java/com/akitaattribute/mobfarmblock/mixin/PixelmonDropItemQueryListMixin.java");
-
-        assertTrue(mixinSource.contains("@Inject(method = \"register\", at = @At(\"HEAD\"), remap = false)"),
-                "The Capture Tool must be added before Pixelmon registers/displays the loot UI list.");
-        assertTrue(mixinSource.contains("mobFarmBlock$appendCaptureToolBeforeRegister"),
-                "The HEAD callback should append the Capture Tool before Pixelmon builds the visible loot UI state.");
-        assertTrue(mixinSource.contains("@Inject(method = \"register\", at = @At(\"TAIL\"), remap = false)"),
-                "A TAIL callback must remain to replace the pending tool profile with the observed battle loot.");
-        assertTrue(mixinSource.contains("updateCaptureToolObservedLoot"),
-                "The TAIL callback should update the Capture Tool from the actual generated Pixelmon loot list.");
-        assertFalse(mixinSource.contains("TAIL before append"),
-                "Appending only at TAIL makes Take All receive the Capture Tool while the visible Pixelmon loot UI omits it.");
+        assertTrue(mixinSource.contains("@Inject(method = \"register\", at = @At(\"HEAD\"), remap = false)"));
+        assertTrue(mixinSource.contains("mobFarmBlock$appendCaptureToolBeforeRegister"));
+        assertTrue(mixinSource.contains("@Inject(method = \"register\", at = @At(\"TAIL\"), remap = false)"));
+        assertTrue(mixinSource.contains("updateCaptureToolObservedLoot"));
+        assertFalse(mixinSource.contains("TAIL before append"));
     }
 
     @Test
     void injectedLootUsesPixelmonDroppedItemWrapperNotRawItemStack() throws IOException {
         String injectorSource = read("src/main/java/com/akitaattribute/mobfarmblock/integration/PixelmonLootCaptureToolInjector.java");
-
-        assertTrue(injectorSource.contains(DROPPED_ITEM_TARGET),
-                "Pixelmon loot lists contain DroppedItem entries, not raw Minecraft ItemStack entries.");
-        assertTrue(injectorSource.contains("getConstructor(ItemStack.class, int.class)"),
-                "The Capture Tool must be wrapped with Pixelmon DroppedItem(ItemStack, int) before adding it to DropItemQueryList.");
-        assertFalse(injectorSource.contains("drops.add(captureTool);"),
-                "Adding a raw ItemStack to the Pixelmon loot list causes ClassCastException and breaks normal Pixelmon drops.");
+        assertTrue(injectorSource.contains(DROPPED_ITEM_TARGET));
+        assertTrue(injectorSource.contains("getConstructor(ItemStack.class, int.class)"));
+        assertFalse(injectorSource.contains("drops.add(captureTool);"));
     }
 
     @Test
@@ -75,87 +57,54 @@ class PixelmonMixinTargetTest {
         String configSource = read("src/main/java/com/akitaattribute/mobfarmblock/config/MobFarmConfig.java");
         String injectorSource = read("src/main/java/com/akitaattribute/mobfarmblock/integration/PixelmonLootCaptureToolInjector.java");
         String blockSource = read("src/main/java/com/akitaattribute/mobfarmblock/block/MobFarmBlock.java");
-
-        assertTrue(configSource.contains("PIXELMON_CAPTURE_TOOL_DROP_CHANCE"),
-                "Pixelmon Capture Tool loot injection should be governed by a common NeoForge config value.");
-        assertTrue(configSource.contains("defineInRange(\"pixelmonCaptureToolDropChance\", 0.01D, 0.0D, 1.0D)"),
-                "The Pixelmon Capture Tool loot chance should default to 1/100 and allow fractional double precision down to zero.");
-        assertTrue(injectorSource.contains("MobFarmConfig.PIXELMON_CAPTURE_TOOL_DROP_CHANCE.get()"),
-                "The Pixelmon loot injector must roll against the configured chance before adding the Capture Tool.");
-        assertTrue(injectorSource.contains("CaptureToolItem.setDiscardOnDeposit(captureTool, true)"),
-                "Capture Tools created by Pixelmon loot should be marked one-shot so they do not become reusable empty tools.");
-        assertTrue(blockSource.contains("CaptureToolItem.shouldDiscardOnDeposit(stack)"),
-                "Depositing a Pixelmon-loot Capture Tool should consume the stack instead of clearing it to an empty tool.");
+        assertTrue(configSource.contains("PIXELMON_CAPTURE_TOOL_DROP_CHANCE"));
+        assertTrue(configSource.contains("defineInRange(\"pixelmonCaptureToolDropChance\", 0.01D, 0.0D, 1.0D)"));
+        assertTrue(injectorSource.contains("MobFarmConfig.PIXELMON_CAPTURE_TOOL_DROP_CHANCE.get()"));
+        assertTrue(injectorSource.contains("CaptureToolItem.setDiscardOnDeposit(captureTool, true)"));
+        assertTrue(blockSource.contains("CaptureToolItem.shouldDiscardOnDeposit(stack)"));
     }
 
     @Test
     void pixelmonCaptureLootGuaranteePersistsMissesAndResetsOnDrop() throws IOException {
         String dataSource = read("src/main/java/com/akitaattribute/mobfarmblock/integration/PixelmonCaptureToolDropData.java");
         String injectorSource = read("src/main/java/com/akitaattribute/mobfarmblock/integration/PixelmonLootCaptureToolInjector.java");
-
-        assertTrue(dataSource.contains("extends SavedData"),
-                "Pixelmon Capture Tool miss counters should be persisted in server SavedData.");
-        assertTrue(dataSource.contains("Map<UUID, Long> missesByPlayer"),
-                "Miss counters should be keyed by player UUID.");
-        assertTrue(dataSource.contains("recordMiss(ServerPlayer player)"),
-                "Failed eligible Pixelmon loot rolls should increment the player's miss counter.");
-        assertTrue(dataSource.contains("reset(ServerPlayer player)"),
-                "The player's miss counter should be reset when a Capture Tool drop is given.");
-        assertTrue(injectorSource.contains("guaranteeThreshold(chance)"),
-                "The guarantee threshold should be derived from the configured drop chance.");
-        assertTrue(injectorSource.contains("missesBefore + 1L >= guaranteeThreshold"),
-                "The next eligible defeat should force a drop once the chance-derived threshold is reached.");
-        assertTrue(injectorSource.contains("PixelmonCaptureToolDropData.get(player).recordMiss(player)"),
-                "Skipped eligible drops should increment the persisted miss counter.");
-        assertTrue(injectorSource.contains("PixelmonCaptureToolDropData.get(player).reset(player)"),
-                "Random and guaranteed Capture Tool drops should both reset the persisted miss counter.");
+        assertTrue(dataSource.contains("extends SavedData"));
+        assertTrue(dataSource.contains("Map<UUID, Long> missesByPlayer"));
+        assertTrue(dataSource.contains("recordMiss(ServerPlayer player)"));
+        assertTrue(dataSource.contains("reset(ServerPlayer player)"));
+        assertTrue(injectorSource.contains("guaranteeThreshold(chance)"));
+        assertTrue(injectorSource.contains("missesBefore + 1L >= guaranteeThreshold"));
+        assertTrue(injectorSource.contains("PixelmonCaptureToolDropData.get(player).recordMiss(player)"));
+        assertTrue(injectorSource.contains("PixelmonCaptureToolDropData.get(player).reset(player)"));
     }
 
     @Test
-    void pixelmonNonPokemonEntityTrackerLogsTrainersAgeNpcProbeAndProtectedSummary() throws IOException {
+    void pixelmonNpcTrackerUsesShortLogsAndCleanupGate() throws IOException {
         String trackerSource = read("src/main/java/com/akitaattribute/mobfarmblock/integration/PixelmonEntityTracker.java");
         String modSource = read("src/main/java/com/akitaattribute/mobfarmblock/MobFarmBlockMod.java");
         String configSource = read("src/main/java/com/akitaattribute/mobfarmblock/config/MobFarmConfig.java");
         String langSource = read("src/main/resources/assets/mob_farm_block/lang/en_us.json");
-
-        assertTrue(configSource.contains("PIXELMON_ENTITY_TRACKING_LOG"),
-                "Pixelmon non-Pokemon entity tracking should be controlled by a visible common config option.");
-        assertTrue(langSource.contains("Pixelmon Entity Tracking Log"),
-                "The Pixelmon tracking config option should have a readable name in the config screen.");
-        assertTrue(modSource.contains("PixelmonEntityTracker::onEntityJoinLevel"),
-                "The tracker should identify Pixelmon NPCs/trainers as they join the world.");
-        assertTrue(modSource.contains("PixelmonEntityTracker::onServerTick"),
-                "The tracker should rescan loaded entities so already-existing trainers can be identified and aged.");
-        assertTrue(trackerSource.contains("pixelmon_entities.jsonl"),
-                "Trainer/NPC tracking should write to a separate JSONL log file.");
-        assertTrue(trackerSource.contains("protected_pixelmon_npcs.jsonl"),
-                "Protected service NPCs should also be listed in a focused second JSONL file.");
-        assertTrue(trackerSource.contains("className.contains(\"trainer\")"),
-                "Pixelmon trainer classes should be classified as tracked trainer entities.");
-        assertTrue(trackerSource.contains("path.contains(\"npc\")"),
-                "Pixelmon NPC entity type ids should be classified as tracked NPC entities.");
-        assertTrue(trackerSource.contains("\"pixelmon:pixelmon\".equals(typeText)"),
-                "Normal Pokemon entities should be excluded from the non-Pokemon tracker.");
-        assertTrue(trackerSource.contains("FIRST_SEEN_GAME_TIME"),
-                "The tracker should record observed age from first detection instead of treating Minecraft tickCount as total world age.");
-        assertTrue(trackerSource.contains("observedAgeSeconds"),
-                "The tracker should log how long this mod has observed each tracked NPC.");
-        assertTrue(trackerSource.contains("minecraftEntityTickCountSeconds"),
-                "The tracker should still log Minecraft's current entity tickCount separately for comparison.");
-        assertTrue(trackerSource.contains("npcProbe"),
-                "The tracker should include a compact reflection probe to find Pixelmon NPC titles/roles such as Nurse and Shopkeeper.");
-        assertTrue(trackerSource.contains("entityNbtSummary"),
-                "The tracker should include relevant saved NBT fields so protected NPC roles can be identified.");
-        assertTrue(trackerSource.contains("protected_nurse"),
-                "Nurse or healer NPCs should be classified distinctly from removable random NPCs.");
-        assertTrue(trackerSource.contains("protected_shopkeeper"),
-                "Shopkeeper or merchant NPCs should be classified distinctly from removable random NPCs.");
-        assertTrue(trackerSource.contains("whyProtected"),
-                "The protected NPC file should include why each NPC was protected.");
-        assertTrue(trackerSource.contains("evidencePath") && trackerSource.contains("evidenceValue"),
-                "The protected NPC file should include the exact probe field/value that caused protection.");
-        assertTrue(trackerSource.contains("PROTECTED_LOGGED.add(entity.getUUID())"),
-                "Protected NPC summaries should be listed once per entity UUID instead of every periodic scan.");
+        assertTrue(configSource.contains("PIXELMON_ENTITY_TRACKING_LOG"));
+        assertTrue(configSource.contains("PIXELMON_NPC_REMOVAL_ENABLED"));
+        assertTrue(configSource.contains("define(\"pixelmonNpcRemovalEnabled\", true)"));
+        assertTrue(langSource.contains("Pixelmon Entity Tracking Log"));
+        assertTrue(langSource.contains("Pixelmon NPC Removal Enabled"));
+        assertTrue(modSource.contains("PixelmonEntityTracker::onEntityJoinLevel"));
+        assertTrue(modSource.contains("PixelmonEntityTracker::onServerTick"));
+        assertTrue(trackerSource.contains("return \"pixelmon:npc\".equals(typeText);"));
+        assertTrue(trackerSource.contains("private static final long REMOVAL_AGE_TICKS = 6000L"));
+        assertTrue(trackerSource.contains("!protection.protectedNpc() && observedTicks >= REMOVAL_AGE_TICKS"));
+        assertTrue(trackerSource.contains("entity.discard()"));
+        assertTrue(trackerSource.contains("pixelmon_entities.jsonl"));
+        assertTrue(trackerSource.contains("protected_pixelmon_npcs.jsonl"));
+        assertTrue(trackerSource.contains("protected_nurse"));
+        assertTrue(trackerSource.contains("protected_shopkeeper"));
+        assertTrue(trackerSource.contains("protected_titled_npc"));
+        assertTrue(trackerSource.contains("prop(out, \"name\"") && trackerSource.contains("prop(out, \"role\"") && trackerSource.contains("prop(out, \"observedAgeSeconds\""));
+        assertFalse(trackerSource.contains("entityNbtSummary"));
+        assertFalse(trackerSource.contains("entityClass"));
+        assertFalse(trackerSource.contains("minecraftEntityTickCount"));
+        assertFalse(trackerSource.contains("typeText.startsWith(\"pixelmon:\")"));
     }
 
     @Test
@@ -163,79 +112,51 @@ class PixelmonMixinTargetTest {
         String factorySource = read("src/main/java/com/akitaattribute/mobfarmblock/mob/MobProfileFactory.java");
         String interactionSource = read("src/main/java/com/akitaattribute/mobfarmblock/behavior/InteractionMethodRegistry.java");
         String behaviorSource = read("src/main/java/com/akitaattribute/mobfarmblock/behavior/BehaviorUtil.java");
-
-        assertTrue(factorySource.contains("\"pixelmon:pixelmon\".equals(id)"),
-                "Stored Pixelmon should receive a built-in pen interaction.");
-        assertTrue(factorySource.contains("MobFarmBlockMod.id(\"pixelmon_drops\")"),
-                "Stored Pixelmon should use the empty-hand Pixelmon drop harvest interaction.");
-        assertTrue(interactionSource.contains("PIXELMON_DROPS"),
-                "The Pixelmon drop harvest method must be registered.");
-        assertTrue(interactionSource.contains("definition.methodId().equals(EGG) || definition.methodId().equals(PIXELMON_DROPS)"),
-                "Pixelmon drop harvesting should match an empty hand like chicken eggs.");
-        assertTrue(interactionSource.contains("context.stored().setCooldown(action, now, definition.cooldownTicks() > 0 ? definition.cooldownTicks() : 6000L)"),
-                "Pixelmon drop harvesting should use the configured five minute cooldown fallback.");
-        assertTrue(behaviorSource.contains("pixelmonProcessing=drop rolls disabled; processing awards XP only"),
-                "Weapon processing stored Pixelmon should not roll drops; it should only award XP.");
+        assertTrue(factorySource.contains("\"pixelmon:pixelmon\".equals(id)"));
+        assertTrue(factorySource.contains("MobFarmBlockMod.id(\"pixelmon_drops\")"));
+        assertTrue(interactionSource.contains("PIXELMON_DROPS"));
+        assertTrue(interactionSource.contains("definition.methodId().equals(EGG) || definition.methodId().equals(PIXELMON_DROPS)"));
+        assertTrue(interactionSource.contains("context.stored().setCooldown(action, now, definition.cooldownTicks() > 0 ? definition.cooldownTicks() : 6000L)"));
+        assertTrue(behaviorSource.contains("pixelmonProcessing=drop rolls disabled; processing awards XP only"));
     }
 
     @Test
     void pixelmonHarvestUiShowsReadyCooldownItemNamesAndCapitalizedSpecies() throws IOException {
         String rendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/MobFarmBlockEntityRenderer.java");
-
-        assertTrue(rendererSource.contains("isPixelmonDropHarvest"),
-                "The Look UI should recognize the Pixelmon empty-hand drop harvest interaction.");
-        assertTrue(rendererSource.contains("pixelmonDropRows"),
-                "Pixelmon drop rows should be produced through the harvest interaction instead of raw chance-only drop rows.");
-        assertTrue(rendererSource.contains("readyValue(stored, MobFarmBlockMod.id(\"pixelmon_drops\"), now)"),
-                "Pixelmon drop rows should show Ready or countdown text from the same cooldown store used by eggs/harvests.");
-        assertTrue(rendererSource.contains("readyColor(stored, MobFarmBlockMod.id(\"pixelmon_drops\"), now)"),
-                "Pixelmon drop rows should use the normal ready/cooldown colors.");
-        assertTrue(rendererSource.contains("itemLabel(stack, rule.itemId())"),
-                "Pixelmon drop rows should label drops with the item display name instead of the generic word Drop.");
-        assertTrue(rendererSource.contains("private static String mobLabel(StoredMob stored) { return prettyName"),
-                "Pixelmon species labels should be human-readable instead of raw lowercase resource paths.");
-        assertTrue(rendererSource.contains("Character.toUpperCase(part.charAt(0))"),
-                "Species and fallback item labels should at least capitalize the first letter of each id segment.");
+        assertTrue(rendererSource.contains("isPixelmonDropHarvest"));
+        assertTrue(rendererSource.contains("pixelmonDropRows"));
+        assertTrue(rendererSource.contains("readyValue(stored, MobFarmBlockMod.id(\"pixelmon_drops\"), now)"));
+        assertTrue(rendererSource.contains("readyColor(stored, MobFarmBlockMod.id(\"pixelmon_drops\"), now)"));
+        assertTrue(rendererSource.contains("itemLabel(stack, rule.itemId())"));
+        assertTrue(rendererSource.contains("private static String mobLabel(StoredMob stored) { return prettyName"));
+        assertTrue(rendererSource.contains("Character.toUpperCase(part.charAt(0))"));
     }
 
     @Test
     void pixelmonRendererFacesPlacementAndUsesLookShrinkLimit() throws IOException {
         String rendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/MobFarmBlockEntityRenderer.java");
         String captureToolRendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/CaptureToolItemRenderer.java");
-
-        assertTrue(rendererSource.contains("poseStack.translate(0.5D, 0.58D, 0.5D)"),
-                "Pixelmon pen renders should use the same grounded block anchor as the other placed mob renders, not a high floating Y offset.");
-        assertTrue(rendererSource.contains("applyPixelmonFacing(entity, yaw)"),
-                "Pixelmon pen renders should apply the block facing to the cached Pixelmon entity instead of always facing north.");
-        assertTrue(rendererSource.contains("minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, pixelmon ? yaw : 0.0F"),
-                "Pixelmon pen renders should pass placement yaw into the renderer path.");
-        assertTrue(rendererSource.contains("float height = Math.max(0.75F, entity.getBbHeight() * displayScale)"),
-                "Tiny Pixelmon should not be blown up by fitting against extremely small dimensions.");
-        assertTrue(rendererSource.contains("if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, maxDimension))"),
-                "Looking at a Pixelmon pen should apply the same maximum visual shrink envelope used by the other render path.");
-        assertTrue(captureToolRendererSource.contains("float fit = 0.90F / Math.max(0.1F, bounding)"),
-                "Pixelmon capture tool overlays should fit to the GUI slot without the old oversized Pixelmon multiplier.");
-        assertFalse(captureToolRendererSource.contains("fit *= 7.25F"),
-                "The old Pixelmon capture tool multiplier makes tiny Pixelmon models massive in the inventory.");
+        assertTrue(rendererSource.contains("poseStack.translate(0.5D, 0.58D, 0.5D)"));
+        assertTrue(rendererSource.contains("applyPixelmonFacing(entity, yaw)"));
+        assertTrue(rendererSource.contains("minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, pixelmon ? yaw : 0.0F"));
+        assertTrue(rendererSource.contains("float height = Math.max(0.75F, entity.getBbHeight() * displayScale)"));
+        assertTrue(rendererSource.contains("if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, maxDimension))"));
+        assertTrue(captureToolRendererSource.contains("float fit = 0.90F / Math.max(0.1F, bounding)"));
+        assertFalse(captureToolRendererSource.contains("fit *= 7.25F"));
     }
 
     @Test
     void mixinConfigRegistersDropItemQueryListMixin() throws IOException {
         String mixinConfig = read("src/main/resources/mob_farm_block.mixins.json");
-
-        assertTrue(mixinConfig.contains("PixelmonDropItemQueryListMixin"),
-                "The Mob Farm mixin config must include the Pixelmon loot UI mixin.");
+        assertTrue(mixinConfig.contains("PixelmonDropItemQueryListMixin"));
     }
 
     @Test
     void dropRegistryReflectionRemainsSeparateFromDropQueryListMixinTarget() throws IOException {
         String fallbackSource = read("src/main/java/com/akitaattribute/mobfarmblock/integration/PixelmonDropFallback.java");
         String mixinSource = read("src/main/java/com/akitaattribute/mobfarmblock/mixin/PixelmonDropItemQueryListMixin.java");
-
-        assertTrue(fallbackSource.contains(DROP_REGISTRY_TARGET),
-                "Capture/drop profile reflection should keep using Pixelmon DropItemRegistry.");
-        assertFalse(mixinSource.contains("com.pixelmonmod.pixelmon.entities.npcs.registry.DropItemQueryList"),
-                "The DropItemRegistry package must not be reused as the DropItemQueryList mixin package.");
+        assertTrue(fallbackSource.contains(DROP_REGISTRY_TARGET));
+        assertFalse(mixinSource.contains("com.pixelmonmod.pixelmon.entities.npcs.registry.DropItemQueryList"));
     }
 
     private static String read(String relativePath) throws IOException {
