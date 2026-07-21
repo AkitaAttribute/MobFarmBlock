@@ -94,7 +94,11 @@ public final class PixelmonEntityTracker {
     }
 
     private static String classification(Entity entity, ProtectionInfo protection) {
-        if (protection.protectedNpc()) return "protected_" + protection.roleKey();
+        if (protection.protectedNpc()) {
+            if ("nurse".equals(protection.roleKey())) return "protected_nurse";
+            if ("shopkeeper".equals(protection.roleKey())) return "protected_shopkeeper";
+            return "protected_npc";
+        }
         ResourceLocation typeId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
         String path = typeId == null ? "" : typeId.getPath().toLowerCase(Locale.ROOT);
         String className = entity.getClass().getName().toLowerCase(Locale.ROOT);
