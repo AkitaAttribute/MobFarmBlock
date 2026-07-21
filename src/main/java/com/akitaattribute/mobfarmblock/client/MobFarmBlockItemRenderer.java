@@ -2,6 +2,7 @@ package com.akitaattribute.mobfarmblock.client;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.item.MobFarmBlockItemData;
+import com.akitaattribute.mobfarmblock.mob.PixelmonRenderSnapshot;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
 import com.akitaattribute.mobfarmblock.registry.ModBlocks;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -38,10 +39,11 @@ public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
         if (entity == null) return;
 
         poseStack.pushPose();
+        boolean pixelmon = PixelmonEntityRenderCache.isPixelmonStored(stored);
         float scale = entityScale(entity, stored);
-        poseStack.translate(0.5D, 0.64D, 0.18D);
+        poseStack.translate(0.5D, pixelmon ? 0.60D : 0.64D, 0.18D);
         poseStack.scale(scale, scale, scale);
-        poseStack.translate(0.0D, -entity.getBbHeight() * 0.45D, 0.0D);
+        poseStack.translate(0.0D, -(pixelmon ? renderHeight(entity, stored) : entity.getBbHeight()) * 0.50D, 0.0D);
         ClientEntityRenderCache.freezeForRender(entity);
         try {
             minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0F, 0.0F, 0.0F, poseStack, buffer, LightTexture.FULL_BRIGHT);
@@ -78,12 +80,28 @@ public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
     }
 
     private static float entityScale(Entity entity, StoredMob stored) {
+        if (PixelmonEntityRenderCache.isPixelmonStored(stored)) {
+            float bounding = Math.max(renderHeight(entity, stored), renderWidth(entity, stored));
+            float fit = 0.62F / Math.max(0.1F, bounding);
+            return Math.max(0.14F, Math.min(0.74F, fit));
+        }
         float displayScale = stored.display.scale() > 0 ? stored.display.scale() : 1.0F;
         float height = Math.max(entity.getBbHeight(), 0.35F) * displayScale;
         float width = Math.max(entity.getBbWidth(), 0.35F) * displayScale;
         float bounding = Math.max(height, width);
         float fit = 0.62F / Math.max(0.1F, bounding);
-        if (PixelmonEntityRenderCache.isPixelmonStored(stored)) fit *= 5.50F;
-        return PixelmonEntityRenderCache.isPixelmonStored(stored) ? Math.max(1.40F, Math.min(4.80F, fit)) : Math.max(0.24F, Math.min(0.74F, fit));
+        return Math.max(0.24F, Math.min(0.74F, fit));
+    }
+
+    private static float renderHeight(Entity entity, StoredMob stored) {
+        PixelmonRenderSnapshot snapshot = stored == null ? null : stored.pixelmonRenderSnapshot;
+        if (snapshot != null && snapshot.capturedHeight() > 0.05F) return snapshot.capturedHeight();
+        return Math.max(entity.getBbHeight(), 0.35F);
+    }
+
+    private static float renderWidth(Entity entity, StoredMob stored) {
+        PixelmonRenderSnapshot snapshot = stored == null ? null : stored.pixelmonRenderSnapshot;
+        if (snapshot != null && snapshot.capturedWidth() > 0.05F) return snapshot.capturedWidth();
+        return Math.max(entity.getBbWidth(), 0.35F);
     }
 }
