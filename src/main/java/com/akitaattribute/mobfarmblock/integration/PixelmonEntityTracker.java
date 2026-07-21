@@ -87,28 +87,20 @@ public final class PixelmonEntityTracker {
         if (entity == null) return false;
         ResourceLocation typeId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
         String typeText = typeId == null ? "" : typeId.toString().toLowerCase(Locale.ROOT);
-        String path = typeId == null ? "" : typeId.getPath().toLowerCase(Locale.ROOT);
-        String className = entity.getClass().getName().toLowerCase(Locale.ROOT);
-        boolean pixelmonOwned = typeText.startsWith("pixelmon:") || className.contains("pixelmon");
-        if (!pixelmonOwned) return false;
-        if ("pixelmon:pixelmon".equals(typeText) || className.endsWith(".pixelmonentity")) return false;
-        if (path.contains("trainer") || path.contains("npc") || className.contains("trainer") || className.contains("npc")) return true;
-        return typeText.startsWith("pixelmon:") && !className.contains("entities.pixelmon.pixelmonentity");
+        // Only Pixelmon's NPC entity should be part of this diagnostic/removal pipeline.
+        // Do not widen this back to className.contains("trainer"), path.contains("npc"), pixelmon:statue, or other Pixelmon-owned helper entities.
+        // The old broad filter also had to exclude "pixelmon:pixelmon".equals(typeText), but that is no longer needed when the gate is exact.
+        return "pixelmon:npc".equals(typeText);
     }
 
-    private static String classification(Entity entity, ProtectionInfo protection) {
+    private static String classification(ProtectionInfo protection) {
         if (protection.protectedNpc()) {
             if ("nurse".equals(protection.roleKey())) return "protected_nurse";
             if ("shopkeeper".equals(protection.roleKey())) return "protected_shopkeeper";
             if ("titled_npc".equals(protection.roleKey())) return "protected_titled_npc";
             return "protected_npc";
         }
-        ResourceLocation typeId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
-        String path = typeId == null ? "" : typeId.getPath().toLowerCase(Locale.ROOT);
-        String className = entity.getClass().getName().toLowerCase(Locale.ROOT);
-        if (path.contains("trainer") || className.contains("trainer")) return "trainer";
-        if (path.contains("npc") || className.contains("npc")) return "npc";
-        return "pixelmon_non_pokemon";
+        return "npc";
     }
 
     private static ProtectionInfo protectionInfo(Map<String, String> probe) {
@@ -213,7 +205,7 @@ public final class PixelmonEntityTracker {
         prop(out, "time", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME), true);
         prop(out, "source", source, true);
         prop(out, "action", action, true);
-        prop(out, "classification", classification(entity, protection), true);
+        prop(out, "classification", classification(protection), true);
         prop(out, "protected", protection.protectedNpc(), true);
         prop(out, "protectedRole", protection.role(), true);
         prop(out, "protectedWhy", protection.why(), true);
