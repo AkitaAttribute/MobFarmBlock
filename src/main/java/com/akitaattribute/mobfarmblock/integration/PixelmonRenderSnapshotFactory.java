@@ -20,7 +20,9 @@ public final class PixelmonRenderSnapshotFactory {
                 species.get(),
                 PixelmonIntegration.getDisplayKey(entity).orElse(species.get().toString()),
                 payload.format(),
-                payload.value()
+                payload.value(),
+                Math.max(0.0F, entity.getBbWidth()),
+                Math.max(0.0F, entity.getBbHeight())
         ));
     }
 
