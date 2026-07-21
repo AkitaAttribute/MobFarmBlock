@@ -10,7 +10,8 @@ public record PixelmonRenderSnapshot(
         String payloadFormat,
         String payload,
         float capturedWidth,
-        float capturedHeight
+        float capturedHeight,
+        float sizeCentimeters
 ) {
     public CompoundTag toNbt() {
         CompoundTag tag = new CompoundTag();
@@ -20,6 +21,7 @@ public record PixelmonRenderSnapshot(
         tag.putString("payload", payload == null ? "" : payload);
         tag.putFloat("capturedWidth", capturedWidth);
         tag.putFloat("capturedHeight", capturedHeight);
+        tag.putFloat("sizeCentimeters", sizeCentimeters);
         return tag;
     }
 
@@ -31,7 +33,8 @@ public record PixelmonRenderSnapshot(
                 tag.getString("payloadFormat"),
                 tag.getString("payload"),
                 tag.contains("capturedWidth") ? tag.getFloat("capturedWidth") : 0.0F,
-                tag.contains("capturedHeight") ? tag.getFloat("capturedHeight") : 0.0F
+                tag.contains("capturedHeight") ? tag.getFloat("capturedHeight") : 0.0F,
+                tag.contains("sizeCentimeters") ? tag.getFloat("sizeCentimeters") : 0.0F
         );
     }
 
