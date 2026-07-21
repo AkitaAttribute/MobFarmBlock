@@ -112,7 +112,7 @@ class PixelmonMixinTargetTest {
     }
 
     @Test
-    void pixelmonNonPokemonEntityTrackerLogsTrainersAgeAndNpcProbe() throws IOException {
+    void pixelmonNonPokemonEntityTrackerLogsTrainersAgeNpcProbeAndProtectedSummary() throws IOException {
         String trackerSource = read("src/main/java/com/akitaattribute/mobfarmblock/integration/PixelmonEntityTracker.java");
         String modSource = read("src/main/java/com/akitaattribute/mobfarmblock/MobFarmBlockMod.java");
         String configSource = read("src/main/java/com/akitaattribute/mobfarmblock/config/MobFarmConfig.java");
@@ -128,6 +128,8 @@ class PixelmonMixinTargetTest {
                 "The tracker should rescan loaded entities so already-existing trainers can be identified and aged.");
         assertTrue(trackerSource.contains("pixelmon_entities.jsonl"),
                 "Trainer/NPC tracking should write to a separate JSONL log file.");
+        assertTrue(trackerSource.contains("protected_pixelmon_npcs.jsonl"),
+                "Protected service NPCs should also be listed in a focused second JSONL file.");
         assertTrue(trackerSource.contains("className.contains(\"trainer\")"),
                 "Pixelmon trainer classes should be classified as tracked trainer entities.");
         assertTrue(trackerSource.contains("path.contains(\"npc\")"),
@@ -148,6 +150,12 @@ class PixelmonMixinTargetTest {
                 "Nurse or healer NPCs should be classified distinctly from removable random NPCs.");
         assertTrue(trackerSource.contains("protected_shopkeeper"),
                 "Shopkeeper or merchant NPCs should be classified distinctly from removable random NPCs.");
+        assertTrue(trackerSource.contains("whyProtected"),
+                "The protected NPC file should include why each NPC was protected.");
+        assertTrue(trackerSource.contains("evidencePath") && trackerSource.contains("evidenceValue"),
+                "The protected NPC file should include the exact probe field/value that caused protection.");
+        assertTrue(trackerSource.contains("PROTECTED_LOGGED.add(entity.getUUID())"),
+                "Protected NPC summaries should be listed once per entity UUID instead of every periodic scan.");
     }
 
     @Test
