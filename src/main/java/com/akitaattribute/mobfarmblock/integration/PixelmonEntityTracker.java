@@ -60,7 +60,11 @@ public final class PixelmonEntityTracker {
         if (tick < nextScanTick) return;
         nextScanTick = tick + SCAN_INTERVAL_TICKS;
         for (ServerLevel level : server.getAllLevels()) {
+            List<Entity> snapshot = new ArrayList<>();
             for (Entity entity : level.getAllEntities()) {
+                if (isTrackedPixelmonEntity(entity)) snapshot.add(entity);
+            }
+            for (Entity entity : snapshot) {
                 track(entity, "scan");
             }
         }
