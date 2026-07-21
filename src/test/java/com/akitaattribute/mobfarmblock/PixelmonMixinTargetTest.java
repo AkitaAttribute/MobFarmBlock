@@ -133,7 +133,7 @@ class PixelmonMixinTargetTest {
     }
 
     @Test
-    void pixelmonRenderersUseCapturedBoundingBoxesAndSlotFits() throws IOException {
+    void pixelmonRenderersUseNaturalPreviewScaleAndMetrics() throws IOException {
         String snapshotSource = read("src/main/java/com/akitaattribute/mobfarmblock/mob/PixelmonRenderSnapshot.java");
         String snapshotFactorySource = read("src/main/java/com/akitaattribute/mobfarmblock/integration/PixelmonRenderSnapshotFactory.java");
         String rendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/MobFarmBlockEntityRenderer.java");
@@ -144,9 +144,10 @@ class PixelmonMixinTargetTest {
         assertTrue(rendererSource.contains("minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, pixelmon ? yaw : 0.0F"));
         assertTrue(snapshotSource.contains("capturedWidth") && snapshotSource.contains("capturedHeight"));
         assertTrue(snapshotFactorySource.contains("entity.getBbWidth()") && snapshotFactorySource.contains("entity.getBbHeight()"));
-        assertTrue(rendererSource.contains("snapshot.capturedHeight()") && rendererSource.contains("snapshot.capturedWidth()"));
-        assertTrue(captureToolRendererSource.contains("float fit = 0.78F / Math.max(0.1F, bounding)"));
-        assertTrue(blockItemRendererSource.contains("float fit = 0.62F / Math.max(0.1F, bounding)"));
+        assertTrue(captureToolRendererSource.contains("poseStack.scale(0.72F, 0.72F, 0.72F)"));
+        assertTrue(blockItemRendererSource.contains("poseStack.scale(0.50F, 0.50F, 0.50F)"));
+        assertTrue(captureToolRendererSource.contains("getYCentre") && blockItemRendererSource.contains("getYCentre"));
+        assertTrue(captureToolRendererSource.contains("Mob Farm Pixelmon render metrics") && blockItemRendererSource.contains("Mob Farm Pixelmon render metrics"));
         assertFalse(captureToolRendererSource.contains("fit *= 7.25F"));
         assertFalse(blockItemRendererSource.contains("fit *= 5.50F"));
     }
