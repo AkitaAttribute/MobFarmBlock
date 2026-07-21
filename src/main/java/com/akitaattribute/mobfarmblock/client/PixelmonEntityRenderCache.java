@@ -7,6 +7,8 @@ import java.lang.reflect.Modifier;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.mob.MobKind;
@@ -26,11 +28,12 @@ import net.minecraft.world.level.Level;
 public final class PixelmonEntityRenderCache {
     private static final Map<String, Entity> CACHE = new HashMap<>();
     private static final java.util.Set<String> WARNED = new java.util.HashSet<>();
+    private static final Pattern NUMBER = Pattern.compile("-?\\d+(?:\\.\\d+)?");
 
     public static Entity getOrCreate(StoredMob stored) {
         Minecraft minecraft = Minecraft.getInstance();
         if (stored == null || stored.isEmpty() || minecraft.level == null || !isPixelmonStored(stored) || stored.speciesId == null) return null;
-        String key = stored.mobId + "|" + stored.speciesId + "|" + stored.display.variantKey() + "|" + stored.display.scale() + "|" + payloadHash(stored.pixelmonRenderSnapshot);
+        String key = stored.mobId + "|" + stored.speciesId + "|" + stored.display.variantKey() + "|cm=" + pixelmonSizeCentimeters(stored).orElse(0.0F) + "|" + payloadHash(stored.pixelmonRenderSnapshot);
         Entity cached = CACHE.get(key);
         if (cached != null) {
             ClientEntityRenderCache.freezeForRender(cached);
@@ -57,7 +60,7 @@ public final class PixelmonEntityRenderCache {
             Object pokemonObject = pokemon.get();
             if (species.isPresent()) applySpeciesToPokemon(pokemonObject, species.get(), stored.speciesId);
             applyVariantHints(pokemonObject, species.orElse(null), stored.display.variantKey());
-            invokeAny(pokemonObject, "setSize", (double) Math.max(0.1F, stored.display.scale()));
+            applyPixelmonSize(pokemonObject, stored);
             for (String method : java.util.List.of("initialize", "updateForm", "updatePalette", "updateStats", "recalculateStats")) invokeAny(pokemonObject, method);
 
             Entity entity = createEntityFromPokemon(pokemonObject, minecraft.level);
@@ -90,7 +93,7 @@ public final class PixelmonEntityRenderCache {
             invokeAny(entity, "load", tag);
             readPokemon(entity).ifPresent(pokemon -> {
                 applyVariantHints(pokemon, invoke(pokemon, "getSpecies").orElse(null), stored.display.variantKey());
-                invokeAny(pokemon, "setSize", (double) Math.max(0.1F, stored.display.scale()));
+                applyPixelmonSize(pokemon, stored);
                 refreshPixelmonRenderState(entity, pokemon);
             });
             return entity;
@@ -199,6 +202,43 @@ public final class PixelmonEntityRenderCache {
         changed |= invoke(pokemon, "setPalette", paletteName).isPresent();
         changed |= setField(pokemon, "paletteName", paletteName);
         return changed;
+    }
+
+    private static void applyPixelmonSize(Object pokemon, StoredMob stored) {
+        Optional<Double> meters = pixelmonSizeMeters(stored);
+        if (meters.isEmpty()) return;
+        double value = meters.get();
+        invokeAny(pokemon, "setSize", value);
+        invokeAny(pokemon, "setSize", (float) value);
+        setField(pokemon, "size", value);
+        setField(pokemon, "actualSize", value);
+        setField(pokemon, "sizeMeters", value);
+    }
+
+    private static Optional<Double> pixelmonSizeMeters(StoredMob stored) {
+        return pixelmonSizeCentimeters(stored).map(cm -> cm / 100.0D);
+    }
+
+    private static Optional<Float> pixelmonSizeCentimeters(StoredMob stored) {
+        if (stored == null) return Optional.empty();
+        if (stored.pixelmonRenderSnapshot != null && stored.pixelmonRenderSnapshot.sizeCentimeters() > 0.0F) return Optional.of(stored.pixelmonRenderSnapshot.sizeCentimeters());
+        return parseCentimetersFromText(stored.display == null ? "" : stored.display.variantKey());
+    }
+
+    private static Optional<Float> parseCentimetersFromText(String text) {
+        if (text == null || text.isBlank()) return Optional.empty();
+        String sizeValue = parseVariantValue(text, "size");
+        String source = sizeValue.isBlank() ? text : sizeValue;
+        Matcher matcher = NUMBER.matcher(source);
+        if (!matcher.find()) return Optional.empty();
+        try {
+            float number = Float.parseFloat(matcher.group());
+            String lower = source.toLowerCase(java.util.Locale.ROOT);
+            if (lower.contains("cm")) return Optional.of(number);
+            return Optional.of(number <= 10.0F ? number * 100.0F : number);
+        } catch (Throwable ignored) {
+            return Optional.empty();
+        }
     }
 
     private static Optional<Object> resolveFormObject(Object species, String formName) {
@@ -378,7 +418,7 @@ public final class PixelmonEntityRenderCache {
     private static boolean looksBadId(ResourceLocation id) { return id.getPath().contains("com.") || id.getPath().contains("pixelmonmod") || id.getPath().matches("\\d+"); }
     private static Optional<Object> readPokemon(Entity entity) { return invoke(entity, "getPokemon").or(() -> invoke(entity, "pokemon")).or(() -> invoke(entity, "getPixelmon")).or(() -> readField(entity, "pokemon")).or(() -> readField(entity, "pixelmon")).or(() -> readField(entity, "pokemonData")); }
     private static String parseVariantValue(String variantKey, String key) { if (variantKey == null) return ""; for (String part : variantKey.split("\\|")) { int equals = part.indexOf('='); if (equals > 0 && part.substring(0, equals).equals(key)) return part.substring(equals + 1); } return ""; }
-    private static int payloadHash(PixelmonRenderSnapshot snapshot) { return snapshot == null || snapshot.payload() == null ? 0 : snapshot.payload().hashCode(); }
+    private static int payloadHash(PixelmonRenderSnapshot snapshot) { return snapshot == null || snapshot.payload() == null ? 0 : java.util.Objects.hash(snapshot.payload(), snapshot.sizeCentimeters()); }
 
     private static Optional<Object> invoke(Object target, String name, Object... args) { if (target == null) return Optional.empty(); try { Method method = findMethod(target.getClass(), name, args); if (method == null) return Optional.empty(); method.setAccessible(true); return Optional.ofNullable(method.invoke(target, args)); } catch (Throwable error) { warnOnce("invoke:" + target.getClass().getName() + "." + name, error); return Optional.empty(); } }
     private static Optional<Object> invokeStatic(Class<?> type, String name, Object... args) { try { Method method = findMethod(type, name, args); if (method == null || !Modifier.isStatic(method.getModifiers())) return Optional.empty(); method.setAccessible(true); return Optional.ofNullable(method.invoke(null, args)); } catch (Throwable error) { warnOnce("invokeStatic:" + type.getName() + "." + name, error); return Optional.empty(); } }
