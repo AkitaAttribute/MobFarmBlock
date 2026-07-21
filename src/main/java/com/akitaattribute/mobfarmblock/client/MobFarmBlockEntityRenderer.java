@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.block.MobFarmBlock;
@@ -12,6 +11,7 @@ import com.akitaattribute.mobfarmblock.block.MobFarmBlockEntity;
 import com.akitaattribute.mobfarmblock.config.MobFarmConfig;
 import com.akitaattribute.mobfarmblock.mob.DropRule;
 import com.akitaattribute.mobfarmblock.mob.InteractionDefinition;
+import com.akitaattribute.mobfarmblock.mob.PixelmonRenderSnapshot;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -98,18 +98,27 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
 
     private static float placedEntityScale(StoredMob stored, Entity entity, boolean inspected) {
         if (PixelmonEntityRenderCache.isPixelmonStored(stored)) {
-            float displayScale = stored.display.scale() > 0 ? stored.display.scale() : 1.0F;
-            float height = Math.max(0.75F, entity.getBbHeight() * displayScale);
-            float width = Math.max(0.75F, entity.getBbWidth() * displayScale);
-            float maxDimension = Math.max(height, width);
+            float maxDimension = Math.max(renderHeight(entity, stored), renderWidth(entity, stored));
             float scale = 1.20F / Math.max(0.1F, maxDimension);
-            scale = Math.max(0.25F, Math.min(2.25F, scale));
+            scale = Math.max(0.18F, Math.min(1.50F, scale));
             if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, maxDimension));
             return Math.max(0.08F, scale);
         }
         float scale = 0.32F;
         if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, entity.getBbHeight()));
         return scale;
+    }
+
+    private static float renderHeight(Entity entity, StoredMob stored) {
+        PixelmonRenderSnapshot snapshot = stored == null ? null : stored.pixelmonRenderSnapshot;
+        if (snapshot != null && snapshot.capturedHeight() > 0.05F) return snapshot.capturedHeight();
+        return Math.max(entity.getBbHeight(), 0.35F);
+    }
+
+    private static float renderWidth(Entity entity, StoredMob stored) {
+        PixelmonRenderSnapshot snapshot = stored == null ? null : stored.pixelmonRenderSnapshot;
+        if (snapshot != null && snapshot.capturedWidth() > 0.05F) return snapshot.capturedWidth();
+        return Math.max(entity.getBbWidth(), 0.35F);
     }
 
     private static Entity sheepRenderEntity(StoredMob stored, Minecraft minecraft) {
@@ -257,10 +266,10 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         poseStack.translate(x, y, 0.0D);
         Matrix4f matrix = poseStack.last().pose();
         VertexConsumer consumer = buffer.getBuffer(RenderType.text(sprite.atlasLocation()));
+        vertex(consumer, matrix, 0, 0, sprite.getU0(), sprite.getV0());
         vertex(consumer, matrix, 0, 16, sprite.getU0(), sprite.getV1());
         vertex(consumer, matrix, 16, 16, sprite.getU1(), sprite.getV1());
         vertex(consumer, matrix, 16, 0, sprite.getU1(), sprite.getV0());
-        vertex(consumer, matrix, 0, 0, sprite.getU0(), sprite.getV0());
         poseStack.popPose();
     }
 
