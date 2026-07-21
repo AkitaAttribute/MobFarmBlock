@@ -10,6 +10,7 @@
   "mob_farm_block.configuration.debugCobblemonJsonDump": "Debug Cobblemon JSON Dump",
   "mob_farm_block.configuration.pixelmonEntityTrackingLog": "Pixelmon Entity Tracking Log",
   "mob_farm_block.configuration.pixelmonNpcRemovalEnabled": "Pixelmon NPC Removal Enabled",
+  "mob_farm_block.configuration.pixelmonRenderReplayMode": "Pixelmon Render Replay Mode",
   "mob_farm_block.configuration.lookUiStyle": "Look UI Style",
   "mob_farm_block.configuration.pixelmonCaptureToolDropChance": "Pixelmon Capture Tool Drop Chance"
 }
