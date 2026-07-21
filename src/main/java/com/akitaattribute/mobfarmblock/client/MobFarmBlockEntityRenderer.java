@@ -50,6 +50,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     private static final int COMPACT_COLUMNS = 4;
     private static final int EXPANDED_COLUMNS = 2;
     private static final int MIN_COMPACT_COLUMN_WIDTH = 30;
+    private static final float PIXELMON_BLOCK_RENDER_HEIGHT = 1.0F;
     private static final Map<String, Sheep> SHEEP_RENDER_CACHE = new HashMap<>();
 
     public MobFarmBlockEntityRenderer(BlockEntityRendererProvider.Context context) {}
@@ -102,7 +103,8 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
 
     private static float placedEntityScale(StoredMob stored, Entity entity, boolean inspected) {
         if (PixelmonEntityRenderCache.isPixelmonStored(stored)) {
-            return inspected ? 0.24F : 0.34F;
+            float height = renderHeight(entity, stored);
+            return Math.min(1.0F, PIXELMON_BLOCK_RENDER_HEIGHT / Math.max(0.1F, height));
         }
         float scale = 0.32F;
         if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, entity.getBbHeight()));
