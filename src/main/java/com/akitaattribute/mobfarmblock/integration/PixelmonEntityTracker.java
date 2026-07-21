@@ -25,7 +25,6 @@ import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.config.MobFarmConfig;
 
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -36,6 +35,7 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 public final class PixelmonEntityTracker {
     private static final long SCAN_INTERVAL_TICKS = 200L;
     private static final long UPDATE_LOG_INTERVAL_TICKS = 1200L;
+    private static final long REMOVAL_AGE_TICKS = 6000L;
     private static final int MAX_PROBE_VALUES = 80;
     private static final int MAX_PROBE_DEPTH = 3;
     private static final Pattern TRANSLATION_KEY = Pattern.compile("key='([^']+)'");
@@ -49,12 +49,12 @@ public final class PixelmonEntityTracker {
     private PixelmonEntityTracker() {}
 
     public static void onEntityJoinLevel(EntityJoinLevelEvent event) {
-        if (!MobFarmConfig.PIXELMON_ENTITY_TRACKING_LOG.get() || event.getLevel().isClientSide()) return;
+        if (!shouldRun() || event.getLevel().isClientSide()) return;
         track(event.getEntity(), "join");
     }
 
     public static void onServerTick(ServerTickEvent.Post event) {
-        if (!MobFarmConfig.PIXELMON_ENTITY_TRACKING_LOG.get()) return;
+        if (!shouldRun()) return;
         MinecraftServer server = event.getServer();
         long tick = server.overworld().getGameTime();
         if (tick < nextScanTick) return;
@@ -66,12 +66,27 @@ public final class PixelmonEntityTracker {
         }
     }
 
+    private static boolean shouldRun() {
+        return MobFarmConfig.PIXELMON_ENTITY_TRACKING_LOG.get() || MobFarmConfig.PIXELMON_NPC_REMOVAL_ENABLED.get();
+    }
+
     private static void track(Entity entity, String source) {
-        if (!isTrackedPixelmonEntity(entity)) return;
+        if (!isTrackedPixelmonEntity(entity) || entity.isRemoved()) return;
         UUID uuid = entity.getUUID();
         long now = entity.level().getGameTime();
         long firstSeen = FIRST_SEEN_GAME_TIME.computeIfAbsent(uuid, ignored -> now);
         long observedTicks = Math.max(0L, now - firstSeen);
+        Map<String, String> probe = npcProbe(entity);
+        ProtectionInfo protection = protectionInfo(probe);
+        boolean removable = MobFarmConfig.PIXELMON_NPC_REMOVAL_ENABLED.get() && !protection.protectedNpc() && observedTicks >= REMOVAL_AGE_TICKS;
+
+        if (removable) {
+            logIfEnabled(entity, source, "removed", observedTicks, protection);
+            entity.discard();
+            return;
+        }
+
+        if (!MobFarmConfig.PIXELMON_ENTITY_TRACKING_LOG.get()) return;
         Long lastLogged = LAST_LOGGED_OBSERVED_TICKS.get(uuid);
         String action;
         if (lastLogged == null) action = "identified";
@@ -80,16 +95,13 @@ public final class PixelmonEntityTracker {
             action = "observed_age_update";
         }
         LAST_LOGGED_OBSERVED_TICKS.put(uuid, observedTicks);
-        writeLog(entity, source, action, now, firstSeen, observedTicks);
+        writeLogs(entity, source, action, observedTicks, protection);
     }
 
     private static boolean isTrackedPixelmonEntity(Entity entity) {
         if (entity == null) return false;
         ResourceLocation typeId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
         String typeText = typeId == null ? "" : typeId.toString().toLowerCase(Locale.ROOT);
-        // Only Pixelmon's NPC entity should be part of this diagnostic/removal pipeline.
-        // Do not widen this back to className.contains("trainer"), path.contains("npc"), pixelmon:statue, or other Pixelmon-owned helper entities.
-        // The old broad filter also had to exclude "pixelmon:pixelmon".equals(typeText), but that is no longer needed when the gate is exact.
         return "pixelmon:npc".equals(typeText);
     }
 
@@ -109,10 +121,10 @@ public final class PixelmonEntityTracker {
             String value = entry.getValue() == null ? "" : entry.getValue().toLowerCase(Locale.ROOT);
             String combined = key + " " + value;
             if (combined.contains("nurse") || combined.contains("healer") || combined.contains("doctor")) {
-                return new ProtectionInfo(true, "nurse", "Nurse", "role/title probe contains nurse/healer/doctor", entry.getKey(), entry.getValue());
+                return new ProtectionInfo(true, "nurse", "Nurse", "title contains nurse/healer/doctor", entry.getKey(), entry.getValue());
             }
             if (combined.contains("shopkeeper") || combined.contains("shop_keeper") || combined.contains("shop keeper") || combined.contains("merchant") || combined.contains("seller")) {
-                return new ProtectionInfo(true, "shopkeeper", "Shopkeeper", "role/title probe contains shopkeeper/merchant/seller", entry.getKey(), entry.getValue());
+                return new ProtectionInfo(true, "shopkeeper", "Shopkeeper", "title contains shopkeeper/merchant/seller", entry.getKey(), entry.getValue());
             }
         }
         for (Map.Entry<String, String> entry : probe.entrySet()) {
@@ -175,31 +187,34 @@ public final class PixelmonEntityTracker {
         return out.isEmpty() ? "Titled NPC" : out.toString();
     }
 
-    private static void writeLog(Entity entity, String source, String action, long gameTime, long firstSeenGameTime, long observedTicks) {
+    private static void logIfEnabled(Entity entity, String source, String action, long observedTicks, ProtectionInfo protection) {
+        if (!MobFarmConfig.PIXELMON_ENTITY_TRACKING_LOG.get()) return;
+        writeLogs(entity, source, action, observedTicks, protection);
+    }
+
+    private static void writeLogs(Entity entity, String source, String action, long observedTicks, ProtectionInfo protection) {
         try {
             Files.createDirectories(LOG_FILE.toAbsolutePath().getParent());
-            Map<String, String> probe = npcProbe(entity);
-            ProtectionInfo protection = protectionInfo(probe);
-            String line = jsonLine(entity, source, action, gameTime, firstSeenGameTime, observedTicks, probe, protection);
+            String line = jsonLine(entity, source, action, observedTicks, protection);
             Files.writeString(LOG_FILE, line + System.lineSeparator(), StandardCharsets.UTF_8,
                     java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
-            if (protection.protectedNpc() && PROTECTED_LOGGED.add(entity.getUUID())) writeProtectedLog(entity, protection);
+            if (protection.protectedNpc() && PROTECTED_LOGGED.add(entity.getUUID())) writeProtectedLog(entity, protection, observedTicks);
         } catch (IOException error) {
-            MobFarmBlockMod.LOGGER.warn("Failed to write Pixelmon entity tracker log", error);
+            MobFarmBlockMod.LOGGER.warn("Failed to write Pixelmon NPC tracker log", error);
         }
     }
 
-    private static void writeProtectedLog(Entity entity, ProtectionInfo protection) {
+    private static void writeProtectedLog(Entity entity, ProtectionInfo protection, long observedTicks) {
         try {
             Files.createDirectories(PROTECTED_LOG_FILE.toAbsolutePath().getParent());
-            Files.writeString(PROTECTED_LOG_FILE, protectedJsonLine(entity, protection) + System.lineSeparator(), StandardCharsets.UTF_8,
+            Files.writeString(PROTECTED_LOG_FILE, jsonLine(entity, "protected", "identified", observedTicks, protection) + System.lineSeparator(), StandardCharsets.UTF_8,
                     java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
         } catch (IOException error) {
             MobFarmBlockMod.LOGGER.warn("Failed to write protected Pixelmon NPC log", error);
         }
     }
 
-    private static String jsonLine(Entity entity, String source, String action, long gameTime, long firstSeenGameTime, long observedTicks, Map<String, String> probe, ProtectionInfo protection) {
+    private static String jsonLine(Entity entity, String source, String action, long observedTicks, ProtectionInfo protection) {
         ResourceLocation typeId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
         StringBuilder out = new StringBuilder("{");
         prop(out, "time", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME), true);
@@ -207,44 +222,16 @@ public final class PixelmonEntityTracker {
         prop(out, "action", action, true);
         prop(out, "classification", classification(protection), true);
         prop(out, "protected", protection.protectedNpc(), true);
-        prop(out, "protectedRole", protection.role(), true);
-        prop(out, "protectedWhy", protection.why(), true);
-        prop(out, "entityType", typeId == null ? "unknown" : typeId.toString(), true);
-        prop(out, "entityClass", entity.getClass().getName(), true);
+        prop(out, "name", entity.getDisplayName().getString(), true);
+        prop(out, "role", protection.role(), true);
+        prop(out, "whyProtected", protection.why(), true);
         prop(out, "uuid", entity.getUUID().toString(), true);
-        prop(out, "displayName", entity.getDisplayName().getString(), true);
-        prop(out, "customName", entity.hasCustomName() && entity.getCustomName() != null ? entity.getCustomName().getString() : null, true);
+        prop(out, "entityType", typeId == null ? "unknown" : typeId.toString(), true);
         prop(out, "dimension", entity.level().dimension().location().toString(), true);
         prop(out, "x", round(entity.getX()), true);
         prop(out, "y", round(entity.getY()), true);
         prop(out, "z", round(entity.getZ()), true);
-        prop(out, "gameTime", gameTime, true);
-        prop(out, "firstSeenGameTime", firstSeenGameTime, true);
-        prop(out, "observedAgeTicks", observedTicks, true);
-        prop(out, "observedAgeSeconds", round(observedTicks / 20.0D), true);
-        prop(out, "minecraftEntityTickCount", Math.max(0L, entity.tickCount), true);
-        prop(out, "minecraftEntityTickCountSeconds", round(Math.max(0L, entity.tickCount) / 20.0D), true);
-        out.append(quote("npcProbe")).append(':').append(mapJson(probe)).append(',');
-        out.append(quote("entityNbtSummary")).append(':').append(nbtSummary(entity));
-        out.append('}');
-        return out.toString();
-    }
-
-    private static String protectedJsonLine(Entity entity, ProtectionInfo protection) {
-        ResourceLocation typeId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
-        StringBuilder out = new StringBuilder("{");
-        prop(out, "time", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME), true);
-        prop(out, "name", entity.getDisplayName().getString(), true);
-        prop(out, "role", protection.role(), true);
-        prop(out, "whyProtected", protection.why(), true);
-        prop(out, "evidencePath", protection.evidencePath(), true);
-        prop(out, "evidenceValue", protection.evidenceValue(), true);
-        prop(out, "uuid", entity.getUUID().toString(), true);
-        prop(out, "entityType", typeId == null ? "unknown" : typeId.toString(), true);
-        prop(out, "dimension", entity.level().dimension().location().toString(), true);
-        prop(out, "x", round(entity.getX()), true);
-        prop(out, "y", round(entity.getY()), true);
-        prop(out, "z", round(entity.getZ()), false);
+        prop(out, "observedAgeSeconds", round(observedTicks / 20.0D), false);
         out.append('}');
         return out.toString();
     }
@@ -343,24 +330,6 @@ public final class PixelmonEntityTracker {
                 || lower.contains("healer");
     }
 
-    private static String nbtSummary(Entity entity) {
-        try {
-            CompoundTag tag = new CompoundTag();
-            entity.saveWithoutId(tag);
-            StringBuilder out = new StringBuilder("{");
-            int count = 0;
-            for (String key : tag.getAllKeys().stream().sorted().toList()) {
-                if (!interestingProbeName(key) && !interestingProbeValue(String.valueOf(tag.get(key)))) continue;
-                if (count++ > 0) out.append(',');
-                out.append(quote(key)).append(':').append(quote(String.valueOf(tag.get(key))));
-                if (count >= MAX_PROBE_VALUES) break;
-            }
-            return out.append('}').toString();
-        } catch (Throwable error) {
-            return quote("ERROR:" + error.getClass().getSimpleName());
-        }
-    }
-
     private static List<Field> allFields(Class<?> type) {
         List<Field> fields = new ArrayList<>();
         for (Class<?> current = type; current != null && current != Object.class; current = current.getSuperclass()) {
@@ -379,27 +348,12 @@ public final class PixelmonEntityTracker {
         return text.length() > 240 ? text.substring(0, 240) + "..." : text;
     }
 
-    private static String mapJson(Map<String, String> map) {
-        StringBuilder out = new StringBuilder("{");
-        int index = 0;
-        for (Map.Entry<String, String> entry : map.entrySet()) {
-            if (index++ > 0) out.append(',');
-            out.append(quote(entry.getKey())).append(':').append(quote(entry.getValue()));
-        }
-        return out.append('}').toString();
-    }
-
     private static double round(double value) {
         return Math.round(value * 100.0D) / 100.0D;
     }
 
     private static void prop(StringBuilder out, String key, String value, boolean comma) {
         out.append(quote(key)).append(':').append(value == null ? "null" : quote(value));
-        if (comma) out.append(',');
-    }
-
-    private static void prop(StringBuilder out, String key, long value, boolean comma) {
-        out.append(quote(key)).append(':').append(value);
         if (comma) out.append(',');
     }
 
