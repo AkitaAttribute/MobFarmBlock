@@ -97,6 +97,7 @@ public final class PixelmonEntityTracker {
         if (protection.protectedNpc()) {
             if ("nurse".equals(protection.roleKey())) return "protected_nurse";
             if ("shopkeeper".equals(protection.roleKey())) return "protected_shopkeeper";
+            if ("fixed_trainer".equals(protection.roleKey())) return "protected_fixed_trainer";
             return "protected_npc";
         }
         ResourceLocation typeId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
@@ -119,7 +120,52 @@ public final class PixelmonEntityTracker {
                 return new ProtectionInfo(true, "shopkeeper", "Shopkeeper", "role/title probe contains shopkeeper/merchant/seller", entry.getKey(), entry.getValue());
             }
         }
+        for (Map.Entry<String, String> entry : probe.entrySet()) {
+            String key = entry.getKey() == null ? "" : entry.getKey().toLowerCase(Locale.ROOT);
+            String value = entry.getValue() == null ? "" : entry.getValue().toLowerCase(Locale.ROOT);
+            if (titleLikeProbe(key) && trainerTitleValue(value)) {
+                return new ProtectionInfo(true, "fixed_trainer", protectedTrainerRole(entry.getValue()), "role/title probe contains fixed trainer title", entry.getKey(), entry.getValue());
+            }
+        }
         return ProtectionInfo.NONE;
+    }
+
+    private static boolean titleLikeProbe(String key) {
+        return key.contains("title")
+                || key.contains("role")
+                || key.contains("profession")
+                || key.contains("occupation")
+                || key.contains("job");
+    }
+
+    private static boolean trainerTitleValue(String value) {
+        String normalized = value.replace('_', ' ').replace('-', ' ').trim();
+        return normalized.equals("trainer")
+                || normalized.endsWith(" trainer")
+                || normalized.contains(" trainer ")
+                || normalized.startsWith("trainer ")
+                || normalized.contains("gym leader")
+                || normalized.contains("move tutor")
+                || normalized.contains("tutor")
+                || normalized.contains("professor");
+    }
+
+    private static String protectedTrainerRole(String value) {
+        if (value == null || value.isBlank()) return "Fixed Trainer";
+        return prettyRole(value);
+    }
+
+    private static String prettyRole(String value) {
+        String cleaned = value.replace('_', ' ').replace('-', ' ').trim();
+        if (cleaned.isEmpty()) return value;
+        StringBuilder out = new StringBuilder();
+        for (String part : cleaned.split("\\s+")) {
+            if (part.isBlank()) continue;
+            if (!out.isEmpty()) out.append(' ');
+            out.append(Character.toUpperCase(part.charAt(0)));
+            if (part.length() > 1) out.append(part.substring(1));
+        }
+        return out.toString();
     }
 
     private static void writeLog(Entity entity, String source, String action, long gameTime, long firstSeenGameTime, long observedTicks) {
@@ -281,6 +327,9 @@ public final class PixelmonEntityTracker {
                 || lower.contains("merchant")
                 || lower.contains("seller")
                 || lower.contains("trainer")
+                || lower.contains("tutor")
+                || lower.contains("professor")
+                || lower.contains("gym leader")
                 || lower.contains("npc")
                 || lower.contains("healer");
     }
