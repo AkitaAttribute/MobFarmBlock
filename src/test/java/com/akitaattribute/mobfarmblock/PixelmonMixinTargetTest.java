@@ -140,8 +140,10 @@ class PixelmonMixinTargetTest {
         String captureToolRendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/CaptureToolItemRenderer.java");
         String blockItemRendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/MobFarmBlockItemRenderer.java");
         assertTrue(rendererSource.contains("poseStack.translate(0.5D, 0.58D, 0.5D)"));
-        assertTrue(rendererSource.contains("applyPixelmonFacing(entity, yaw)"));
-        assertTrue(rendererSource.contains("minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, pixelmon ? yaw : 0.0F"));
+        assertTrue(rendererSource.contains("poseStack.mulPose(Axis.YP.rotationDegrees(yaw));"));
+        assertTrue(rendererSource.contains("applyPixelmonFacing(entity, 0.0F)"));
+        assertTrue(rendererSource.contains("return inspected ? 0.24F : 0.34F"));
+        assertTrue(rendererSource.contains("minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F"));
         assertTrue(snapshotSource.contains("capturedWidth") && snapshotSource.contains("capturedHeight"));
         assertTrue(snapshotFactorySource.contains("entity.getBbWidth()") && snapshotFactorySource.contains("entity.getBbHeight()"));
         assertTrue(captureToolRendererSource.contains("poseStack.scale(0.72F, 0.72F, 0.72F)"));
