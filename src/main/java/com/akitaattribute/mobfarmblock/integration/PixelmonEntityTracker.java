@@ -26,14 +26,12 @@ import com.akitaattribute.mobfarmblock.config.MobFarmConfig;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 public final class PixelmonEntityTracker {
-    private static final long SCAN_INTERVAL_TICKS = 200L;
+    private static final long CHECK_INTERVAL_TICKS = 200L;
     private static final long UPDATE_LOG_INTERVAL_TICKS = 1200L;
     private static final long REMOVAL_AGE_TICKS = 6000L;
     private static final int MAX_PROBE_VALUES = 80;
@@ -41,32 +39,24 @@ public final class PixelmonEntityTracker {
     private static final Pattern TRANSLATION_KEY = Pattern.compile("key='([^']+)'");
     private static final Path LOG_FILE = Path.of("config", "mob_farm_block", "debug", "pixelmon_entity_tracker", "pixelmon_entities.jsonl");
     private static final Path PROTECTED_LOG_FILE = Path.of("config", "mob_farm_block", "debug", "pixelmon_entity_tracker", "protected_pixelmon_npcs.jsonl");
-    private static final Map<UUID, Long> FIRST_SEEN_GAME_TIME = new HashMap<>();
-    private static final Map<UUID, Long> LAST_LOGGED_OBSERVED_TICKS = new HashMap<>();
+    private static final Map<UUID, TrackedNpc> TRACKED_NPCS = new HashMap<>();
     private static final Set<UUID> PROTECTED_LOGGED = new HashSet<>();
-    private static long nextScanTick = 0L;
+    private static long nextCheckTick = 0L;
 
     private PixelmonEntityTracker() {}
 
     public static void onEntityJoinLevel(EntityJoinLevelEvent event) {
         if (!shouldRun() || event.getLevel().isClientSide()) return;
-        track(event.getEntity(), "join");
+        trackLoadedEntity(event.getEntity(), "join");
     }
 
     public static void onServerTick(ServerTickEvent.Post event) {
-        if (!shouldRun()) return;
-        MinecraftServer server = event.getServer();
-        long tick = server.overworld().getGameTime();
-        if (tick < nextScanTick) return;
-        nextScanTick = tick + SCAN_INTERVAL_TICKS;
-        for (ServerLevel level : server.getAllLevels()) {
-            List<Entity> snapshot = new ArrayList<>();
-            for (Entity entity : level.getAllEntities()) {
-                if (isTrackedPixelmonEntity(entity)) snapshot.add(entity);
-            }
-            for (Entity entity : snapshot) {
-                track(entity, "scan");
-            }
+        if (!shouldRun() || TRACKED_NPCS.isEmpty()) return;
+        long tick = event.getServer().overworld().getGameTime();
+        if (tick < nextCheckTick) return;
+        nextCheckTick = tick + CHECK_INTERVAL_TICKS;
+        for (TrackedNpc tracked : new ArrayList<>(TRACKED_NPCS.values())) {
+            checkTrackedNpc(tracked, "loaded_age_check", tick);
         }
     }
 
@@ -74,12 +64,21 @@ public final class PixelmonEntityTracker {
         return MobFarmConfig.PIXELMON_ENTITY_TRACKING_LOG.get() || MobFarmConfig.PIXELMON_NPC_REMOVAL_ENABLED.get();
     }
 
-    private static void track(Entity entity, String source) {
+    private static void trackLoadedEntity(Entity entity, String source) {
         if (!isTrackedPixelmonEntity(entity) || entity.isRemoved()) return;
-        UUID uuid = entity.getUUID();
         long now = entity.level().getGameTime();
-        long firstSeen = FIRST_SEEN_GAME_TIME.computeIfAbsent(uuid, ignored -> now);
-        long observedTicks = Math.max(0L, now - firstSeen);
+        TrackedNpc tracked = TRACKED_NPCS.computeIfAbsent(entity.getUUID(), ignored -> new TrackedNpc(entity, now));
+        tracked.entity = entity;
+        checkTrackedNpc(tracked, source, now);
+    }
+
+    private static void checkTrackedNpc(TrackedNpc tracked, String source, long now) {
+        Entity entity = tracked.entity;
+        if (entity == null || entity.isRemoved() || !isTrackedPixelmonEntity(entity)) {
+            TRACKED_NPCS.remove(tracked.uuid());
+            return;
+        }
+        long observedTicks = Math.max(0L, now - tracked.firstSeenGameTime);
         Map<String, String> probe = npcProbe(entity);
         ProtectionInfo protection = protectionInfo(probe);
         boolean removable = MobFarmConfig.PIXELMON_NPC_REMOVAL_ENABLED.get() && !protection.protectedNpc() && observedTicks >= REMOVAL_AGE_TICKS;
@@ -87,18 +86,18 @@ public final class PixelmonEntityTracker {
         if (removable) {
             logIfEnabled(entity, source, "removed", observedTicks, protection);
             entity.discard();
+            TRACKED_NPCS.remove(tracked.uuid());
             return;
         }
 
         if (!MobFarmConfig.PIXELMON_ENTITY_TRACKING_LOG.get()) return;
-        Long lastLogged = LAST_LOGGED_OBSERVED_TICKS.get(uuid);
         String action;
-        if (lastLogged == null) action = "identified";
+        if (tracked.lastLoggedObservedTicks < 0L) action = "identified";
         else {
-            if (observedTicks - lastLogged < UPDATE_LOG_INTERVAL_TICKS) return;
+            if (observedTicks - tracked.lastLoggedObservedTicks < UPDATE_LOG_INTERVAL_TICKS) return;
             action = "observed_age_update";
         }
-        LAST_LOGGED_OBSERVED_TICKS.put(uuid, observedTicks);
+        tracked.lastLoggedObservedTicks = observedTicks;
         writeLogs(entity, source, action, observedTicks, protection);
     }
 
@@ -385,6 +384,23 @@ public final class PixelmonEntityTracker {
             }
         }
         return out.append('"').toString();
+    }
+
+    private static final class TrackedNpc {
+        private final UUID uuid;
+        private final long firstSeenGameTime;
+        private Entity entity;
+        private long lastLoggedObservedTicks = -1L;
+
+        private TrackedNpc(Entity entity, long firstSeenGameTime) {
+            this.uuid = entity.getUUID();
+            this.entity = entity;
+            this.firstSeenGameTime = firstSeenGameTime;
+        }
+
+        private UUID uuid() {
+            return uuid;
+        }
     }
 
     private record ProtectionInfo(boolean protectedNpc, String roleKey, String role, String why, String evidencePath, String evidenceValue) {
