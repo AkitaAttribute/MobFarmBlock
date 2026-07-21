@@ -112,7 +112,7 @@ class PixelmonMixinTargetTest {
     }
 
     @Test
-    void pixelmonNonPokemonEntityTrackerLogsTrainersAndAge() throws IOException {
+    void pixelmonNonPokemonEntityTrackerLogsTrainersAgeAndNpcProbe() throws IOException {
         String trackerSource = read("src/main/java/com/akitaattribute/mobfarmblock/integration/PixelmonEntityTracker.java");
         String modSource = read("src/main/java/com/akitaattribute/mobfarmblock/MobFarmBlockMod.java");
         String configSource = read("src/main/java/com/akitaattribute/mobfarmblock/config/MobFarmConfig.java");
@@ -134,10 +134,20 @@ class PixelmonMixinTargetTest {
                 "Pixelmon NPC entity type ids should be classified as tracked NPC entities.");
         assertTrue(trackerSource.contains("\"pixelmon:pixelmon\".equals(typeText)"),
                 "Normal Pokemon entities should be excluded from the non-Pokemon tracker.");
-        assertTrue(trackerSource.contains("entity.tickCount"),
-                "The tracker should log Minecraft's current entity tick age when identifying Pixelmon NPCs/trainers.");
-        assertTrue(trackerSource.contains("ageSeconds"),
-                "The tracker should also log a readable seconds value derived from the tick age.");
+        assertTrue(trackerSource.contains("FIRST_SEEN_GAME_TIME"),
+                "The tracker should record observed age from first detection instead of treating Minecraft tickCount as total world age.");
+        assertTrue(trackerSource.contains("observedAgeSeconds"),
+                "The tracker should log how long this mod has observed each tracked NPC.");
+        assertTrue(trackerSource.contains("minecraftEntityTickCountSeconds"),
+                "The tracker should still log Minecraft's current entity tickCount separately for comparison.");
+        assertTrue(trackerSource.contains("npcProbe"),
+                "The tracker should include a compact reflection probe to find Pixelmon NPC titles/roles such as Nurse and Shopkeeper.");
+        assertTrue(trackerSource.contains("entityNbtSummary"),
+                "The tracker should include relevant saved NBT fields so protected NPC roles can be identified.");
+        assertTrue(trackerSource.contains("protected_nurse"),
+                "Nurse or healer NPCs should be classified distinctly from removable random NPCs.");
+        assertTrue(trackerSource.contains("protected_shopkeeper"),
+                "Shopkeeper or merchant NPCs should be classified distinctly from removable random NPCs.");
     }
 
     @Test
