@@ -133,7 +133,7 @@ class PixelmonMixinTargetTest {
     }
 
     @Test
-    void pixelmonRenderersUseNaturalPreviewScaleAndMetrics() throws IOException {
+    void pixelmonRenderersUseNaturalScaleAndBlockHeightClamp() throws IOException {
         String snapshotSource = read("src/main/java/com/akitaattribute/mobfarmblock/mob/PixelmonRenderSnapshot.java");
         String snapshotFactorySource = read("src/main/java/com/akitaattribute/mobfarmblock/integration/PixelmonRenderSnapshotFactory.java");
         String rendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/MobFarmBlockEntityRenderer.java");
@@ -142,14 +142,16 @@ class PixelmonMixinTargetTest {
         assertTrue(rendererSource.contains("poseStack.translate(0.5D, 0.58D, 0.5D)"));
         assertTrue(rendererSource.contains("poseStack.mulPose(Axis.YP.rotationDegrees(yaw));"));
         assertTrue(rendererSource.contains("applyPixelmonFacing(entity, 0.0F)"));
-        assertTrue(rendererSource.contains("return inspected ? 0.24F : 0.34F"));
+        assertTrue(rendererSource.contains("PIXELMON_BLOCK_RENDER_HEIGHT / Math.max(0.1F, height)"));
+        assertTrue(rendererSource.contains("Math.min(1.0F"));
         assertTrue(rendererSource.contains("minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F"));
         assertTrue(snapshotSource.contains("capturedWidth") && snapshotSource.contains("capturedHeight"));
         assertTrue(snapshotFactorySource.contains("entity.getBbWidth()") && snapshotFactorySource.contains("entity.getBbHeight()"));
-        assertTrue(captureToolRendererSource.contains("poseStack.scale(0.72F, 0.72F, 0.72F)"));
-        assertTrue(blockItemRendererSource.contains("poseStack.scale(0.50F, 0.50F, 0.50F)"));
+        assertTrue(captureToolRendererSource.contains("poseStack.scale(1.0F, 1.0F, 1.0F)"));
+        assertTrue(blockItemRendererSource.contains("poseStack.scale(1.0F, 1.0F, 1.0F)"));
         assertTrue(captureToolRendererSource.contains("getYCentre") && blockItemRendererSource.contains("getYCentre"));
         assertTrue(captureToolRendererSource.contains("Mob Farm Pixelmon render metrics") && blockItemRendererSource.contains("Mob Farm Pixelmon render metrics"));
+        assertFalse(rendererSource.contains("return inspected ? 0.24F : 0.34F"));
         assertFalse(captureToolRendererSource.contains("fit *= 7.25F"));
         assertFalse(blockItemRendererSource.contains("fit *= 5.50F"));
     }
