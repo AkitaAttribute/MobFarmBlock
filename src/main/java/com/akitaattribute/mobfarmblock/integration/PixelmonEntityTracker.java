@@ -11,10 +11,12 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
@@ -35,8 +37,10 @@ public final class PixelmonEntityTracker {
     private static final int MAX_PROBE_VALUES = 80;
     private static final int MAX_PROBE_DEPTH = 3;
     private static final Path LOG_FILE = Path.of("config", "mob_farm_block", "debug", "pixelmon_entity_tracker", "pixelmon_entities.jsonl");
+    private static final Path PROTECTED_LOG_FILE = Path.of("config", "mob_farm_block", "debug", "pixelmon_entity_tracker", "protected_pixelmon_npcs.jsonl");
     private static final Map<UUID, Long> FIRST_SEEN_GAME_TIME = new HashMap<>();
     private static final Map<UUID, Long> LAST_LOGGED_OBSERVED_TICKS = new HashMap<>();
+    private static final Set<UUID> PROTECTED_LOGGED = new HashSet<>();
     private static long nextScanTick = 0L;
 
     private PixelmonEntityTracker() {}
@@ -89,38 +93,65 @@ public final class PixelmonEntityTracker {
         return typeText.startsWith("pixelmon:") && !className.contains("entities.pixelmon.pixelmonentity");
     }
 
-    private static String classification(Entity entity, Map<String, String> probe) {
+    private static String classification(Entity entity, ProtectionInfo protection) {
+        if (protection.protectedNpc()) return "protected_" + protection.roleKey();
         ResourceLocation typeId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
         String path = typeId == null ? "" : typeId.getPath().toLowerCase(Locale.ROOT);
         String className = entity.getClass().getName().toLowerCase(Locale.ROOT);
-        String roleText = String.join(" ", probe.keySet()) + " " + String.join(" ", probe.values());
-        roleText = roleText.toLowerCase(Locale.ROOT);
-        if (roleText.contains("nurse") || roleText.contains("healer")) return "protected_nurse";
-        if (roleText.contains("shopkeeper") || roleText.contains("shop_keeper") || roleText.contains("shop keeper") || roleText.contains("merchant") || roleText.contains("seller")) return "protected_shopkeeper";
         if (path.contains("trainer") || className.contains("trainer")) return "trainer";
         if (path.contains("npc") || className.contains("npc")) return "npc";
         return "pixelmon_non_pokemon";
     }
 
+    private static ProtectionInfo protectionInfo(Map<String, String> probe) {
+        for (Map.Entry<String, String> entry : probe.entrySet()) {
+            String key = entry.getKey() == null ? "" : entry.getKey().toLowerCase(Locale.ROOT);
+            String value = entry.getValue() == null ? "" : entry.getValue().toLowerCase(Locale.ROOT);
+            String combined = key + " " + value;
+            if (combined.contains("nurse") || combined.contains("healer")) {
+                return new ProtectionInfo(true, "nurse", "Nurse", "role/title probe contains nurse/healer", entry.getKey(), entry.getValue());
+            }
+            if (combined.contains("shopkeeper") || combined.contains("shop_keeper") || combined.contains("shop keeper") || combined.contains("merchant") || combined.contains("seller")) {
+                return new ProtectionInfo(true, "shopkeeper", "Shopkeeper", "role/title probe contains shopkeeper/merchant/seller", entry.getKey(), entry.getValue());
+            }
+        }
+        return ProtectionInfo.NONE;
+    }
+
     private static void writeLog(Entity entity, String source, String action, long gameTime, long firstSeenGameTime, long observedTicks) {
         try {
             Files.createDirectories(LOG_FILE.toAbsolutePath().getParent());
-            String line = jsonLine(entity, source, action, gameTime, firstSeenGameTime, observedTicks);
+            Map<String, String> probe = npcProbe(entity);
+            ProtectionInfo protection = protectionInfo(probe);
+            String line = jsonLine(entity, source, action, gameTime, firstSeenGameTime, observedTicks, probe, protection);
             Files.writeString(LOG_FILE, line + System.lineSeparator(), StandardCharsets.UTF_8,
                     java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+            if (protection.protectedNpc() && PROTECTED_LOGGED.add(entity.getUUID())) writeProtectedLog(entity, protection);
         } catch (IOException error) {
             MobFarmBlockMod.LOGGER.warn("Failed to write Pixelmon entity tracker log", error);
         }
     }
 
-    private static String jsonLine(Entity entity, String source, String action, long gameTime, long firstSeenGameTime, long observedTicks) {
+    private static void writeProtectedLog(Entity entity, ProtectionInfo protection) {
+        try {
+            Files.createDirectories(PROTECTED_LOG_FILE.toAbsolutePath().getParent());
+            Files.writeString(PROTECTED_LOG_FILE, protectedJsonLine(entity, protection) + System.lineSeparator(), StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (IOException error) {
+            MobFarmBlockMod.LOGGER.warn("Failed to write protected Pixelmon NPC log", error);
+        }
+    }
+
+    private static String jsonLine(Entity entity, String source, String action, long gameTime, long firstSeenGameTime, long observedTicks, Map<String, String> probe, ProtectionInfo protection) {
         ResourceLocation typeId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
-        Map<String, String> probe = npcProbe(entity);
         StringBuilder out = new StringBuilder("{");
         prop(out, "time", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME), true);
         prop(out, "source", source, true);
         prop(out, "action", action, true);
-        prop(out, "classification", classification(entity, probe), true);
+        prop(out, "classification", classification(entity, protection), true);
+        prop(out, "protected", protection.protectedNpc(), true);
+        prop(out, "protectedRole", protection.role(), true);
+        prop(out, "protectedWhy", protection.why(), true);
         prop(out, "entityType", typeId == null ? "unknown" : typeId.toString(), true);
         prop(out, "entityClass", entity.getClass().getName(), true);
         prop(out, "uuid", entity.getUUID().toString(), true);
@@ -138,6 +169,25 @@ public final class PixelmonEntityTracker {
         prop(out, "minecraftEntityTickCountSeconds", round(Math.max(0L, entity.tickCount) / 20.0D), true);
         out.append(quote("npcProbe")).append(':').append(mapJson(probe)).append(',');
         out.append(quote("entityNbtSummary")).append(':').append(nbtSummary(entity));
+        out.append('}');
+        return out.toString();
+    }
+
+    private static String protectedJsonLine(Entity entity, ProtectionInfo protection) {
+        ResourceLocation typeId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+        StringBuilder out = new StringBuilder("{");
+        prop(out, "time", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME), true);
+        prop(out, "name", entity.getDisplayName().getString(), true);
+        prop(out, "role", protection.role(), true);
+        prop(out, "whyProtected", protection.why(), true);
+        prop(out, "evidencePath", protection.evidencePath(), true);
+        prop(out, "evidenceValue", protection.evidenceValue(), true);
+        prop(out, "uuid", entity.getUUID().toString(), true);
+        prop(out, "entityType", typeId == null ? "unknown" : typeId.toString(), true);
+        prop(out, "dimension", entity.level().dimension().location().toString(), true);
+        prop(out, "x", round(entity.getX()), true);
+        prop(out, "y", round(entity.getY()), true);
+        prop(out, "z", round(entity.getZ()), false);
         out.append('}');
         return out.toString();
     }
@@ -225,6 +275,7 @@ public final class PixelmonEntityTracker {
                 || lower.contains("shop_keeper")
                 || lower.contains("shop keeper")
                 || lower.contains("merchant")
+                || lower.contains("seller")
                 || lower.contains("trainer")
                 || lower.contains("npc")
                 || lower.contains("healer");
@@ -295,6 +346,11 @@ public final class PixelmonEntityTracker {
         if (comma) out.append(',');
     }
 
+    private static void prop(StringBuilder out, String key, boolean value, boolean comma) {
+        out.append(quote(key)).append(':').append(value);
+        if (comma) out.append(',');
+    }
+
     private static String quote(String value) {
         StringBuilder out = new StringBuilder("\"");
         for (int i = 0; i < value.length(); i++) {
@@ -309,5 +365,9 @@ public final class PixelmonEntityTracker {
             }
         }
         return out.append('"').toString();
+    }
+
+    private record ProtectionInfo(boolean protectedNpc, String roleKey, String role, String why, String evidencePath, String evidenceValue) {
+        private static final ProtectionInfo NONE = new ProtectionInfo(false, "", null, null, null, null);
     }
 }
