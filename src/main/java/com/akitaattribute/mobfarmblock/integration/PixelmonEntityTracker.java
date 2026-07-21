@@ -97,7 +97,7 @@ public final class PixelmonEntityTracker {
         if (protection.protectedNpc()) {
             if ("nurse".equals(protection.roleKey())) return "protected_nurse";
             if ("shopkeeper".equals(protection.roleKey())) return "protected_shopkeeper";
-            if ("fixed_trainer".equals(protection.roleKey())) return "protected_fixed_trainer";
+            if ("titled_npc".equals(protection.roleKey())) return "protected_titled_npc";
             return "protected_npc";
         }
         ResourceLocation typeId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
@@ -122,9 +122,9 @@ public final class PixelmonEntityTracker {
         }
         for (Map.Entry<String, String> entry : probe.entrySet()) {
             String key = entry.getKey() == null ? "" : entry.getKey().toLowerCase(Locale.ROOT);
-            String value = entry.getValue() == null ? "" : entry.getValue().toLowerCase(Locale.ROOT);
-            if (titleLikeProbe(key) && trainerTitleValue(value)) {
-                return new ProtectionInfo(true, "fixed_trainer", protectedTrainerRole(entry.getValue()), "role/title probe contains fixed trainer title", entry.getKey(), entry.getValue());
+            String value = entry.getValue() == null ? "" : entry.getValue();
+            if (titleLikeProbe(key) && meaningfulTitleValue(value)) {
+                return new ProtectionInfo(true, "titled_npc", prettyRole(value), "role/title probe contains a Pixelmon NPC title", entry.getKey(), entry.getValue());
             }
         }
         return ProtectionInfo.NONE;
@@ -138,26 +138,20 @@ public final class PixelmonEntityTracker {
                 || key.contains("job");
     }
 
-    private static boolean trainerTitleValue(String value) {
-        String normalized = value.replace('_', ' ').replace('-', ' ').trim();
-        return normalized.equals("trainer")
-                || normalized.endsWith(" trainer")
-                || normalized.contains(" trainer ")
-                || normalized.startsWith("trainer ")
-                || normalized.contains("gym leader")
-                || normalized.contains("move tutor")
-                || normalized.contains("tutor")
-                || normalized.contains("professor");
-    }
-
-    private static String protectedTrainerRole(String value) {
-        if (value == null || value.isBlank()) return "Fixed Trainer";
-        return prettyRole(value);
+    private static boolean meaningfulTitleValue(String value) {
+        if (value == null) return false;
+        String normalized = value.replace('_', ' ').replace('-', ' ').trim().toLowerCase(Locale.ROOT);
+        if (normalized.isBlank()) return false;
+        if (normalized.equals("null") || normalized.equals("none") || normalized.equals("unknown")) return false;
+        if (normalized.equals("true") || normalized.equals("false")) return false;
+        if (normalized.startsWith("error:")) return false;
+        if (normalized.contains("minecraft:") || normalized.contains("pixelmon:npc") || normalized.contains("pixelmon:pixelmon")) return false;
+        return true;
     }
 
     private static String prettyRole(String value) {
-        String cleaned = value.replace('_', ' ').replace('-', ' ').trim();
-        if (cleaned.isEmpty()) return value;
+        String cleaned = value == null ? "" : value.replace('_', ' ').replace('-', ' ').trim();
+        if (cleaned.isEmpty()) return "Titled NPC";
         StringBuilder out = new StringBuilder();
         for (String part : cleaned.split("\\s+")) {
             if (part.isBlank()) continue;
