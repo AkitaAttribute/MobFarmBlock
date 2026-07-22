@@ -1,10 +1,17 @@
 package com.akitaattribute.mobfarmblock.client;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -58,6 +65,8 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     private static final float PIXELMON_BLOCK_RENDER_HEIGHT = 0.60F;
     private static final Pattern NUMBER = Pattern.compile("-?\\d+(?:\\.\\d+)?");
     private static final Map<String, Sheep> SHEEP_RENDER_CACHE = new HashMap<>();
+    private static final Set<String> LOGGED_PIXELMON_PEN_METRICS = new HashSet<>();
+    private static final Path PIXELMON_PEN_METRICS_LOG = Path.of("config", "mob_farm_block", "debug", "pixelmon_pen_render_metrics.jsonl").toAbsolutePath();
 
     public MobFarmBlockEntityRenderer(BlockEntityRendererProvider.Context context) {}
 
@@ -74,11 +83,13 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
             poseStack.pushPose();
             poseStack.translate(0.5D, 0.58D, 0.5D);
             float scale = placedEntityScale(stored, entity, inspected);
+            PixelmonPenCentering pixelmonCentering = pixelmon ? pixelmonPenCentering(entity, stored) : PixelmonPenCentering.EMPTY;
             poseStack.scale(scale, scale, scale);
             if (pixelmon) {
                 poseStack.mulPose(Axis.YP.rotationDegrees(yaw));
                 applyPixelmonFacing(entity, 0.0F);
-                applyPixelmonPenCentering(poseStack, entity, stored);
+                applyPixelmonPenCentering(poseStack, pixelmonCentering);
+                logPixelmonPenMetrics(blockEntity, stored, entity, inspected, scale, pixelmonCentering);
             } else {
                 poseStack.mulPose(Axis.YP.rotationDegrees(yaw));
             }
@@ -108,16 +119,23 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         }
     }
 
-    private static void applyPixelmonPenCentering(PoseStack poseStack, Entity entity, StoredMob stored) {
+    private static PixelmonPenCentering pixelmonPenCentering(Entity entity, StoredMob stored) {
         AABB box = entity.getBoundingBox();
         double xCenter = ((box.minX + box.maxX) * 0.5D) - entity.getX();
         double zCenter = ((box.minZ + box.maxZ) * 0.5D) - entity.getZ();
-        if (Double.isFinite(xCenter) && Math.abs(xCenter) > 0.001D) poseStack.translate(-xCenter, 0.0D, 0.0D);
-        if (Double.isFinite(zCenter) && Math.abs(zCenter) > 0.001D) poseStack.translate(0.0D, 0.0D, -zCenter);
+        double visualLength = Math.max(renderWidth(entity, stored), pixelmonRenderHeightMeters(stored).orElse(0.0F));
+        double elongatedOffset = Math.max(0.0D, visualLength - 1.0D) * 0.50D;
+        double xOffset = Double.isFinite(xCenter) && Math.abs(xCenter) > 0.001D ? -xCenter : 0.0D;
+        double zOffset = Double.isFinite(zCenter) && Math.abs(zCenter) > 0.001D ? -zCenter : 0.0D;
+        if (Double.isFinite(elongatedOffset) && elongatedOffset > 0.001D) zOffset += elongatedOffset;
+        return new PixelmonPenCentering(xOffset, zOffset, xCenter, zCenter, visualLength, elongatedOffset);
+    }
 
-        double depthLength = pixelmonRenderDepthMeters(stored, entity);
-        double depthOffset = Math.max(0.0D, depthLength - 1.0D) * 0.50D;
-        if (Double.isFinite(depthOffset) && depthOffset > 0.001D) poseStack.translate(0.0D, 0.0D, depthOffset);
+    private static void applyPixelmonPenCentering(PoseStack poseStack, PixelmonPenCentering centering) {
+        if (centering == PixelmonPenCentering.EMPTY) return;
+        if (Math.abs(centering.xOffset()) > 0.001D || Math.abs(centering.zOffset()) > 0.001D) {
+            poseStack.translate(centering.xOffset(), 0.0D, centering.zOffset());
+        }
     }
 
     private static float placedEntityScale(StoredMob stored, Entity entity, boolean inspected) {
@@ -132,15 +150,6 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         float scale = 0.32F;
         if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, entity.getBbHeight()));
         return scale;
-    }
-
-    private static double pixelmonRenderDepthMeters(StoredMob stored, Entity entity) {
-        double depth = Math.max(entity.getBbWidth(), renderWidth(entity, stored));
-        Optional<Float> sizeMeters = pixelmonRenderHeightMeters(stored);
-        if (sizeMeters.isPresent()) depth = Math.max(depth, sizeMeters.get());
-        PixelmonRenderSnapshot snapshot = stored == null ? null : stored.pixelmonRenderSnapshot;
-        if (snapshot != null && snapshot.sizeCentimeters() > 0.0F) depth = Math.max(depth, snapshot.sizeCentimeters() / 100.0D);
-        return Math.max(0.35D, depth);
     }
 
     private static Optional<Float> pixelmonRenderHeightMeters(StoredMob stored) {
@@ -184,6 +193,67 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         PixelmonRenderSnapshot snapshot = stored == null ? null : stored.pixelmonRenderSnapshot;
         if (snapshot != null && snapshot.capturedWidth() > 0.05F) width = Math.max(width, snapshot.capturedWidth());
         return width;
+    }
+
+    private static void logPixelmonPenMetrics(MobFarmBlockEntity blockEntity, StoredMob stored, Entity entity, boolean inspected, float appliedScale, PixelmonPenCentering centering) {
+        PixelmonRenderSnapshot snapshot = stored.pixelmonRenderSnapshot;
+        String dimension = blockEntity.getLevel() == null ? "unknown" : blockEntity.getLevel().dimension().location().toString();
+        BlockPos pos = blockEntity.getBlockPos();
+        String key = dimension + "|" + pos.asLong() + "|" + (stored.speciesId == null ? stored.mobId : stored.speciesId) + "|" + MobFarmConfig.PIXELMON_RENDER_REPLAY_MODE.get();
+        if (!LOGGED_PIXELMON_PEN_METRICS.add(key)) return;
+        try {
+            Files.createDirectories(PIXELMON_PEN_METRICS_LOG.getParent());
+            StringBuilder out = new StringBuilder(512);
+            out.append('{');
+            json(out, "dimension", dimension).append(',');
+            json(out, "pos", pos.getX() + "," + pos.getY() + "," + pos.getZ()).append(',');
+            json(out, "species", stored.speciesId == null ? stored.mobId.toString() : stored.speciesId.toString()).append(',');
+            json(out, "variant", stored.display == null ? "" : stored.display.variantKey()).append(',');
+            json(out, "replayMode", MobFarmConfig.PIXELMON_RENDER_REPLAY_MODE.get().name()).append(',');
+            json(out, "entityClass", entity.getClass().getName()).append(',');
+            num(out, "entityBbWidth", entity.getBbWidth()).append(',');
+            num(out, "entityBbHeight", entity.getBbHeight()).append(',');
+            num(out, "renderWidth", renderWidth(entity, stored)).append(',');
+            num(out, "renderHeight", renderHeight(entity, stored)).append(',');
+            num(out, "sizeCentimeters", snapshot == null ? 0.0F : snapshot.sizeCentimeters()).append(',');
+            num(out, "capturedWidth", snapshot == null ? 0.0F : snapshot.capturedWidth()).append(',');
+            num(out, "capturedHeight", snapshot == null ? 0.0F : snapshot.capturedHeight()).append(',');
+            num(out, "pixelmonSizeMeters", pixelmonRenderHeightMeters(stored).orElse(0.0F)).append(',');
+            bool(out, "inspected", inspected).append(',');
+            bool(out, "alwaysSmall", MobFarmConfig.PENS_ALWAYS_SHOW_SMALL.get()).append(',');
+            num(out, "appliedScale", appliedScale).append(',');
+            num(out, "bboxCenterX", centering.xCenter()).append(',');
+            num(out, "bboxCenterZ", centering.zCenter()).append(',');
+            num(out, "visualLength", centering.visualLength()).append(',');
+            num(out, "elongatedDepthOffset", centering.elongatedDepthOffset()).append(',');
+            num(out, "finalXOffset", centering.xOffset()).append(',');
+            num(out, "finalZOffset", centering.zOffset());
+            out.append('}').append(System.lineSeparator());
+            Files.writeString(PIXELMON_PEN_METRICS_LOG, out.toString(), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (IOException error) {
+            MobFarmBlockMod.LOGGER.warn("Failed to write Pixelmon pen render metrics", error);
+        }
+    }
+
+    private static StringBuilder json(StringBuilder out, String name, String value) {
+        out.append('"').append(name).append("\":\"");
+        String safe = value == null ? "" : value;
+        for (int i = 0; i < safe.length(); i++) {
+            char c = safe.charAt(i);
+            if (c == '\\' || c == '"') out.append('\\');
+            if (c == '\n') out.append("\\n");
+            else if (c == '\r') out.append("\\r");
+            else out.append(c);
+        }
+        return out.append('"');
+    }
+
+    private static StringBuilder num(StringBuilder out, String name, double value) {
+        return out.append('"').append(name).append("\":").append(Double.isFinite(value) ? value : 0.0D);
+    }
+
+    private static StringBuilder bool(StringBuilder out, String name, boolean value) {
+        return out.append('"').append(name).append("\":").append(value);
     }
 
     private static Entity sheepRenderEntity(StoredMob stored, Minecraft minecraft) {
@@ -461,6 +531,9 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     private static String itemLabel(ItemStack stack, ResourceLocation fallbackId) {
         String label = stack.getHoverName().getString();
         return label == null || label.isBlank() ? MobDisplayNames.prettyName(fallbackId.getPath()) : label;
+    }
+    private record PixelmonPenCentering(double xOffset, double zOffset, double xCenter, double zCenter, double visualLength, double elongatedDepthOffset) {
+        private static final PixelmonPenCentering EMPTY = new PixelmonPenCentering(0.0D, 0.0D, 0.0D, 0.0D, 0.0D, 0.0D);
     }
     private record LookRow(ItemStack icon, String label, String value, int labelColor, int valueColor) {}
 }
