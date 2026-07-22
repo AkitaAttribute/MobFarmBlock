@@ -50,12 +50,16 @@ public final class PixelmonPenRenderMetricsDumper {
         BlockPos center = minecraft.player.blockPosition();
         int radius = 16;
         for (BlockPos pos : BlockPos.betweenClosed(center.offset(-radius, -4, -radius), center.offset(radius, 4, radius))) {
-            if (!(minecraft.level.getBlockEntity(pos) instanceof MobFarmBlockEntity blockEntity)) continue;
-            StoredMob stored = blockEntity.getStored();
-            if (!PixelmonEntityRenderCache.isPixelmonStored(stored)) continue;
-            Entity entity = PixelmonEntityRenderCache.getOrCreate(stored);
-            if (entity == null) continue;
-            log(blockEntity, stored, entity);
+            try {
+                if (!(minecraft.level.getBlockEntity(pos) instanceof MobFarmBlockEntity blockEntity)) continue;
+                StoredMob stored = blockEntity.getStored();
+                if (!PixelmonEntityRenderCache.isPixelmonStored(stored)) continue;
+                Entity entity = PixelmonEntityRenderCache.getOrCreate(stored);
+                if (entity == null) continue;
+                log(blockEntity, stored, entity);
+            } catch (Throwable error) {
+                MobFarmBlockMod.LOGGER.warn("Skipping Pixelmon pen render metrics for {} after diagnostic probe failed", pos, error);
+            }
         }
     }
 
@@ -126,7 +130,8 @@ public final class PixelmonPenRenderMetricsDumper {
     }
 
     private static Object firstValue(Object a, Object b, Object c, Object d, Object e, Object f, Object g, List<String> names) {
-        for (Object source : List.of(a, b, c, d, e, f, g)) {
+        Object[] sources = new Object[] { a, b, c, d, e, f, g };
+        for (Object source : sources) {
             if (source == null) continue;
             for (String name : names) {
                 Optional<Object> value = name.startsWith("get") ? invoke(source, name) : readField(source, name);
