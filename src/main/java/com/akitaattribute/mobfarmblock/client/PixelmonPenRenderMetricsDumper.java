@@ -77,15 +77,23 @@ public final class PixelmonPenRenderMetricsDumper {
         Object formObject = value(effectivePokemon, "getForm", "form");
         Object paletteObject = value(effectivePokemon, "getPalette", "palette");
         Object renderer = renderer(entity);
-        Object modelData = firstValue(renderer, entity, effectivePokemon, speciesObject, formObject, paletteObject, delegate, List.of(
+        List<String> modelNames = List.of(
                 "getModelData", "modelData", "getRenderData", "renderData", "getModel", "model", "getBaseModel", "baseModel",
                 "getBakedModel", "bakedModel", "getDimensions", "dimensions", "getBounds", "bounds"
+        );
+        Object modelData = firstValue(renderer, entity, effectivePokemon, speciesObject, formObject, paletteObject, delegate, modelNames);
+        Object modelDataFirst = firstIterableValue(modelData);
+        Object modelDataModel = firstValue(modelDataFirst, modelData, renderer, entity, effectivePokemon, null, null, modelNames);
+        Object formDimensions = firstValue(formObject, speciesObject, effectivePokemon, entity, modelDataFirst, modelData, renderer, List.of(
+                "getDimensions", "dimensions", "getModelDimensions", "modelDimensions", "getBaseDimensions", "baseDimensions",
+                "getBounds", "bounds", "getHitbox", "hitbox", "getBoundingBox", "boundingBox"
         ));
+        Object formDimensionsFirst = firstIterableValue(formDimensions);
 
         PixelmonRenderSnapshot snapshot = stored.pixelmonRenderSnapshot;
         try {
             Files.createDirectories(LOG_FILE.getParent());
-            StringBuilder out = new StringBuilder(4096);
+            StringBuilder out = new StringBuilder(8192);
             out.append('{');
             json(out, "source", "client_scan_extended").append(',');
             json(out, "dimension", dimension).append(',');
@@ -101,6 +109,10 @@ public final class PixelmonPenRenderMetricsDumper {
             json(out, "formObjectClass", className(formObject)).append(',');
             json(out, "paletteObjectClass", className(paletteObject)).append(',');
             json(out, "modelDataClass", className(modelData)).append(',');
+            json(out, "modelDataFirstClass", className(modelDataFirst)).append(',');
+            json(out, "modelDataModelClass", className(modelDataModel)).append(',');
+            json(out, "formDimensionsClass", className(formDimensions)).append(',');
+            json(out, "formDimensionsFirstClass", className(formDimensionsFirst)).append(',');
             num(out, "entityBbWidth", entity.getBbWidth()).append(',');
             num(out, "entityBbHeight", entity.getBbHeight()).append(',');
             num(out, "capturedWidth", snapshot == null ? 0.0F : snapshot.capturedWidth()).append(',');
@@ -111,9 +123,13 @@ public final class PixelmonPenRenderMetricsDumper {
             json(out, "delegateDimensionHints", inspect(delegate)).append(',');
             json(out, "speciesDimensionHints", inspect(speciesObject)).append(',');
             json(out, "formDimensionHints", inspect(formObject)).append(',');
+            json(out, "formDimensionsObjectHints", inspect(formDimensions)).append(',');
+            json(out, "formDimensionsFirstHints", inspect(formDimensionsFirst)).append(',');
             json(out, "paletteDimensionHints", inspect(paletteObject)).append(',');
             json(out, "rendererDimensionHints", inspect(renderer)).append(',');
-            json(out, "modelDimensionHints", inspect(modelData));
+            json(out, "modelDimensionHints", inspect(modelData)).append(',');
+            json(out, "modelFirstDimensionHints", inspect(modelDataFirst)).append(',');
+            json(out, "modelDataModelHints", inspect(modelDataModel));
             out.append('}').append(System.lineSeparator());
             Files.writeString(LOG_FILE, out.toString(), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (IOException error) {
@@ -133,12 +149,30 @@ public final class PixelmonPenRenderMetricsDumper {
         Object[] sources = new Object[] { a, b, c, d, e, f, g };
         for (Object source : sources) {
             if (source == null) continue;
-            for (String name : names) {
-                Optional<Object> value = name.startsWith("get") ? invoke(source, name) : readField(source, name);
-                if (value.isPresent()) return value.get();
+            for (Object candidate : iterableValues(source)) {
+                for (String name : names) {
+                    Optional<Object> value = name.startsWith("get") ? invoke(candidate, name) : readField(candidate, name);
+                    if (value.isPresent()) return value.get();
+                }
             }
         }
         return null;
+    }
+
+    private static Object firstIterableValue(Object value) {
+        for (Object item : iterableValues(value)) {
+            if (item != null && item != value) return item;
+        }
+        return null;
+    }
+
+    private static List<Object> iterableValues(Object value) {
+        if (value == null) return List.of();
+        ArrayList<Object> out = new ArrayList<>();
+        if (value instanceof Iterable<?> iterable) for (Object item : iterable) out.add(item);
+        else if (value.getClass().isArray()) for (int i = 0; i < java.lang.reflect.Array.getLength(value); i++) out.add(java.lang.reflect.Array.get(value, i));
+        else out.add(value);
+        return out;
     }
 
     private static Object value(Object target, String getter, String field) {
@@ -149,15 +183,22 @@ public final class PixelmonPenRenderMetricsDumper {
     private static String inspect(Object target) {
         if (target == null) return "";
         List<String> parts = new ArrayList<>();
-        inspectMethods(target, parts);
-        inspectFields(target, parts);
+        int index = 0;
+        for (Object item : iterableValues(target)) {
+            if (item == null) continue;
+            if (item != target) parts.add("item" + index + "Class=" + className(item));
+            inspectMethods(item, parts);
+            inspectFields(item, parts);
+            index++;
+            if (parts.size() >= 160) break;
+        }
         return String.join(";", parts);
     }
 
     private static void inspectMethods(Object target, List<String> parts) {
         for (Class<?> type = target.getClass(); type != null && type != Object.class; type = type.getSuperclass()) {
             for (Method method : type.getDeclaredMethods()) {
-                if (parts.size() >= 120) return;
+                if (parts.size() >= 160) return;
                 if (method.getParameterCount() != 0 || method.getReturnType() == Void.TYPE) continue;
                 String name = method.getName();
                 if (!interesting(name)) continue;
@@ -175,7 +216,7 @@ public final class PixelmonPenRenderMetricsDumper {
     private static void inspectFields(Object target, List<String> parts) {
         for (Class<?> type = target.getClass(); type != null && type != Object.class; type = type.getSuperclass()) {
             for (Field field : type.getDeclaredFields()) {
-                if (parts.size() >= 120) return;
+                if (parts.size() >= 160) return;
                 if (Modifier.isStatic(field.getModifiers())) continue;
                 String name = field.getName();
                 if (!interesting(name)) continue;
@@ -193,7 +234,8 @@ public final class PixelmonPenRenderMetricsDumper {
         String lower = name.toLowerCase(java.util.Locale.ROOT);
         return lower.contains("dimension") || lower.contains("width") || lower.contains("height") || lower.contains("length")
                 || lower.contains("depth") || lower.contains("scale") || lower.contains("size") || lower.contains("bounds")
-                || lower.contains("model") || lower.contains("offset") || lower.contains("center") || lower.contains("radius");
+                || lower.contains("model") || lower.contains("offset") || lower.contains("center") || lower.contains("radius")
+                || lower.equals("x") || lower.equals("y") || lower.equals("z");
     }
 
     private static void append(List<String> parts, String name, Object value) {
