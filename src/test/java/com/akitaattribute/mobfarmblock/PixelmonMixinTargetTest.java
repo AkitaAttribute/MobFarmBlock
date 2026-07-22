@@ -121,15 +121,17 @@ class PixelmonMixinTargetTest {
     }
 
     @Test
-    void pixelmonHarvestUiShowsReadyCooldownItemNamesAndCapitalizedSpecies() throws IOException {
+    void storedMobNamesFlowToItemsBlocksAndLookUi() throws IOException {
+        String helperSource = read("src/main/java/com/akitaattribute/mobfarmblock/mob/MobDisplayNames.java");
+        String captureSource = read("src/main/java/com/akitaattribute/mobfarmblock/item/CaptureToolItem.java");
+        String blockItemSource = read("src/main/java/com/akitaattribute/mobfarmblock/item/MobFarmBlockItem.java");
+        String blockEntitySource = read("src/main/java/com/akitaattribute/mobfarmblock/block/MobFarmBlockEntity.java");
         String rendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/MobFarmBlockEntityRenderer.java");
-        assertTrue(rendererSource.contains("isPixelmonDropHarvest"));
-        assertTrue(rendererSource.contains("pixelmonDropRows"));
-        assertTrue(rendererSource.contains("readyValue(stored, MobFarmBlockMod.id(\"pixelmon_drops\"), now)"));
-        assertTrue(rendererSource.contains("readyColor(stored, MobFarmBlockMod.id(\"pixelmon_drops\"), now)"));
-        assertTrue(rendererSource.contains("itemLabel(stack, rule.itemId())"));
-        assertTrue(rendererSource.contains("private static String mobLabel(StoredMob stored) { return prettyName"));
-        assertTrue(rendererSource.contains("Character.toUpperCase(part.charAt(0))"));
+        assertTrue(helperSource.contains("capturedName") && helperSource.contains("penName") && helperSource.contains("speciesId != null ? stored.speciesId : stored.mobId"));
+        assertTrue(captureSource.contains("MobDisplayNames.capturedName(stored)"));
+        assertTrue(blockItemSource.contains("MobDisplayNames.penName(stored)"));
+        assertTrue(blockEntitySource.contains("implements Nameable") && blockEntitySource.contains("MobDisplayNames.penName(stored)"));
+        assertTrue(rendererSource.contains("private static String mobLabel(StoredMob stored) { return MobDisplayNames.mobName(stored); }"));
     }
 
     @Test
@@ -142,12 +144,16 @@ class PixelmonMixinTargetTest {
         String rendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/MobFarmBlockEntityRenderer.java");
         String captureToolRendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/CaptureToolItemRenderer.java");
         String blockItemRendererSource = read("src/main/java/com/akitaattribute/mobfarmblock/client/MobFarmBlockItemRenderer.java");
+        String keySource = read("src/main/java/com/akitaattribute/mobfarmblock/client/MobFarmClientKeys.java");
         assertTrue(configSource.contains("enum PixelmonRenderReplayMode"));
         assertTrue(configSource.contains("HYBRID_ALL") && configSource.contains("ENTITY_PAYLOAD_ONLY") && configSource.contains("POKEMON_FACTORY_SIZE_AFTER_ENTITY"));
         assertTrue(configSource.contains("PIXELMON_RENDER_REPLAY_MODE") && configSource.contains("defineEnum(\"pixelmonRenderReplayMode\""));
-        assertTrue(langSource.contains("Pixelmon Render Replay Mode"));
+        assertTrue(configSource.contains("PENS_ALWAYS_SHOW_SMALL") && configSource.contains("define(\"pensAlwaysShowSmall\", true)"));
+        assertTrue(langSource.contains("Pixelmon Render Replay Mode") && langSource.contains("Pens Always Show Small"));
+        assertTrue(keySource.contains("InputConstants.UNKNOWN") && keySource.contains("PENS_ALWAYS_SHOW_SMALL.set(next)"));
         assertTrue(rendererSource.contains("private static final float PIXELMON_BLOCK_RENDER_HEIGHT = 0.60F"));
-        assertTrue(rendererSource.contains("if (!inspected) return 1.0F;"));
+        assertTrue(rendererSource.contains("boolean shrink = inspected || MobFarmConfig.PENS_ALWAYS_SHOW_SMALL.get()"));
+        assertTrue(rendererSource.contains("applyPixelmonPenCentering") && rendererSource.contains("entity.getBoundingBox()"));
         assertTrue(rendererSource.contains("float renderedHeight = renderHeight(entity, stored)"));
         assertTrue(rendererSource.contains("renderedHeight > PIXELMON_BLOCK_RENDER_HEIGHT"));
         assertTrue(rendererSource.contains("PIXELMON_BLOCK_RENDER_HEIGHT / Math.max(0.1F, renderedHeight)"));
