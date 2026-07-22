@@ -1,24 +1,42 @@
 package com.akitaattribute.mobfarmblock.block;
 
+import com.akitaattribute.mobfarmblock.mob.MobDisplayNames;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
 import com.akitaattribute.mobfarmblock.registry.ModBlocks;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.world.Nameable;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 /** Stores abstract mob profiles and timestamps only; it never stores or simulates live entities. */
-public class MobFarmBlockEntity extends BlockEntity {
+public class MobFarmBlockEntity extends BlockEntity implements Nameable {
     private StoredMob stored = StoredMob.empty();
 
     public MobFarmBlockEntity(BlockPos pos, BlockState state) { super(ModBlocks.MOB_FARM_BLOCK_ENTITY.get(), pos, state); }
     public StoredMob getStored() { return stored; }
     public void setStored(StoredMob stored) { this.stored = stored; sync(); }
+
+    @Override
+    public Component getName() {
+        return stored.isEmpty() ? Component.translatable("block.mob_farm_block.mob_farm_block") : Component.literal(MobDisplayNames.penName(stored));
+    }
+
+    @Override
+    public boolean hasCustomName() {
+        return !stored.isEmpty();
+    }
+
+    @Override
+    public Component getCustomName() {
+        return stored.isEmpty() ? null : Component.literal(MobDisplayNames.penName(stored));
+    }
 
     public InsertResult insertOrMergeDetailed(StoredMob incoming) {
         StoredMob previous = stored.copyWithCount(stored.count);
