@@ -133,7 +133,7 @@ class PixelmonMixinTargetTest {
     }
 
     @Test
-    void pixelmonRenderersExposeReplayModesAndDeepSizeApply() throws IOException {
+    void pixelmonRenderersExposeReplayModesAndPreviewClamps() throws IOException {
         String configSource = read("src/main/java/com/akitaattribute/mobfarmblock/config/MobFarmConfig.java");
         String langSource = read("src/main/resources/assets/mob_farm_block/lang/en_us.json");
         String snapshotSource = read("src/main/java/com/akitaattribute/mobfarmblock/mob/PixelmonRenderSnapshot.java");
@@ -146,22 +146,20 @@ class PixelmonMixinTargetTest {
         assertTrue(configSource.contains("HYBRID_ALL") && configSource.contains("ENTITY_PAYLOAD_ONLY") && configSource.contains("POKEMON_FACTORY_SIZE_AFTER_ENTITY"));
         assertTrue(configSource.contains("PIXELMON_RENDER_REPLAY_MODE") && configSource.contains("defineEnum(\"pixelmonRenderReplayMode\""));
         assertTrue(langSource.contains("Pixelmon Render Replay Mode"));
-        assertTrue(rendererSource.contains("poseStack.translate(0.5D, 0.58D, 0.5D)"));
-        assertTrue(rendererSource.contains("poseStack.mulPose(Axis.YP.rotationDegrees(yaw));"));
-        assertTrue(rendererSource.contains("applyPixelmonFacing(entity, 0.0F)"));
+        assertTrue(rendererSource.contains("private static final float PIXELMON_BLOCK_RENDER_HEIGHT = 0.60F"));
         assertTrue(rendererSource.contains("if (!inspected) return 1.0F;"));
         assertTrue(rendererSource.contains("float renderedHeight = renderHeight(entity, stored)"));
         assertTrue(rendererSource.contains("renderedHeight > PIXELMON_BLOCK_RENDER_HEIGHT"));
         assertTrue(rendererSource.contains("PIXELMON_BLOCK_RENDER_HEIGHT / Math.max(0.1F, renderedHeight)"));
-        assertTrue(rendererSource.contains("float height = Math.max(entity.getBbHeight(), 0.35F)"));
         assertTrue(snapshotSource.contains("sizeCentimeters"));
         assertTrue(snapshotFactorySource.contains("getSizeInCm") && snapshotFactorySource.contains("sizeCentimeters(entity)"));
         assertTrue(renderCacheSource.contains("MobFarmConfig.PIXELMON_RENDER_REPLAY_MODE.get()"));
         assertTrue(renderCacheSource.contains("applyPixelmonRenderReplay") && renderCacheSource.contains("applyPixelmonSizeDeep"));
         assertTrue(renderCacheSource.contains("setSizeInCm") && renderCacheSource.contains("setSizeMeters") && renderCacheSource.contains("delegate"));
         assertTrue(renderCacheSource.contains("payload_after_load") && renderCacheSource.contains("after_entity"));
-        assertTrue(captureToolRendererSource.contains("poseStack.scale(1.0F, 1.0F, 1.0F)"));
-        assertTrue(blockItemRendererSource.contains("poseStack.scale(1.0F, 1.0F, 1.0F)"));
+        assertTrue(captureToolRendererSource.contains("PIXELMON_CAPTURE_PREVIEW_HEIGHT") && captureToolRendererSource.contains("pixelmonPreviewScale"));
+        assertTrue(blockItemRendererSource.contains("PIXELMON_PEN_ITEM_PREVIEW_HEIGHT") && blockItemRendererSource.contains("pixelmonPreviewScale"));
+        assertTrue(captureToolRendererSource.contains("visualDimension") && captureToolRendererSource.contains("appliedScale"));
         assertFalse(rendererSource.contains("return inspected ? 0.24F : 0.34F"));
         assertFalse(captureToolRendererSource.contains("fit *= 7.25F"));
         assertFalse(blockItemRendererSource.contains("fit *= 5.50F"));
