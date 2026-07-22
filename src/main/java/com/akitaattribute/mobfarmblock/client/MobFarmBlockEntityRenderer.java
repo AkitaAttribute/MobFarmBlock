@@ -108,8 +108,10 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     private static float placedEntityScale(StoredMob stored, Entity entity, boolean inspected) {
         if (PixelmonEntityRenderCache.isPixelmonStored(stored)) {
             if (!inspected) return 1.0F;
-            float height = pixelmonRenderHeightMeters(stored).orElseGet(() -> renderHeight(entity, stored));
-            return Math.min(1.0F, PIXELMON_BLOCK_RENDER_HEIGHT / Math.max(0.1F, height));
+            float renderedHeight = renderHeight(entity, stored);
+            return renderedHeight > PIXELMON_BLOCK_RENDER_HEIGHT
+                    ? PIXELMON_BLOCK_RENDER_HEIGHT / Math.max(0.1F, renderedHeight)
+                    : 1.0F;
         }
         float scale = 0.32F;
         if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, entity.getBbHeight()));
@@ -146,9 +148,10 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     }
 
     private static float renderHeight(Entity entity, StoredMob stored) {
+        float height = Math.max(entity.getBbHeight(), 0.35F);
         PixelmonRenderSnapshot snapshot = stored == null ? null : stored.pixelmonRenderSnapshot;
-        if (snapshot != null && snapshot.capturedHeight() > 0.05F) return snapshot.capturedHeight();
-        return Math.max(entity.getBbHeight(), 0.35F);
+        if (snapshot != null && snapshot.capturedHeight() > 0.05F) height = Math.max(height, snapshot.capturedHeight());
+        return height;
     }
 
     private static float renderWidth(Entity entity, StoredMob stored) {
