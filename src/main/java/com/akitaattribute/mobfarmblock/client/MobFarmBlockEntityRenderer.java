@@ -14,6 +14,7 @@ import com.akitaattribute.mobfarmblock.block.MobFarmBlockEntity;
 import com.akitaattribute.mobfarmblock.config.MobFarmConfig;
 import com.akitaattribute.mobfarmblock.mob.DropRule;
 import com.akitaattribute.mobfarmblock.mob.InteractionDefinition;
+import com.akitaattribute.mobfarmblock.mob.MobDisplayNames;
 import com.akitaattribute.mobfarmblock.mob.PixelmonRenderSnapshot;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -40,6 +41,7 @@ import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import org.joml.Matrix4f;
@@ -76,6 +78,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
             if (pixelmon) {
                 poseStack.mulPose(Axis.YP.rotationDegrees(yaw));
                 applyPixelmonFacing(entity, 0.0F);
+                applyPixelmonPenCentering(poseStack, entity, stored);
             } else {
                 poseStack.mulPose(Axis.YP.rotationDegrees(yaw));
             }
@@ -105,9 +108,18 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         }
     }
 
+    private static void applyPixelmonPenCentering(PoseStack poseStack, Entity entity, StoredMob stored) {
+        AABB box = entity.getBoundingBox();
+        double xCenter = ((box.minX + box.maxX) * 0.5D) - entity.getX();
+        double zCenter = ((box.minZ + box.maxZ) * 0.5D) - entity.getZ();
+        if (Double.isFinite(xCenter) && Math.abs(xCenter) > 0.001D) poseStack.translate(-xCenter, 0.0D, 0.0D);
+        if (Double.isFinite(zCenter) && Math.abs(zCenter) > 0.001D) poseStack.translate(0.0D, 0.0D, -zCenter);
+    }
+
     private static float placedEntityScale(StoredMob stored, Entity entity, boolean inspected) {
         if (PixelmonEntityRenderCache.isPixelmonStored(stored)) {
-            if (!inspected) return 1.0F;
+            boolean shrink = inspected || MobFarmConfig.PENS_ALWAYS_SHOW_SMALL.get();
+            if (!shrink) return 1.0F;
             float renderedHeight = renderHeight(entity, stored);
             return renderedHeight > PIXELMON_BLOCK_RENDER_HEIGHT
                     ? PIXELMON_BLOCK_RENDER_HEIGHT / Math.max(0.1F, renderedHeight)
@@ -431,22 +443,10 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     private static int readyColor(StoredMob stored, ResourceLocation action, long now) { return now >= stored.readyAtTicks.getOrDefault(action, 0L) ? TEXT_GREEN : TEXT_YELLOW; }
     private static String formatChance(double chance) { return Math.round(chance * 100.0D) + "%"; }
     private static int rowWidth(Font font, LookRow row, boolean showValue) { return 16 + font.width(row.label()) + (showValue && !row.value().isBlank() ? 6 + font.width(row.value()) : 0); }
-    private static String mobLabel(StoredMob stored) { return prettyName(stored.speciesId != null ? stored.speciesId.getPath() : stored.mobId.getPath()); }
+    private static String mobLabel(StoredMob stored) { return MobDisplayNames.mobName(stored); }
     private static String itemLabel(ItemStack stack, ResourceLocation fallbackId) {
         String label = stack.getHoverName().getString();
-        return label == null || label.isBlank() ? prettyName(fallbackId.getPath()) : label;
-    }
-    private static String prettyName(String value) {
-        if (value == null || value.isBlank()) return "";
-        String[] parts = value.replace('-', '_').split("_");
-        StringBuilder result = new StringBuilder();
-        for (String part : parts) {
-            if (part.isBlank()) continue;
-            if (!result.isEmpty()) result.append(' ');
-            result.append(Character.toUpperCase(part.charAt(0)));
-            if (part.length() > 1) result.append(part.substring(1));
-        }
-        return result.isEmpty() ? value : result.toString();
+        return label == null || label.isBlank() ? MobDisplayNames.prettyName(fallbackId.getPath()) : label;
     }
     private record LookRow(ItemStack icon, String label, String value, int labelColor, int valueColor) {}
 }
