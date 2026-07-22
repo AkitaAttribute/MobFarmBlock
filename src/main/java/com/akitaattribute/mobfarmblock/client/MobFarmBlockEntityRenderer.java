@@ -53,7 +53,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     private static final int COMPACT_COLUMNS = 4;
     private static final int EXPANDED_COLUMNS = 2;
     private static final int MIN_COMPACT_COLUMN_WIDTH = 30;
-    private static final float PIXELMON_BLOCK_RENDER_HEIGHT = 1.0F;
+    private static final float PIXELMON_BLOCK_RENDER_HEIGHT = 0.60F;
     private static final Pattern NUMBER = Pattern.compile("-?\\d+(?:\\.\\d+)?");
     private static final Map<String, Sheep> SHEEP_RENDER_CACHE = new HashMap<>();
 
