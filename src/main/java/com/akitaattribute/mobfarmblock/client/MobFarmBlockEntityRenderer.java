@@ -112,11 +112,12 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         AABB box = entity.getBoundingBox();
         double xCenter = ((box.minX + box.maxX) * 0.5D) - entity.getX();
         double zCenter = ((box.minZ + box.maxZ) * 0.5D) - entity.getZ();
-        double visualLength = Math.max(renderWidth(entity, stored), pixelmonRenderHeightMeters(stored).orElse(0.0F));
-        double elongatedOffset = Math.max(0.0D, visualLength - 1.0D) * 0.50D;
-        if (Double.isFinite(elongatedOffset) && elongatedOffset > 0.001D) poseStack.translate(elongatedOffset, 0.0D, 0.0D);
         if (Double.isFinite(xCenter) && Math.abs(xCenter) > 0.001D) poseStack.translate(-xCenter, 0.0D, 0.0D);
         if (Double.isFinite(zCenter) && Math.abs(zCenter) > 0.001D) poseStack.translate(0.0D, 0.0D, -zCenter);
+
+        double depthLength = pixelmonRenderDepthMeters(stored, entity);
+        double depthOffset = Math.max(0.0D, depthLength - 1.0D) * 0.50D;
+        if (Double.isFinite(depthOffset) && depthOffset > 0.001D) poseStack.translate(0.0D, 0.0D, depthOffset);
     }
 
     private static float placedEntityScale(StoredMob stored, Entity entity, boolean inspected) {
@@ -131,6 +132,15 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         float scale = 0.32F;
         if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, entity.getBbHeight()));
         return scale;
+    }
+
+    private static double pixelmonRenderDepthMeters(StoredMob stored, Entity entity) {
+        double depth = Math.max(entity.getBbWidth(), renderWidth(entity, stored));
+        Optional<Float> sizeMeters = pixelmonRenderHeightMeters(stored);
+        if (sizeMeters.isPresent()) depth = Math.max(depth, sizeMeters.get());
+        PixelmonRenderSnapshot snapshot = stored == null ? null : stored.pixelmonRenderSnapshot;
+        if (snapshot != null && snapshot.sizeCentimeters() > 0.0F) depth = Math.max(depth, snapshot.sizeCentimeters() / 100.0D);
+        return Math.max(0.35D, depth);
     }
 
     private static Optional<Float> pixelmonRenderHeightMeters(StoredMob stored) {
