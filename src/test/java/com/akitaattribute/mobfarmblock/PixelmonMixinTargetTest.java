@@ -158,6 +158,7 @@ class PixelmonMixinTargetTest {
         assertTrue(renderCacheSource.contains("setSizeInCm") && renderCacheSource.contains("setSizeMeters") && renderCacheSource.contains("delegate"));
         assertTrue(renderCacheSource.contains("payload_after_load") && renderCacheSource.contains("after_entity"));
         assertTrue(captureToolRendererSource.contains("PIXELMON_CAPTURE_PREVIEW_HEIGHT") && captureToolRendererSource.contains("pixelmonPreviewScale"));
+        assertTrue(captureToolRendererSource.contains("poseStack.translate(0.70D, 0.84D, 0.08D)"));
         assertTrue(blockItemRendererSource.contains("PIXELMON_PEN_ITEM_PREVIEW_HEIGHT") && blockItemRendererSource.contains("pixelmonPreviewScale"));
         assertTrue(captureToolRendererSource.contains("visualDimension") && captureToolRendererSource.contains("appliedScale"));
         assertFalse(rendererSource.contains("return inspected ? 0.24F : 0.34F"));
