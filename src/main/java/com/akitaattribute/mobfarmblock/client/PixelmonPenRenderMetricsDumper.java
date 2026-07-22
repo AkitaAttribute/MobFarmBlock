@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,18 +16,28 @@ import java.util.Optional;
 import java.util.Set;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
+import com.akitaattribute.mobfarmblock.block.MobFarmBlock;
 import com.akitaattribute.mobfarmblock.block.MobFarmBlockEntity;
 import com.akitaattribute.mobfarmblock.config.MobFarmConfig;
 import com.akitaattribute.mobfarmblock.mob.PixelmonRenderSnapshot;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.math.Axis;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.phys.AABB;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import org.joml.Matrix4f;
+import org.joml.Vector3f;
 
 /**
  * Debug-only client scanner that appends deeper Pixelmon model/render metadata for loaded Mob Farm pens.
@@ -77,18 +88,16 @@ public final class PixelmonPenRenderMetricsDumper {
         Object formObject = value(effectivePokemon, "getForm", "form");
         Object paletteObject = value(effectivePokemon, "getPalette", "palette");
         Object renderer = renderer(entity);
-        List<String> modelNames = List.of(
+        Object formDimensions = firstValue(formObject, speciesObject, effectivePokemon, entity, delegate, null, null, List.of("getDimensions", "dimensions"));
+        Object modelData = firstValue(renderer, entity, effectivePokemon, speciesObject, formObject, paletteObject, delegate, List.of(
                 "getModelData", "modelData", "getRenderData", "renderData", "getModel", "model", "getBaseModel", "baseModel",
                 "getBakedModel", "bakedModel", "getDimensions", "dimensions", "getBounds", "bounds"
-        );
-        Object modelData = firstValue(renderer, entity, effectivePokemon, speciesObject, formObject, paletteObject, delegate, modelNames);
-        Object modelDataFirst = firstIterableValue(modelData);
-        Object modelDataModel = firstValue(modelDataFirst, modelData, renderer, entity, effectivePokemon, null, null, modelNames);
-        Object formDimensions = firstValue(formObject, speciesObject, effectivePokemon, entity, modelDataFirst, modelData, renderer, List.of(
-                "getDimensions", "dimensions", "getModelDimensions", "modelDimensions", "getBaseDimensions", "baseDimensions",
-                "getBounds", "bounds", "getHitbox", "hitbox", "getBoundingBox", "boundingBox"
         ));
-        Object formDimensionsFirst = firstIterableValue(formDimensions);
+        Object modelDataFirst = firstIterable(modelData);
+        Object nestedModelData = firstValue(modelDataFirst, modelData, renderer, entity, effectivePokemon, formObject, speciesObject, List.of(
+                "getModel", "model", "getBaseModel", "baseModel", "getRenderData", "renderData", "getDimensions", "dimensions", "getBounds", "bounds"
+        ));
+        MeshBounds meshBounds = measureMesh(blockEntity, stored, entity);
 
         PixelmonRenderSnapshot snapshot = stored.pixelmonRenderSnapshot;
         try {
@@ -108,11 +117,10 @@ public final class PixelmonPenRenderMetricsDumper {
             json(out, "speciesObjectClass", className(speciesObject)).append(',');
             json(out, "formObjectClass", className(formObject)).append(',');
             json(out, "paletteObjectClass", className(paletteObject)).append(',');
+            json(out, "formDimensionsClass", className(formDimensions)).append(',');
             json(out, "modelDataClass", className(modelData)).append(',');
             json(out, "modelDataFirstClass", className(modelDataFirst)).append(',');
-            json(out, "modelDataModelClass", className(modelDataModel)).append(',');
-            json(out, "formDimensionsClass", className(formDimensions)).append(',');
-            json(out, "formDimensionsFirstClass", className(formDimensionsFirst)).append(',');
+            json(out, "nestedModelDataClass", className(nestedModelData)).append(',');
             num(out, "entityBbWidth", entity.getBbWidth()).append(',');
             num(out, "entityBbHeight", entity.getBbHeight()).append(',');
             num(out, "capturedWidth", snapshot == null ? 0.0F : snapshot.capturedWidth()).append(',');
@@ -124,16 +132,84 @@ public final class PixelmonPenRenderMetricsDumper {
             json(out, "speciesDimensionHints", inspect(speciesObject)).append(',');
             json(out, "formDimensionHints", inspect(formObject)).append(',');
             json(out, "formDimensionsObjectHints", inspect(formDimensions)).append(',');
-            json(out, "formDimensionsFirstHints", inspect(formDimensionsFirst)).append(',');
             json(out, "paletteDimensionHints", inspect(paletteObject)).append(',');
             json(out, "rendererDimensionHints", inspect(renderer)).append(',');
             json(out, "modelDimensionHints", inspect(modelData)).append(',');
-            json(out, "modelFirstDimensionHints", inspect(modelDataFirst)).append(',');
-            json(out, "modelDataModelHints", inspect(modelDataModel));
+            json(out, "modelDataFirstHints", inspect(modelDataFirst)).append(',');
+            json(out, "nestedModelDataHints", inspect(nestedModelData)).append(',');
+            appendMeshBounds(out, meshBounds);
             out.append('}').append(System.lineSeparator());
             Files.writeString(LOG_FILE, out.toString(), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (IOException error) {
             MobFarmBlockMod.LOGGER.warn("Failed to write extended Pixelmon pen render metrics", error);
+        }
+    }
+
+    private static MeshBounds measureMesh(MobFarmBlockEntity blockEntity, StoredMob stored, Entity entity) {
+        Minecraft minecraft = Minecraft.getInstance();
+        MeshBounds bounds = new MeshBounds();
+        try {
+            PoseStack poseStack = new PoseStack();
+            poseStack.translate(0.5D, 0.58D, 0.5D);
+            float scale = placedEntityScale(stored, entity, false);
+            PixelmonPenCentering centering = pixelmonPenCentering(entity, stored);
+            poseStack.scale(scale, scale, scale);
+            poseStack.mulPose(Axis.YP.rotationDegrees(blockEntity.getBlockState().getValue(MobFarmBlock.FACING).toYRot()));
+            applyPixelmonFacing(entity, 0.0F);
+            poseStack.translate(centering.xOffset(), 0.0D, centering.zOffset());
+            minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, 0.0F, poseStack, bounds.buffer(), 0x00F000F0);
+        } catch (Throwable error) {
+            bounds.error(error);
+        }
+        return bounds;
+    }
+
+    private static PixelmonPenCentering pixelmonPenCentering(Entity entity, StoredMob stored) {
+        AABB box = entity.getBoundingBox();
+        double xCenter = ((box.minX + box.maxX) * 0.5D) - entity.getX();
+        double zCenter = ((box.minZ + box.maxZ) * 0.5D) - entity.getZ();
+        double visualLength = Math.max(renderWidth(entity, stored), pixelmonRenderHeightMeters(stored).orElse(0.0F));
+        double elongatedOffset = Math.max(0.0D, visualLength - 1.0D) * 0.50D;
+        double xOffset = Double.isFinite(xCenter) && Math.abs(xCenter) > 0.001D ? -xCenter : 0.0D;
+        double zOffset = Double.isFinite(zCenter) && Math.abs(zCenter) > 0.001D ? -zCenter : 0.0D;
+        if (Double.isFinite(elongatedOffset) && elongatedOffset > 0.001D) zOffset += elongatedOffset;
+        return new PixelmonPenCentering(xOffset, zOffset, xCenter, zCenter, visualLength, elongatedOffset);
+    }
+
+    private static float placedEntityScale(StoredMob stored, Entity entity, boolean inspected) {
+        boolean shrink = inspected || MobFarmConfig.PENS_ALWAYS_SHOW_SMALL.get();
+        if (!shrink) return 1.0F;
+        float renderedHeight = renderHeight(entity, stored);
+        return renderedHeight > 0.60F ? 0.60F / Math.max(0.1F, renderedHeight) : 1.0F;
+    }
+
+    private static float renderHeight(Entity entity, StoredMob stored) {
+        float height = Math.max(entity.getBbHeight(), 0.35F);
+        PixelmonRenderSnapshot snapshot = stored == null ? null : stored.pixelmonRenderSnapshot;
+        if (snapshot != null && snapshot.capturedHeight() > 0.05F) height = Math.max(height, snapshot.capturedHeight());
+        return height;
+    }
+
+    private static float renderWidth(Entity entity, StoredMob stored) {
+        float width = Math.max(entity.getBbWidth(), 0.35F);
+        PixelmonRenderSnapshot snapshot = stored == null ? null : stored.pixelmonRenderSnapshot;
+        if (snapshot != null && snapshot.capturedWidth() > 0.05F) width = Math.max(width, snapshot.capturedWidth());
+        return width;
+    }
+
+    private static Optional<Float> pixelmonRenderHeightMeters(StoredMob stored) {
+        if (stored == null) return Optional.empty();
+        PixelmonRenderSnapshot snapshot = stored.pixelmonRenderSnapshot;
+        if (snapshot != null && snapshot.sizeCentimeters() > 0.0F) return Optional.of(snapshot.sizeCentimeters() / 100.0F);
+        return Optional.empty();
+    }
+
+    private static void applyPixelmonFacing(Entity entity, float yaw) {
+        entity.setYRot(yaw);
+        entity.setYHeadRot(yaw);
+        if (entity instanceof LivingEntity living) {
+            living.yBodyRot = yaw;
+            living.yHeadRot = yaw;
         }
     }
 
@@ -149,30 +225,22 @@ public final class PixelmonPenRenderMetricsDumper {
         Object[] sources = new Object[] { a, b, c, d, e, f, g };
         for (Object source : sources) {
             if (source == null) continue;
-            for (Object candidate : iterableValues(source)) {
-                for (String name : names) {
-                    Optional<Object> value = name.startsWith("get") ? invoke(candidate, name) : readField(candidate, name);
-                    if (value.isPresent()) return value.get();
-                }
+            for (String name : names) {
+                Optional<Object> value = name.startsWith("get") ? invoke(source, name) : readField(source, name);
+                if (value.isPresent()) return value.get();
             }
         }
         return null;
     }
 
-    private static Object firstIterableValue(Object value) {
-        for (Object item : iterableValues(value)) {
-            if (item != null && item != value) return item;
+    private static Object firstIterable(Object value) {
+        if (value == null) return null;
+        if (value instanceof Iterable<?> iterable) {
+            for (Object item : iterable) return item;
+            return null;
         }
+        if (value.getClass().isArray() && java.lang.reflect.Array.getLength(value) > 0) return java.lang.reflect.Array.get(value, 0);
         return null;
-    }
-
-    private static List<Object> iterableValues(Object value) {
-        if (value == null) return List.of();
-        ArrayList<Object> out = new ArrayList<>();
-        if (value instanceof Iterable<?> iterable) for (Object item : iterable) out.add(item);
-        else if (value.getClass().isArray()) for (int i = 0; i < java.lang.reflect.Array.getLength(value); i++) out.add(java.lang.reflect.Array.get(value, i));
-        else out.add(value);
-        return out;
     }
 
     private static Object value(Object target, String getter, String field) {
@@ -183,15 +251,8 @@ public final class PixelmonPenRenderMetricsDumper {
     private static String inspect(Object target) {
         if (target == null) return "";
         List<String> parts = new ArrayList<>();
-        int index = 0;
-        for (Object item : iterableValues(target)) {
-            if (item == null) continue;
-            if (item != target) parts.add("item" + index + "Class=" + className(item));
-            inspectMethods(item, parts);
-            inspectFields(item, parts);
-            index++;
-            if (parts.size() >= 160) break;
-        }
+        inspectMethods(target, parts);
+        inspectFields(target, parts);
         return String.join(";", parts);
     }
 
@@ -235,7 +296,7 @@ public final class PixelmonPenRenderMetricsDumper {
         return lower.contains("dimension") || lower.contains("width") || lower.contains("height") || lower.contains("length")
                 || lower.contains("depth") || lower.contains("scale") || lower.contains("size") || lower.contains("bounds")
                 || lower.contains("model") || lower.contains("offset") || lower.contains("center") || lower.contains("radius")
-                || lower.equals("x") || lower.equals("y") || lower.equals("z");
+                || lower.equals("x") || lower.equals("y") || lower.equals("z") || lower.contains("min") || lower.contains("max");
     }
 
     private static void append(List<String> parts, String name, Object value) {
@@ -277,6 +338,23 @@ public final class PixelmonPenRenderMetricsDumper {
         return Optional.empty();
     }
 
+    private static void appendMeshBounds(StringBuilder out, MeshBounds bounds) {
+        json(out, "meshMeasureError", bounds.errorMessage()).append(',');
+        num(out, "meshVertexCount", bounds.vertexCount()).append(',');
+        num(out, "meshMinX", bounds.minX()).append(',');
+        num(out, "meshMinY", bounds.minY()).append(',');
+        num(out, "meshMinZ", bounds.minZ()).append(',');
+        num(out, "meshMaxX", bounds.maxX()).append(',');
+        num(out, "meshMaxY", bounds.maxY()).append(',');
+        num(out, "meshMaxZ", bounds.maxZ()).append(',');
+        num(out, "meshWidth", bounds.width()).append(',');
+        num(out, "meshHeight", bounds.height()).append(',');
+        num(out, "meshDepth", bounds.depth()).append(',');
+        num(out, "meshCenterX", bounds.centerX()).append(',');
+        num(out, "meshCenterY", bounds.centerY()).append(',');
+        num(out, "meshCenterZ", bounds.centerZ());
+    }
+
     private static String className(Object object) {
         return object == null ? "" : object.getClass().getName();
     }
@@ -296,6 +374,100 @@ public final class PixelmonPenRenderMetricsDumper {
 
     private static StringBuilder num(StringBuilder out, String name, double value) {
         return out.append('"').append(name).append("\":").append(Double.isFinite(value) ? value : 0.0D);
+    }
+
+    private record PixelmonPenCentering(double xOffset, double zOffset, double xCenter, double zCenter, double visualLength, double elongatedDepthOffset) {}
+
+    private static final class MeshBounds {
+        private double minX = Double.POSITIVE_INFINITY;
+        private double minY = Double.POSITIVE_INFINITY;
+        private double minZ = Double.POSITIVE_INFINITY;
+        private double maxX = Double.NEGATIVE_INFINITY;
+        private double maxY = Double.NEGATIVE_INFINITY;
+        private double maxZ = Double.NEGATIVE_INFINITY;
+        private int vertexCount;
+        private String errorMessage = "";
+        private VertexConsumer proxy;
+
+        private MultiBufferSource buffer() {
+            return new MultiBufferSource() {
+                @Override
+                public VertexConsumer getBuffer(RenderType renderType) {
+                    return vertexConsumer();
+                }
+            };
+        }
+
+        private VertexConsumer vertexConsumer() {
+            if (proxy == null) {
+                proxy = (VertexConsumer) Proxy.newProxyInstance(VertexConsumer.class.getClassLoader(), new Class<?>[] { VertexConsumer.class }, (object, method, args) -> {
+                    if ("toString".equals(method.getName())) return "MobFarmBlockMeshMeasureVertexConsumer";
+                    if ("hashCode".equals(method.getName())) return System.identityHashCode(object);
+                    if ("equals".equals(method.getName())) return object == (args == null ? null : args[0]);
+                    if ("addVertex".equals(method.getName())) recordVertex(args);
+                    if (VertexConsumer.class.isAssignableFrom(method.getReturnType())) return object;
+                    return defaultValue(method.getReturnType());
+                });
+            }
+            return proxy;
+        }
+
+        private void recordVertex(Object[] args) {
+            if (args == null) return;
+            try {
+                if (args.length >= 4 && args[0] instanceof Matrix4f matrix && args[1] instanceof Number x && args[2] instanceof Number y && args[3] instanceof Number z) {
+                    Vector3f transformed = matrix.transformPosition(x.floatValue(), y.floatValue(), z.floatValue(), new Vector3f());
+                    include(transformed.x(), transformed.y(), transformed.z());
+                } else if (args.length >= 3 && args[0] instanceof Number x && args[1] instanceof Number y && args[2] instanceof Number z) {
+                    include(x.doubleValue(), y.doubleValue(), z.doubleValue());
+                }
+            } catch (Throwable error) {
+                error(error);
+            }
+        }
+
+        private void include(double x, double y, double z) {
+            if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) return;
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            minZ = Math.min(minZ, z);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+            maxZ = Math.max(maxZ, z);
+            vertexCount++;
+        }
+
+        private void error(Throwable error) {
+            if (errorMessage.isBlank() && error != null) errorMessage = error.getClass().getName() + ":" + String.valueOf(error.getMessage());
+        }
+
+        private Object defaultValue(Class<?> type) {
+            if (type == Boolean.TYPE) return false;
+            if (type == Byte.TYPE) return (byte) 0;
+            if (type == Short.TYPE) return (short) 0;
+            if (type == Integer.TYPE) return 0;
+            if (type == Long.TYPE) return 0L;
+            if (type == Float.TYPE) return 0.0F;
+            if (type == Double.TYPE) return 0.0D;
+            if (type == Character.TYPE) return (char) 0;
+            return null;
+        }
+
+        private boolean valid() { return vertexCount > 0; }
+        private String errorMessage() { return errorMessage; }
+        private int vertexCount() { return vertexCount; }
+        private double minX() { return valid() ? minX : 0.0D; }
+        private double minY() { return valid() ? minY : 0.0D; }
+        private double minZ() { return valid() ? minZ : 0.0D; }
+        private double maxX() { return valid() ? maxX : 0.0D; }
+        private double maxY() { return valid() ? maxY : 0.0D; }
+        private double maxZ() { return valid() ? maxZ : 0.0D; }
+        private double width() { return valid() ? maxX - minX : 0.0D; }
+        private double height() { return valid() ? maxY - minY : 0.0D; }
+        private double depth() { return valid() ? maxZ - minZ : 0.0D; }
+        private double centerX() { return valid() ? (minX + maxX) * 0.5D : 0.0D; }
+        private double centerY() { return valid() ? (minY + maxY) * 0.5D : 0.0D; }
+        private double centerZ() { return valid() ? (minZ + maxZ) * 0.5D : 0.0D; }
     }
 
     private PixelmonPenRenderMetricsDumper() {}
