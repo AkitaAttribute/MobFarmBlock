@@ -112,6 +112,9 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         AABB box = entity.getBoundingBox();
         double xCenter = ((box.minX + box.maxX) * 0.5D) - entity.getX();
         double zCenter = ((box.minZ + box.maxZ) * 0.5D) - entity.getZ();
+        double visualLength = Math.max(renderWidth(entity, stored), pixelmonRenderHeightMeters(stored).orElse(0.0F));
+        double elongatedOffset = Math.max(0.0D, visualLength - 1.0D) * 0.50D;
+        if (Double.isFinite(elongatedOffset) && elongatedOffset > 0.001D) poseStack.translate(elongatedOffset, 0.0D, 0.0D);
         if (Double.isFinite(xCenter) && Math.abs(xCenter) > 0.001D) poseStack.translate(-xCenter, 0.0D, 0.0D);
         if (Double.isFinite(zCenter) && Math.abs(zCenter) > 0.001D) poseStack.translate(0.0D, 0.0D, -zCenter);
     }
@@ -167,9 +170,10 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     }
 
     private static float renderWidth(Entity entity, StoredMob stored) {
+        float width = Math.max(entity.getBbWidth(), 0.35F);
         PixelmonRenderSnapshot snapshot = stored == null ? null : stored.pixelmonRenderSnapshot;
-        if (snapshot != null && snapshot.capturedWidth() > 0.05F) return snapshot.capturedWidth();
-        return Math.max(entity.getBbWidth(), 0.35F);
+        if (snapshot != null && snapshot.capturedWidth() > 0.05F) width = Math.max(width, snapshot.capturedWidth());
+        return width;
     }
 
     private static Entity sheepRenderEntity(StoredMob stored, Minecraft minecraft) {
