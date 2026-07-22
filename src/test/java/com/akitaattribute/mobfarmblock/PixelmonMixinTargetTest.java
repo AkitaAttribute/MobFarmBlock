@@ -150,9 +150,10 @@ class PixelmonMixinTargetTest {
         assertTrue(rendererSource.contains("poseStack.mulPose(Axis.YP.rotationDegrees(yaw));"));
         assertTrue(rendererSource.contains("applyPixelmonFacing(entity, 0.0F)"));
         assertTrue(rendererSource.contains("if (!inspected) return 1.0F;"));
-        assertTrue(rendererSource.contains("pixelmonRenderHeightMeters(stored).orElseGet(() -> renderHeight(entity, stored))"));
-        assertTrue(rendererSource.contains("PIXELMON_BLOCK_RENDER_HEIGHT / Math.max(0.1F, height)"));
-        assertTrue(rendererSource.contains("Math.min(1.0F"));
+        assertTrue(rendererSource.contains("float renderedHeight = renderHeight(entity, stored)"));
+        assertTrue(rendererSource.contains("renderedHeight > PIXELMON_BLOCK_RENDER_HEIGHT"));
+        assertTrue(rendererSource.contains("PIXELMON_BLOCK_RENDER_HEIGHT / Math.max(0.1F, renderedHeight)"));
+        assertTrue(rendererSource.contains("float height = Math.max(entity.getBbHeight(), 0.35F)"));
         assertTrue(snapshotSource.contains("sizeCentimeters"));
         assertTrue(snapshotFactorySource.contains("getSizeInCm") && snapshotFactorySource.contains("sizeCentimeters(entity)"));
         assertTrue(renderCacheSource.contains("MobFarmConfig.PIXELMON_RENDER_REPLAY_MODE.get()"));
