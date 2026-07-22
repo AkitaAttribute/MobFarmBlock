@@ -10,15 +10,16 @@ import net.minecraft.network.chat.Component;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.settings.KeyConflictContext;
-import net.neoforged.neoforge.event.tick.ClientTickEvent;
 
 public final class MobFarmClientKeys {
     public static final KeyMapping TOGGLE_PENS_ALWAYS_SHOW_SMALL = new KeyMapping(
             "key.mob_farm_block.togglePensAlwaysShowSmall",
             KeyConflictContext.IN_GAME,
-            InputConstants.UNKNOWN,
+            InputConstants.Type.KEYSYM,
+            InputConstants.UNKNOWN.getValue(),
             "key.categories.mob_farm_block"
     );
 
