@@ -39,13 +39,7 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
-/**
- * Debug-only client scanner that appends deeper Pixelmon model/render metadata for loaded Mob Farm pens.
- *
- * <p>The placed renderer already logs the values it directly uses. This companion log probes Pixelmon's
- * entity, Pokemon, delegate, species/form/palette/model objects for likely base model dimensions and scale
- * fields without changing render behavior.</p>
- */
+/** Debug-only client scanner for Pixelmon pen render/model metrics. */
 @EventBusSubscriber(modid = MobFarmBlockMod.MOD_ID, value = Dist.CLIENT)
 public final class PixelmonPenRenderMetricsDumper {
     private static final Path LOG_FILE = Path.of("config", "mob_farm_block", "debug", "pixelmon_pen_render_metrics.jsonl").toAbsolutePath();
@@ -77,7 +71,7 @@ public final class PixelmonPenRenderMetricsDumper {
     private static void log(MobFarmBlockEntity blockEntity, StoredMob stored, Entity entity) {
         String dimension = blockEntity.getLevel() == null ? "unknown" : blockEntity.getLevel().dimension().location().toString();
         String species = stored.speciesId == null ? stored.mobId.toString() : stored.speciesId.toString();
-        String key = "extended|" + dimension + "|" + blockEntity.getBlockPos().asLong() + "|" + species + "|" + MobFarmConfig.PIXELMON_RENDER_REPLAY_MODE.get();
+        String key = "extended|mesh-v2|" + dimension + "|" + blockEntity.getBlockPos().asLong() + "|" + species + "|" + MobFarmConfig.PIXELMON_RENDER_REPLAY_MODE.get();
         if (!LOGGED.add(key)) return;
 
         Object pokemon = invoke(entity, "getPokemon").or(() -> readField(entity, "pokemon")).orElse(null);
@@ -98,8 +92,8 @@ public final class PixelmonPenRenderMetricsDumper {
                 "getModel", "model", "getBaseModel", "baseModel", "getRenderData", "renderData", "getDimensions", "dimensions", "getBounds", "bounds"
         ));
         MeshBounds meshBounds = measureMesh(blockEntity, stored, entity);
-
         PixelmonRenderSnapshot snapshot = stored.pixelmonRenderSnapshot;
+
         try {
             Files.createDirectories(LOG_FILE.getParent());
             StringBuilder out = new StringBuilder(8192);
@@ -265,8 +259,7 @@ public final class PixelmonPenRenderMetricsDumper {
                 if (!interesting(name)) continue;
                 try {
                     method.setAccessible(true);
-                    Object value = method.invoke(target);
-                    append(parts, name, value);
+                    append(parts, name, method.invoke(target));
                 } catch (Throwable ignored) {
                     // Keep probing other members.
                 }
@@ -404,7 +397,7 @@ public final class PixelmonPenRenderMetricsDumper {
                     if ("toString".equals(method.getName())) return "MobFarmBlockMeshMeasureVertexConsumer";
                     if ("hashCode".equals(method.getName())) return System.identityHashCode(object);
                     if ("equals".equals(method.getName())) return object == (args == null ? null : args[0]);
-                    if ("addVertex".equals(method.getName())) recordVertex(args);
+                    if ("addVertex".equals(method.getName()) || "vertex".equals(method.getName())) recordVertex(args);
                     if (VertexConsumer.class.isAssignableFrom(method.getReturnType())) return object;
                     return defaultValue(method.getReturnType());
                 });
@@ -418,11 +411,38 @@ public final class PixelmonPenRenderMetricsDumper {
                 if (args.length >= 4 && args[0] instanceof Matrix4f matrix && args[1] instanceof Number x && args[2] instanceof Number y && args[3] instanceof Number z) {
                     Vector3f transformed = matrix.transformPosition(x.floatValue(), y.floatValue(), z.floatValue(), new Vector3f());
                     include(transformed.x(), transformed.y(), transformed.z());
-                } else if (args.length >= 3 && args[0] instanceof Number x && args[1] instanceof Number y && args[2] instanceof Number z) {
+                    return;
+                }
+                if (args.length >= 2 && args[1] instanceof Vector3f vector) {
+                    Matrix4f matrix = poseMatrix(args[0]);
+                    if (matrix != null) {
+                        Vector3f transformed = matrix.transformPosition(vector.x(), vector.y(), vector.z(), new Vector3f());
+                        include(transformed.x(), transformed.y(), transformed.z());
+                    } else include(vector.x(), vector.y(), vector.z());
+                    return;
+                }
+                if (args.length >= 3 && args[0] instanceof Number x && args[1] instanceof Number y && args[2] instanceof Number z) {
                     include(x.doubleValue(), y.doubleValue(), z.doubleValue());
+                    return;
+                }
+                if (args.length >= 1 && args[0] instanceof Vector3f vector) {
+                    include(vector.x(), vector.y(), vector.z());
                 }
             } catch (Throwable error) {
                 error(error);
+            }
+        }
+
+        private Matrix4f poseMatrix(Object pose) {
+            if (pose instanceof Matrix4f matrix) return matrix;
+            if (pose == null) return null;
+            try {
+                Method method = pose.getClass().getDeclaredMethod("pose");
+                method.setAccessible(true);
+                Object value = method.invoke(pose);
+                return value instanceof Matrix4f matrix ? matrix : null;
+            } catch (Throwable ignored) {
+                return null;
             }
         }
 
