@@ -20,6 +20,7 @@ public final class MobFarmConfig {
     public static final ModConfigSpec.BooleanValue DEBUG_COBBLEMON_JSON_DUMP;
     public static final ModConfigSpec.BooleanValue PIXELMON_ENTITY_TRACKING_LOG;
     public static final ModConfigSpec.BooleanValue PIXELMON_NPC_REMOVAL_ENABLED;
+    public static final ModConfigSpec.BooleanValue PENS_ALWAYS_SHOW_SMALL;
     public static final ModConfigSpec.EnumValue<PixelmonRenderReplayMode> PIXELMON_RENDER_REPLAY_MODE;
     public static final ModConfigSpec.EnumValue<LookUiStyle> LOOK_UI_STYLE;
     public static final ModConfigSpec.DoubleValue PIXELMON_CAPTURE_TOOL_DROP_CHANCE;
@@ -42,6 +43,10 @@ public final class MobFarmConfig {
                 .comment("Remove unprotected Pixelmon NPCs after this mod has observed them for five minutes. Protected titled NPCs are not removed.")
                 .translation("mob_farm_block.configuration.pixelmonNpcRemovalEnabled")
                 .define("pixelmonNpcRemovalEnabled", true);
+        PENS_ALWAYS_SHOW_SMALL = builder
+                .comment("Always render stored mobs in their small pen preview size instead of only shrinking oversized previews while looking at the pen.")
+                .translation("mob_farm_block.configuration.pensAlwaysShowSmall")
+                .define("pensAlwaysShowSmall", true);
         PIXELMON_RENDER_REPLAY_MODE = builder
                 .comment("Pixelmon preview reconstruction strategy. HYBRID_ALL tries saved entity payload first, then Pokemon factory reconstruction, and applies captured size to Pokemon/entity/delegate before and after refresh.")
                 .translation("mob_farm_block.configuration.pixelmonRenderReplayMode")
