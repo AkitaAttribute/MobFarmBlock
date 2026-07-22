@@ -4,6 +4,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.block.MobFarmBlock;
@@ -51,6 +54,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
     private static final int EXPANDED_COLUMNS = 2;
     private static final int MIN_COMPACT_COLUMN_WIDTH = 30;
     private static final float PIXELMON_BLOCK_RENDER_HEIGHT = 1.0F;
+    private static final Pattern NUMBER = Pattern.compile("-?\\d+(?:\\.\\d+)?");
     private static final Map<String, Sheep> SHEEP_RENDER_CACHE = new HashMap<>();
 
     public MobFarmBlockEntityRenderer(BlockEntityRendererProvider.Context context) {}
@@ -103,12 +107,42 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
 
     private static float placedEntityScale(StoredMob stored, Entity entity, boolean inspected) {
         if (PixelmonEntityRenderCache.isPixelmonStored(stored)) {
-            float height = renderHeight(entity, stored);
+            if (!inspected) return 1.0F;
+            float height = pixelmonRenderHeightMeters(stored).orElseGet(() -> renderHeight(entity, stored));
             return Math.min(1.0F, PIXELMON_BLOCK_RENDER_HEIGHT / Math.max(0.1F, height));
         }
         float scale = 0.32F;
         if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, entity.getBbHeight()));
         return scale;
+    }
+
+    private static Optional<Float> pixelmonRenderHeightMeters(StoredMob stored) {
+        if (stored == null) return Optional.empty();
+        PixelmonRenderSnapshot snapshot = stored.pixelmonRenderSnapshot;
+        if (snapshot != null && snapshot.sizeCentimeters() > 0.0F) return Optional.of(snapshot.sizeCentimeters() / 100.0F);
+        String variant = stored.display == null ? "" : stored.display.variantKey();
+        String size = parseVariantValue(variant, "size");
+        String source = size.isBlank() ? variant : size;
+        Matcher matcher = NUMBER.matcher(source);
+        if (!matcher.find()) return Optional.empty();
+        try {
+            float value = Float.parseFloat(matcher.group());
+            if (value <= 0.0F) return Optional.empty();
+            String lower = source.toLowerCase(java.util.Locale.ROOT);
+            float centimeters = lower.contains("cm") || value > 10.0F ? value : value * 100.0F;
+            return Optional.of(centimeters / 100.0F);
+        } catch (Throwable ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private static String parseVariantValue(String variantKey, String key) {
+        if (variantKey == null) return "";
+        for (String part : variantKey.split("\\|")) {
+            int equals = part.indexOf('=');
+            if (equals > 0 && part.substring(0, equals).equals(key)) return part.substring(equals + 1);
+        }
+        return "";
     }
 
     private static float renderHeight(Entity entity, StoredMob stored) {
