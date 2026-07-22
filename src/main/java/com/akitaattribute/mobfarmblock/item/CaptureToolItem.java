@@ -3,6 +3,7 @@ package com.akitaattribute.mobfarmblock.item;
 import com.akitaattribute.mobfarmblock.mob.MobProfileFactory;
 import com.akitaattribute.mobfarmblock.debug.MobFarmDebug;
 import com.akitaattribute.mobfarmblock.debug.CobblemonDebugDumper;
+import com.akitaattribute.mobfarmblock.mob.MobDisplayNames;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
 
 import net.minecraft.core.component.DataComponents;
@@ -24,6 +25,12 @@ public class CaptureToolItem extends Item {
     private static final String DISCARD_ON_DEPOSIT_KEY = "DiscardOnDeposit";
 
     public CaptureToolItem(Properties properties) { super(properties); }
+
+    @Override
+    public Component getName(ItemStack stack) {
+        StoredMob stored = getStoredMob(stack);
+        return stored == null || stored.isEmpty() ? super.getName(stack) : Component.literal(MobDisplayNames.capturedName(stored));
+    }
 
     @Override public InteractionResult interactLivingEntity(ItemStack stack, Player player, LivingEntity target, InteractionHand hand) {
         if (player.level().isClientSide) return InteractionResult.SUCCESS;
