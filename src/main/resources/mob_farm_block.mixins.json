@@ -4,7 +4,8 @@
   "package": "com.akitaattribute.mobfarmblock.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "PixelmonDropItemQueryListMixin"
+    "PixelmonDropItemQueryListMixin",
+    "PixelmonLookUiRowsMixin"
   ],
   "injectors": {
     "defaultRequire": 0
