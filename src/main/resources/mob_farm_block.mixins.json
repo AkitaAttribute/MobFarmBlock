@@ -6,7 +6,8 @@
   "mixins": [
     "PixelmonDropItemQueryListMixin",
     "PixelmonLookUiRowsMixin",
-    "PixelmonPenCenteringMixin"
+    "PixelmonPenCenteringMixin",
+    "PixelmonPenRenderHeightMixin"
   ],
   "injectors": {
     "defaultRequire": 0
