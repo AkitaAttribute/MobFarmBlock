@@ -59,7 +59,7 @@ public final class PixelmonModelTypeMetricsDumper {
     private static void log(MobFarmBlockEntity blockEntity, StoredMob stored, Entity entity) {
         String dimension = blockEntity.getLevel() == null ? "unknown" : blockEntity.getLevel().dimension().location().toString();
         String species = stored.speciesId == null ? stored.mobId.toString() : stored.speciesId.toString();
-        String key = "model-type-v1|" + dimension + "|" + blockEntity.getBlockPos().asLong() + "|" + species + "|" + MobFarmConfig.PIXELMON_RENDER_REPLAY_MODE.get();
+        String key = "model-type-v2|" + dimension + "|" + blockEntity.getBlockPos().asLong() + "|" + species + "|" + MobFarmConfig.PIXELMON_RENDER_REPLAY_MODE.get();
         if (!LOGGED.add(key)) return;
 
         Object pokemon = invoke(entity, "getPokemon").or(() -> readField(entity, "pokemon")).orElse(null);
@@ -84,7 +84,7 @@ public final class PixelmonModelTypeMetricsDumper {
 
         try {
             Files.createDirectories(LOG_FILE.getParent());
-            StringBuilder out = new StringBuilder(12288);
+            StringBuilder out = new StringBuilder(20000);
             out.append('{');
             json(out, "source", "client_scan_model_type").append(',');
             json(out, "dimension", dimension).append(',');
@@ -107,7 +107,13 @@ public final class PixelmonModelTypeMetricsDumper {
             json(out, "modelTypeModelHints", inspect(modelTypeModel)).append(',');
             json(out, "modelTypeModelFirstHints", inspect(modelTypeModelFirst)).append(',');
             json(out, "modelTypeBoundsHints", inspect(modelTypeBounds)).append(',');
-            json(out, "modelTypeBoundsFirstHints", inspect(modelTypeBoundsFirst));
+            json(out, "modelTypeBoundsFirstHints", inspect(modelTypeBoundsFirst)).append(',');
+            json(out, "modelDataFirstMembers", members(modelDataFirst)).append(',');
+            json(out, "modelTypeMembers", members(modelType)).append(',');
+            json(out, "modelTypeModelMembers", members(modelTypeModel)).append(',');
+            json(out, "modelTypeModelFirstMembers", members(modelTypeModelFirst)).append(',');
+            json(out, "modelTypeBoundsMembers", members(modelTypeBounds)).append(',');
+            json(out, "modelTypeBoundsFirstMembers", members(modelTypeBoundsFirst));
             out.append('}').append(System.lineSeparator());
             Files.writeString(LOG_FILE, out.toString(), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (IOException error) {
@@ -200,6 +206,47 @@ public final class PixelmonModelTypeMetricsDumper {
                 || lower.contains("min") || lower.contains("max") || lower.equals("x") || lower.equals("y") || lower.equals("z");
     }
 
+    private static String members(Object target) {
+        if (target == null) return "";
+        List<String> parts = new ArrayList<>();
+        for (Class<?> type = target.getClass(); type != null && type != Object.class; type = type.getSuperclass()) {
+            parts.add("class=" + type.getName());
+            for (Field field : type.getDeclaredFields()) {
+                if (parts.size() >= 260) return String.join(";", parts);
+                if (Modifier.isStatic(field.getModifiers())) continue;
+                try {
+                    field.setAccessible(true);
+                    Object value = field.get(target);
+                    parts.add("field " + field.getType().getName() + " " + field.getName() + "=" + valueSummary(value));
+                } catch (Throwable error) {
+                    parts.add("field " + field.getType().getName() + " " + field.getName() + "=<" + error.getClass().getSimpleName() + ">");
+                }
+            }
+            for (Method method : type.getDeclaredMethods()) {
+                if (parts.size() >= 260) return String.join(";", parts);
+                parts.add("method " + method.getReturnType().getName() + " " + method.getName() + "(" + parameterTypes(method) + ")");
+            }
+        }
+        return String.join(";", parts);
+    }
+
+    private static String parameterTypes(Method method) {
+        Class<?>[] types = method.getParameterTypes();
+        if (types.length == 0) return "";
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < types.length; i++) {
+            if (i > 0) out.append(',');
+            out.append(types[i].getName());
+        }
+        return out.toString();
+    }
+
+    private static String valueSummary(Object value) {
+        if (value == null) return "null";
+        String text = value.getClass().getName() + ":" + String.valueOf(value);
+        return trim(text, 220);
+    }
+
     private static void append(List<String> parts, String name, Object value) {
         if (value == null) return;
         if (value instanceof Number || value instanceof Boolean || value instanceof CharSequence || value.getClass().isEnum()) {
@@ -207,14 +254,13 @@ public final class PixelmonModelTypeMetricsDumper {
             return;
         }
         Object first = firstIterable(value);
-        String text = String.valueOf(value);
-        if (text.length() > 180) text = text.substring(0, 180);
-        String suffix = first == null ? "" : ";" + name + "FirstClass=" + first.getClass().getName() + ":" + trim(String.valueOf(first));
+        String text = trim(String.valueOf(value), 180);
+        String suffix = first == null ? "" : ";" + name + "FirstClass=" + first.getClass().getName() + ":" + trim(String.valueOf(first), 120);
         parts.add(name + "=" + value.getClass().getName() + ":" + text + suffix);
     }
 
-    private static String trim(String text) {
-        return text.length() > 120 ? text.substring(0, 120) : text;
+    private static String trim(String text, int maxLength) {
+        return text.length() > maxLength ? text.substring(0, maxLength) : text;
     }
 
     private static Optional<Object> invoke(Object target, String methodName) {
