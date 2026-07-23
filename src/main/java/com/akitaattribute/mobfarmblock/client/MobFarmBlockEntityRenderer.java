@@ -476,7 +476,7 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         }
         for (DropRule rule : stored.dropProfile.drops()) {
             ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId()));
-            rows.add(new LookRow(stack, itemLabel(stack, rule.itemId()), value, TEXT_WHITE, color));
+            rows.add(new LookRow(stack, itemLabel(stack, rule.itemId()), formatChance(rule.chance()), TEXT_WHITE, color));
         }
         return rows;
     }
