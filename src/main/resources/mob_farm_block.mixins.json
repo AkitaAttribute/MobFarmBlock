@@ -5,7 +5,8 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "PixelmonDropItemQueryListMixin",
-    "PixelmonLookUiRowsMixin"
+    "PixelmonLookUiRowsMixin",
+    "PixelmonPenCenteringMixin"
   ],
   "injectors": {
     "defaultRequire": 0
