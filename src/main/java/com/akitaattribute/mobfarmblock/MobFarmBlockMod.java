@@ -26,6 +26,7 @@ public class MobFarmBlockMod {
 
     public MobFarmBlockMod(IEventBus modBus, ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.COMMON, MobFarmConfig.COMMON_SPEC);
+        modContainer.registerConfig(ModConfig.Type.CLIENT, MobFarmConfig.CLIENT_SPEC);
         ModBlocks.BLOCKS.register(modBus);
         ModBlocks.BLOCK_ENTITY_TYPES.register(modBus);
         ModItems.ITEMS.register(modBus);
