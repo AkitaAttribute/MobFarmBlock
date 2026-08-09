@@ -45,6 +45,8 @@ public abstract class PixelmonPenSmallTargetMixin {
         }
         height = Math.max(height, variantSizeMeters(stored).orElse(0.0F));
         height = Math.max(height, pixelmonModelScale(entity).filter(scale -> scale >= 3.0F).map(scale -> scale * 0.20F).orElse(0.0F));
+        height = Math.max(height, pixelmonEyeHeight(entity).orElse(0.0F));
+        height = Math.max(height, pixelmonScaledBoundingHeight(entity).orElse(0.0F));
         return Math.max(height, MIN_PIXELMON_VISUAL_HEIGHT);
     }
 
@@ -75,6 +77,18 @@ public abstract class PixelmonPenSmallTargetMixin {
         return "";
     }
 
+    private static Optional<Float> pixelmonEyeHeight(Entity entity) {
+        return invoke(entity, "getEyeHeight").flatMap(PixelmonPenSmallTargetMixin::positiveFiniteNumber);
+    }
+
+    private static Optional<Float> pixelmonScaledBoundingHeight(Entity entity) {
+        if (entity == null) return Optional.empty();
+        Optional<Float> scaleFactor = invoke(entity, "getScaleFactor").flatMap(PixelmonPenSmallTargetMixin::positiveFiniteNumber);
+        if (scaleFactor.isEmpty()) return Optional.empty();
+        float height = Math.max(entity.getBbHeight(), 0.35F) * scaleFactor.get();
+        return Float.isFinite(height) && height > 0.0F ? Optional.of(height) : Optional.empty();
+    }
+
     private static Optional<Float> pixelmonModelScale(Entity entity) {
         if (entity == null) return Optional.empty();
         Object models = invoke(entity, "getModel").orElse(null);
@@ -101,6 +115,10 @@ public abstract class PixelmonPenSmallTargetMixin {
             if (component.isPresent()) max = Math.max(max, Math.abs(component.get()));
         }
         return Float.isFinite(max) && max > 0.0F ? Optional.of(max) : Optional.empty();
+    }
+
+    private static Optional<Float> positiveFiniteNumber(Object value) {
+        return number(value).filter(result -> Float.isFinite(result) && result > 0.0F);
     }
 
     private static Optional<Float> number(Object value) {
