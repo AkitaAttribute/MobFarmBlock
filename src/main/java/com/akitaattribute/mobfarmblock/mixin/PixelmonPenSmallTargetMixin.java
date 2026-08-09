@@ -45,7 +45,6 @@ public abstract class PixelmonPenSmallTargetMixin {
             if (snapshot.sizeCentimeters() > 0.0F) height = Math.max(height, snapshot.sizeCentimeters() / 100.0F);
         }
         height = Math.max(height, variantSizeMeters(stored).orElse(0.0F));
-        height = Math.max(height, pixelmonModelScale(entity).filter(scale -> scale >= 3.0F).map(scale -> scale * 0.20F).orElse(0.0F));
         height = Math.max(height, pixelmonEyeHeight(entity).orElse(0.0F));
         height = Math.max(height, pixelmonScaledBoundingHeight(entity).orElse(0.0F));
         return height;
@@ -90,34 +89,6 @@ public abstract class PixelmonPenSmallTargetMixin {
         return Float.isFinite(height) && height > 0.0F ? Optional.of(height) : Optional.empty();
     }
 
-    private static Optional<Float> pixelmonModelScale(Entity entity) {
-        if (entity == null) return Optional.empty();
-        Object models = invoke(entity, "getModel").orElse(null);
-        Object firstModel = first(models).orElse(models);
-        Object scale = invoke(firstModel, "scale").or(() -> readField(firstModel, "scale")).orElse(null);
-        return maxVectorComponent(scale);
-    }
-
-    private static Optional<Object> first(Object value) {
-        if (value instanceof Iterable<?> iterable) {
-            for (Object item : iterable) return Optional.ofNullable(item);
-        }
-        if (value != null && value.getClass().isArray() && java.lang.reflect.Array.getLength(value) > 0) {
-            return Optional.ofNullable(java.lang.reflect.Array.get(value, 0));
-        }
-        return Optional.empty();
-    }
-
-    private static Optional<Float> maxVectorComponent(Object value) {
-        if (value == null) return Optional.empty();
-        float max = Float.NEGATIVE_INFINITY;
-        for (String method : new String[] {"x", "y", "z", "getX", "getY", "getZ"}) {
-            Optional<Float> component = invoke(value, method).flatMap(PixelmonPenSmallTargetMixin::number);
-            if (component.isPresent()) max = Math.max(max, Math.abs(component.get()));
-        }
-        return Float.isFinite(max) && max > 0.0F ? Optional.of(max) : Optional.empty();
-    }
-
     private static Optional<Float> positiveFiniteNumber(Object value) {
         return number(value).filter(result -> Float.isFinite(result) && result > 0.0F);
     }
@@ -140,20 +111,5 @@ public abstract class PixelmonPenSmallTargetMixin {
         } catch (Throwable ignored) {
             return Optional.empty();
         }
-    }
-
-    private static Optional<Object> readField(Object target, String fieldName) {
-        if (target == null) return Optional.empty();
-        Class<?> type = target.getClass();
-        while (type != null) {
-            try {
-                java.lang.reflect.Field field = type.getDeclaredField(fieldName);
-                field.setAccessible(true);
-                return Optional.ofNullable(field.get(target));
-            } catch (Throwable ignored) {
-                type = type.getSuperclass();
-            }
-        }
-        return Optional.empty();
     }
 }
