@@ -53,7 +53,7 @@ public abstract class PixelmonPenIdleAnimationMixin {
     private static void mobFarmBlock$applyPixelmonIdleClock(Entity entity) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null) {
-            mobFarmBlock$logIdleState(entity, 0L, 0, 0, "no_level");
+            mobFarmBlock$logIdleState(entity, 0L, 0, 0, "no_level", "");
             return;
         }
 
@@ -71,10 +71,27 @@ public abstract class PixelmonPenIdleAnimationMixin {
             living.xRotO = living.getXRot();
         }
 
-        mobFarmBlock$logIdleState(entity, gameTime, beforeTick, tick, "applied_clock");
+        String animationAdvance = mobFarmBlock$advancePixelmonIdleAnimation(entity);
+        mobFarmBlock$logIdleState(entity, gameTime, beforeTick, tick, "applied_clock", animationAdvance);
     }
 
-    private static void mobFarmBlock$logIdleState(Entity entity, long gameTime, int beforeTick, int afterTick, String stage) {
+    private static String mobFarmBlock$advancePixelmonIdleAnimation(Entity entity) {
+        StringBuilder result = new StringBuilder();
+        mobFarmBlock$appendHint(result, "setAnimatedTrue", String.valueOf(mobFarmBlock$invoke(entity, "setAnimated", true).isPresent()));
+        mobFarmBlock$appendHint(result, "setAnimatedNoArg", String.valueOf(mobFarmBlock$invokeNoArg(entity, "setAnimated").isPresent()));
+        mobFarmBlock$appendHint(result, "animatedField", String.valueOf(mobFarmBlock$setBoolean(entity, "animated", true)));
+        mobFarmBlock$appendHint(result, "initAnimation", String.valueOf(mobFarmBlock$invokeNoArg(entity, "initAnimation").isPresent()));
+        mobFarmBlock$appendHint(result, "checkAnimation", String.valueOf(mobFarmBlock$invokeNoArg(entity, "checkAnimation").isPresent()));
+        mobFarmBlock$appendHint(result, "handleAnimation", String.valueOf(mobFarmBlock$invokeNoArg(entity, "handleAnimation").isPresent()));
+        mobFarmBlock$appendHint(result, "animationTime", String.valueOf(mobFarmBlock$invokeNoArg(entity, "animationTime").isPresent()));
+        mobFarmBlock$appendHint(result, "tickAnimation", String.valueOf(mobFarmBlock$invokeNoArg(entity, "tickAnimation").isPresent()));
+        mobFarmBlock$appendHint(result, "tickEvolveAnimation", String.valueOf(mobFarmBlock$invokeNoArg(entity, "tickEvolveAnimation").isPresent()));
+        mobFarmBlock$appendHint(result, "animationValues", mobFarmBlock$fieldValues(entity,
+                "animated", "animation", "animationData", "animationVariables", "animationCounting", "animationDelayCounter", "animationDelayLimit", "animationSwap", "dynamaxAnimationTicks"));
+        return result.toString();
+    }
+
+    private static void mobFarmBlock$logIdleState(Entity entity, long gameTime, int beforeTick, int afterTick, String stage, String animationAdvance) {
         if (entity == null) return;
         String key = entity.getClass().getName() + "|" + mobFarmBlock$species(entity).orElse("");
         long last = mobFarmBlock$LAST_IDLE_LOG_TICK.getOrDefault(key, Long.MIN_VALUE);
@@ -93,6 +110,7 @@ public abstract class PixelmonPenIdleAnimationMixin {
             mobFarmBlock$num(out, "tickAfter", afterTick).append(',');
             mobFarmBlock$num(out, "entityTickCount", entity.tickCount).append(',');
             mobFarmBlock$json(out, "ticksExisted", mobFarmBlock$fieldOrMethod(entity, "ticksExisted").orElse("")).append(',');
+            mobFarmBlock$json(out, "animationAdvance", animationAdvance).append(',');
             mobFarmBlock$json(out, "animationFields", mobFarmBlock$memberNames(entity, "anim")).append(',');
             mobFarmBlock$json(out, "animationMethods", mobFarmBlock$methodNames(entity, "anim")).append(',');
             mobFarmBlock$json(out, "stateFields", mobFarmBlock$memberNames(entity, "state")).append(',');
@@ -106,14 +124,14 @@ public abstract class PixelmonPenIdleAnimationMixin {
     }
 
     private static Optional<String> mobFarmBlock$species(Entity entity) {
-        Object pokemon = mobFarmBlock$invoke(entity, "getPokemon").orElse(null);
-        Optional<Object> species = mobFarmBlock$invoke(pokemon, "getSpecies");
+        Object pokemon = mobFarmBlock$invokeNoArg(entity, "getPokemon").orElse(null);
+        Optional<Object> species = mobFarmBlock$invokeNoArg(pokemon, "getSpecies");
         if (species.isPresent()) return Optional.of(String.valueOf(species.get()));
-        return mobFarmBlock$invoke(entity, "getSpecies").map(String::valueOf);
+        return mobFarmBlock$invokeNoArg(entity, "getSpecies").map(String::valueOf);
     }
 
     private static String mobFarmBlock$pokemonHints(Entity entity) {
-        Object pokemon = mobFarmBlock$invoke(entity, "getPokemon").orElse(null);
+        Object pokemon = mobFarmBlock$invokeNoArg(entity, "getPokemon").orElse(null);
         StringBuilder out = new StringBuilder();
         mobFarmBlock$appendHint(out, "pokemonClass", pokemon == null ? "" : pokemon.getClass().getName());
         mobFarmBlock$appendHint(out, "pokemonAnimationFields", mobFarmBlock$memberNames(pokemon, "anim"));
@@ -152,8 +170,15 @@ public abstract class PixelmonPenIdleAnimationMixin {
         return out.toString();
     }
 
+    private static String mobFarmBlock$fieldValues(Object target, String... names) {
+        if (target == null) return "";
+        StringBuilder out = new StringBuilder();
+        for (String name : names) mobFarmBlock$readField(target, name).ifPresent(value -> mobFarmBlock$appendHint(out, name, String.valueOf(value)));
+        return out.toString();
+    }
+
     private static Optional<String> mobFarmBlock$fieldOrMethod(Object target, String name) {
-        Optional<Object> method = mobFarmBlock$invoke(target, name);
+        Optional<Object> method = mobFarmBlock$invokeNoArg(target, name);
         if (method.isPresent()) return method.map(String::valueOf);
         return mobFarmBlock$readField(target, name).map(String::valueOf);
     }
@@ -172,15 +197,65 @@ public abstract class PixelmonPenIdleAnimationMixin {
         }
     }
 
-    private static Optional<Object> mobFarmBlock$invoke(Object target, String methodName) {
-        if (target == null) return Optional.empty();
+    private static boolean mobFarmBlock$setBoolean(Object target, String fieldName, boolean value) {
+        Optional<Field> field = mobFarmBlock$field(target, fieldName);
+        if (field.isEmpty()) return false;
         try {
-            Method method = target.getClass().getMethod(methodName);
-            method.setAccessible(true);
-            return Optional.ofNullable(method.invoke(target));
+            if (field.get().getType() == boolean.class) {
+                field.get().setBoolean(target, value);
+                return true;
+            }
+            if (field.get().getType() == Boolean.class) {
+                field.get().set(target, value);
+                return true;
+            }
         } catch (Throwable ignored) {
-            return Optional.empty();
         }
+        return false;
+    }
+
+    private static Optional<Object> mobFarmBlock$invokeNoArg(Object target, String methodName) {
+        return mobFarmBlock$invoke(target, methodName);
+    }
+
+    private static Optional<Object> mobFarmBlock$invoke(Object target, String methodName, Object... args) {
+        if (target == null) return Optional.empty();
+        Class<?> type = target.getClass();
+        while (type != null && type != Object.class) {
+            for (Method method : type.getDeclaredMethods()) {
+                if (!method.getName().equals(methodName) || method.getParameterCount() != args.length) continue;
+                if (!mobFarmBlock$parametersMatch(method.getParameterTypes(), args)) continue;
+                try {
+                    method.setAccessible(true);
+                    return Optional.ofNullable(method.invoke(target, args));
+                } catch (Throwable ignored) {
+                    return Optional.empty();
+                }
+            }
+            type = type.getSuperclass();
+        }
+        return Optional.empty();
+    }
+
+    private static boolean mobFarmBlock$parametersMatch(Class<?>[] types, Object[] args) {
+        for (int i = 0; i < types.length; i++) {
+            if (args[i] == null) continue;
+            Class<?> type = types[i].isPrimitive() ? mobFarmBlock$boxed(types[i]) : types[i];
+            if (!type.isInstance(args[i])) return false;
+        }
+        return true;
+    }
+
+    private static Class<?> mobFarmBlock$boxed(Class<?> type) {
+        if (type == boolean.class) return Boolean.class;
+        if (type == byte.class) return Byte.class;
+        if (type == short.class) return Short.class;
+        if (type == int.class) return Integer.class;
+        if (type == long.class) return Long.class;
+        if (type == float.class) return Float.class;
+        if (type == double.class) return Double.class;
+        if (type == char.class) return Character.class;
+        return type;
     }
 
     private static Optional<Object> mobFarmBlock$readField(Object target, String fieldName) {
