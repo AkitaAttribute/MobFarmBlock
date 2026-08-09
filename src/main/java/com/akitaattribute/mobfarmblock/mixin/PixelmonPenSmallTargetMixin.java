@@ -20,8 +20,9 @@ import net.minecraft.world.entity.Entity;
 
 @Mixin(value = MobFarmBlockEntityRenderer.class, remap = false)
 public abstract class PixelmonPenSmallTargetMixin {
-    private static final float TARGET_PIXELMON_PEN_HEIGHT = 0.40F;
-    private static final float MIN_PIXELMON_VISUAL_HEIGHT = 0.90F;
+    private static final float PIXELMON_RENDER_BASE_Y = 0.58F;
+    private static final float MAX_PIXELMON_TOP_Y = 0.98F;
+    private static final float TARGET_PIXELMON_PEN_HEIGHT = MAX_PIXELMON_TOP_Y - PIXELMON_RENDER_BASE_Y;
     private static final Pattern NUMBER = Pattern.compile("-?\\d+(?:\\.\\d+)?");
 
     @Inject(method = "placedEntityScale", at = @At("HEAD"), cancellable = true)
@@ -47,7 +48,7 @@ public abstract class PixelmonPenSmallTargetMixin {
         height = Math.max(height, pixelmonModelScale(entity).filter(scale -> scale >= 3.0F).map(scale -> scale * 0.20F).orElse(0.0F));
         height = Math.max(height, pixelmonEyeHeight(entity).orElse(0.0F));
         height = Math.max(height, pixelmonScaledBoundingHeight(entity).orElse(0.0F));
-        return Math.max(height, MIN_PIXELMON_VISUAL_HEIGHT);
+        return height;
     }
 
     private static Optional<Float> variantSizeMeters(StoredMob stored) {
