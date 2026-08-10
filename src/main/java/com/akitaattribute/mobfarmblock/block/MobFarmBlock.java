@@ -56,9 +56,11 @@ public class MobFarmBlock extends BaseEntityBlock {
     @Override protected VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) { return SHAPE; }
 
     @Override public BlockState getStateForPlacement(BlockPlaceContext context) {
-        Direction direction = context.getHorizontalDirection();
-        Direction facing = direction.getAxis() == Direction.Axis.Z ? direction.getOpposite() : direction;
-        return defaultBlockState().setValue(FACING, facing);
+        return defaultBlockState().setValue(FACING, facingTowardPlayer(context.getHorizontalDirection()));
+    }
+
+    private static Direction facingTowardPlayer(Direction direction) {
+        return direction.getAxis() == Direction.Axis.Z ? direction.getOpposite() : direction;
     }
 
     @Override protected BlockState rotate(BlockState state, Rotation rotation) {
@@ -90,8 +92,13 @@ public class MobFarmBlock extends BaseEntityBlock {
 
     private ItemInteractionResult insertCapturedMob(ItemStack stack, Player player, MobFarmBlockEntity blockEntity, Level level) {
         StoredMob incoming = CaptureToolItem.getStoredMob(stack);
+        boolean firstInsert = blockEntity.getStored().isEmpty();
         MobFarmBlockEntity.InsertResult result = blockEntity.insertOrMergeDetailed(incoming);
         if (result.success()) {
+            if (firstInsert) {
+                BlockState state = blockEntity.getBlockState();
+                if (state.hasProperty(FACING)) level.setBlock(blockEntity.getBlockPos(), state.setValue(FACING, facingTowardPlayer(player.getDirection())), 3);
+            }
             blockEntity.resetCooldownsOnPlacement(level.getGameTime());
             if (CaptureToolItem.shouldDiscardOnDeposit(stack)) stack.shrink(1);
             else CaptureToolItem.clearStoredMob(stack);
