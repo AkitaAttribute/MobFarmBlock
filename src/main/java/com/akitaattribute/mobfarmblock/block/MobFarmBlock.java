@@ -56,7 +56,7 @@ public class MobFarmBlock extends BaseEntityBlock {
     @Override protected VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) { return SHAPE; }
 
     @Override public BlockState getStateForPlacement(BlockPlaceContext context) {
-        return defaultBlockState().setValue(FACING, context.getHorizontalDirection().getOpposite());
+        return defaultBlockState().setValue(FACING, context.getHorizontalDirection());
     }
 
     @Override protected BlockState rotate(BlockState state, Rotation rotation) {
