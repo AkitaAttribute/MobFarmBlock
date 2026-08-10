@@ -65,6 +65,14 @@ class PixelmonMixinTargetTest {
     }
 
     @Test
+    void captureToolDoesNotDirectlyCaptureLivePixelmon() throws IOException {
+        String captureSource = read("src/main/java/com/akitaattribute/mobfarmblock/item/CaptureToolItem.java");
+        assertTrue(captureSource.contains("!isPixelmonEntity(entity)"));
+        assertTrue(captureSource.contains("\"pixelmon:pixelmon\".equals(BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString())"));
+        assertTrue(captureSource.contains("Pixelmon must be captured through loot-generated tools or pen pickup"));
+    }
+
+    @Test
     void pixelmonCaptureLootGuaranteePersistsMissesAndResetsOnDrop() throws IOException {
         String dataSource = read("src/main/java/com/akitaattribute/mobfarmblock/integration/PixelmonCaptureToolDropData.java");
         String injectorSource = read("src/main/java/com/akitaattribute/mobfarmblock/integration/PixelmonLootCaptureToolInjector.java");
