@@ -28,21 +28,41 @@ public final class PixelmonIdleAnimation {
 
         long gameTime = minecraft.level.getGameTime();
         int tick = (int) (gameTime & 0x3FFFFFFFL);
+        setAnimationTick(entity, tick);
+        setRenderRotationHistory(entity);
+
+        Long lastAnimatedTick = LAST_ANIMATION_TICK.get(entity);
+        if (lastAnimatedTick != null && lastAnimatedTick == gameTime) return;
+        LAST_ANIMATION_TICK.put(entity, gameTime);
+        advancePixelmonIdleAnimation(entity);
+    }
+
+    public static void freezePixelmonIdleClock(Entity entity) {
+        if (entity == null) return;
+        LAST_ANIMATION_TICK.remove(entity);
+        setAnimationTick(entity, 0);
+        setRenderRotationHistory(entity);
+        invoke(entity, "setAnimated", false);
+        setBoolean(entity, "animated", false);
+        invokeNoArg(entity, "initAnimation");
+        invokeNoArg(entity, "checkAnimation");
+        invokeNoArg(entity, "handleAnimation");
+        invokeNoArg(entity, "animationTime");
+    }
+
+    private static void setAnimationTick(Entity entity, int tick) {
         entity.tickCount = tick;
         setInt(entity, "tickCount", tick);
         setInt(entity, "ticksExisted", tick);
+    }
 
+    private static void setRenderRotationHistory(Entity entity) {
         if (entity instanceof LivingEntity living) {
             living.yBodyRotO = living.yBodyRot;
             living.yHeadRotO = living.yHeadRot;
             living.yRotO = living.getYRot();
             living.xRotO = living.getXRot();
         }
-
-        Long lastAnimatedTick = LAST_ANIMATION_TICK.get(entity);
-        if (lastAnimatedTick != null && lastAnimatedTick == gameTime) return;
-        LAST_ANIMATION_TICK.put(entity, gameTime);
-        advancePixelmonIdleAnimation(entity);
     }
 
     private static void advancePixelmonIdleAnimation(Entity entity) {
