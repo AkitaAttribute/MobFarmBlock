@@ -25,6 +25,7 @@ import net.minecraft.world.item.ItemStack;
 
 public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
     private static final float PIXELMON_PEN_ITEM_PREVIEW_HEIGHT = 0.62F;
+    private static final float PIXELMON_HELD_PEN_ITEM_PREVIEW_HEIGHT = 0.52F;
     private static final Pattern NUMBER = Pattern.compile("-?\\d+(?:\\.\\d+)?");
     private static final java.util.Set<String> WARNED_RENDER_FAILURES = new java.util.HashSet<>();
     private static final java.util.Set<String> LOGGED_PIXELMON_METRICS = new java.util.HashSet<>();
@@ -41,7 +42,7 @@ public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
         minecraft.getBlockRenderer().renderSingleBlock(ModBlocks.MOB_FARM_BLOCK.get().defaultBlockState(), poseStack, buffer, packedLight, packedOverlay);
         poseStack.popPose();
 
-        if (!MobFarmBlockItemData.hasStoredMob(stack) || !slotContext) return;
+        if (!MobFarmBlockItemData.hasStoredMob(stack)) return;
         StoredMob stored = MobFarmBlockItemData.getStoredMob(stack);
         Entity entity = safeGetRenderEntity(stored);
         if (entity == null) return;
@@ -49,13 +50,13 @@ public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
         poseStack.pushPose();
         boolean pixelmon = PixelmonEntityRenderCache.isPixelmonStored(stored);
         if (pixelmon) {
-            float scale = pixelmonPreviewScale(stored, entity, PIXELMON_PEN_ITEM_PREVIEW_HEIGHT);
-            logPixelmonMetrics("pen_item", stored, entity, minecraft, scale);
+            float scale = pixelmonPreviewScale(stored, entity, slotContext ? PIXELMON_PEN_ITEM_PREVIEW_HEIGHT : PIXELMON_HELD_PEN_ITEM_PREVIEW_HEIGHT);
+            logPixelmonMetrics(slotContext ? "pen_item" : "pen_item_hand", stored, entity, minecraft, scale);
             poseStack.translate(0.5D, 0.58D, 0.18D);
             poseStack.scale(scale, scale, scale);
             poseStack.translate(0.0D, -pixelmonCenterY(entity), 0.0D);
         } else {
-            float scale = entityScale(entity, stored);
+            float scale = entityScale(entity, stored) * (slotContext ? 1.0F : 0.72F);
             poseStack.translate(0.5D, 0.64D, 0.18D);
             poseStack.scale(scale, scale, scale);
             poseStack.translate(0.0D, -entity.getBbHeight() * 0.50D, 0.0D);
