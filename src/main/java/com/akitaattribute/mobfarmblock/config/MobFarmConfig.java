@@ -21,11 +21,11 @@ public final class MobFarmConfig {
     public static final ModConfigSpec.BooleanValue DEBUG_COBBLEMON_JSON_DUMP;
     public static final ModConfigSpec.BooleanValue PIXELMON_ENTITY_TRACKING_LOG;
     public static final ModConfigSpec.BooleanValue PIXELMON_NPC_REMOVAL_ENABLED;
+    public static final ModConfigSpec.DoubleValue PIXELMON_CAPTURE_TOOL_DROP_CHANCE;
     public static final ModConfigSpec.BooleanValue PENS_ALWAYS_SHOW_SMALL;
     public static final ModConfigSpec.BooleanValue PIXELMON_PEN_IDLE_ANIMATION;
     public static final ModConfigSpec.EnumValue<PixelmonRenderReplayMode> PIXELMON_RENDER_REPLAY_MODE;
     public static final ModConfigSpec.EnumValue<LookUiStyle> LOOK_UI_STYLE;
-    public static final ModConfigSpec.DoubleValue PIXELMON_CAPTURE_TOOL_DROP_CHANCE;
 
     static {
         ModConfigSpec.Builder commonBuilder = new ModConfigSpec.Builder();
@@ -45,18 +45,6 @@ public final class MobFarmConfig {
                 .comment("Remove unprotected Pixelmon NPCs after this mod has observed them for five minutes. Protected titled NPCs are not removed.")
                 .translation("mob_farm_block.configuration.pixelmonNpcRemovalEnabled")
                 .define("pixelmonNpcRemovalEnabled", true);
-        PENS_ALWAYS_SHOW_SMALL = commonBuilder
-                .comment("Always render stored mobs in their small pen preview size instead of only shrinking oversized previews while looking at the pen.")
-                .translation("mob_farm_block.configuration.pensAlwaysShowSmall")
-                .define("pensAlwaysShowSmall", true);
-        PIXELMON_RENDER_REPLAY_MODE = commonBuilder
-                .comment("Pixelmon preview reconstruction strategy. HYBRID_ALL tries saved entity payload first, then Pokemon factory reconstruction, and applies captured size to Pokemon/entity/delegate before and after refresh.")
-                .translation("mob_farm_block.configuration.pixelmonRenderReplayMode")
-                .defineEnum("pixelmonRenderReplayMode", PixelmonRenderReplayMode.HYBRID_ALL);
-        LOOK_UI_STYLE = commonBuilder
-                .comment("Look UI Style. NAMETAG is the current floating nametag-style debug overlay.")
-                .translation("mob_farm_block.configuration.lookUiStyle")
-                .defineEnum("lookUiStyle", LookUiStyle.NAMETAG);
         PIXELMON_CAPTURE_TOOL_DROP_CHANCE = commonBuilder
                 .comment("Chance for defeated Pixelmon loot UIs to include a filled Mob Farm Capture Tool. 1.0 = 100%, 0.01 = 1%, 0.0 = disabled.")
                 .translation("mob_farm_block.configuration.pixelmonCaptureToolDropChance")
@@ -64,6 +52,18 @@ public final class MobFarmConfig {
         COMMON_SPEC = commonBuilder.build();
 
         ModConfigSpec.Builder clientBuilder = new ModConfigSpec.Builder();
+        PENS_ALWAYS_SHOW_SMALL = clientBuilder
+                .comment("Always render stored mobs in their small pen preview size instead of only shrinking oversized previews while looking at the pen.")
+                .translation("mob_farm_block.configuration.pensAlwaysShowSmall")
+                .define("pensAlwaysShowSmall", true);
+        PIXELMON_RENDER_REPLAY_MODE = clientBuilder
+                .comment("Pixelmon preview reconstruction strategy. HYBRID_ALL tries saved entity payload first, then Pokemon factory reconstruction, and applies captured size to Pokemon/entity/delegate before and after refresh.")
+                .translation("mob_farm_block.configuration.pixelmonRenderReplayMode")
+                .defineEnum("pixelmonRenderReplayMode", PixelmonRenderReplayMode.HYBRID_ALL);
+        LOOK_UI_STYLE = clientBuilder
+                .comment("Look UI Style. NAMETAG is the current floating nametag-style debug overlay.")
+                .translation("mob_farm_block.configuration.lookUiStyle")
+                .defineEnum("lookUiStyle", LookUiStyle.NAMETAG);
         PIXELMON_PEN_IDLE_ANIMATION = clientBuilder
                 .comment("Animate Pixelmon idle poses in the in-world Mob Farm Block pen preview. This only affects client rendering.")
                 .translation("mob_farm_block.configuration.pixelmonPenIdleAnimation")
