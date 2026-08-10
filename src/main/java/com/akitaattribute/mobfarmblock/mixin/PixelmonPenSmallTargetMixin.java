@@ -47,7 +47,7 @@ public abstract class PixelmonPenSmallTargetMixin {
         height = Math.max(height, variantSizeMeters(stored).orElse(0.0F));
         height = Math.max(height, pixelmonEyeHeight(entity).orElse(0.0F));
         height = Math.max(height, pixelmonScaledBoundingHeight(entity).orElse(0.0F));
-        height = Math.max(height, flatHighScaleVisualHeight(entity).orElse(0.0F));
+        height = Math.max(height, highScaleVisualHeight(entity).orElse(0.0F));
         return height;
     }
 
@@ -90,13 +90,13 @@ public abstract class PixelmonPenSmallTargetMixin {
         return Float.isFinite(height) && height > 0.0F ? Optional.of(height) : Optional.empty();
     }
 
-    private static Optional<Float> flatHighScaleVisualHeight(Entity entity) {
+    private static Optional<Float> highScaleVisualHeight(Entity entity) {
         if (entity == null) return Optional.empty();
         float width = entity.getBbWidth();
         float height = entity.getBbHeight();
-        if (!(height <= 0.50F && width >= height * 1.40F)) return Optional.empty();
+        boolean flatHighScale = height <= 0.50F && width >= height * 1.40F;
         return pixelmonModelScale(entity)
-                .filter(scale -> scale >= 3.0F)
+                .filter(scale -> scale >= 9.0F || (flatHighScale && scale >= 3.0F))
                 .map(scale -> scale * 0.20F)
                 .filter(value -> Float.isFinite(value) && value > 0.0F);
     }
