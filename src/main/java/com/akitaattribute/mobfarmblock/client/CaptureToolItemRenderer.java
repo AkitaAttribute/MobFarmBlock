@@ -36,6 +36,7 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
     public void renderByItem(ItemStack stack, ItemDisplayContext displayContext, PoseStack poseStack, MultiBufferSource buffer, int packedLight, int packedOverlay) {
         Minecraft minecraft = Minecraft.getInstance();
         boolean slotContext = displayContext == ItemDisplayContext.GUI || displayContext == ItemDisplayContext.FIXED;
+        boolean handContext = isHandContext(displayContext);
         boolean filled = CaptureToolItem.hasStoredMob(stack);
 
         poseStack.pushPose();
@@ -43,7 +44,7 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
         minecraft.getBlockRenderer().renderSingleBlock(Blocks.SPAWNER.defaultBlockState(), poseStack, buffer, packedLight, packedOverlay);
         poseStack.popPose();
 
-        if (!filled) return;
+        if (!filled || (!slotContext && !handContext)) return;
         StoredMob stored = CaptureToolItem.getStoredMob(stack);
         Entity entity = safeGetRenderEntity(stored);
         if (entity == null) return;
@@ -63,13 +64,21 @@ public class CaptureToolItemRenderer extends BlockEntityWithoutLevelRenderer {
             poseStack.translate(0.0D, -entity.getBbHeight() * 0.50D, 0.0D);
         }
         poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
-        ClientEntityRenderCache.freezeForRender(entity);
+        if (pixelmon && handContext) PixelmonIdleAnimation.applyPixelmonIdleClock(entity);
+        else ClientEntityRenderCache.freezeForRender(entity);
         try {
             minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, 0.0F, poseStack, buffer, LightTexture.FULL_BRIGHT);
         } catch (Throwable error) {
             warnRenderFailure(stored, error);
         }
         poseStack.popPose();
+    }
+
+    private static boolean isHandContext(ItemDisplayContext displayContext) {
+        return displayContext == ItemDisplayContext.FIRST_PERSON_LEFT_HAND
+                || displayContext == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND
+                || displayContext == ItemDisplayContext.THIRD_PERSON_LEFT_HAND
+                || displayContext == ItemDisplayContext.THIRD_PERSON_RIGHT_HAND;
     }
 
     private static void applyGuiToolTransform(PoseStack poseStack, boolean filled) {
