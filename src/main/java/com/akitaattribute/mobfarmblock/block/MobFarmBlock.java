@@ -145,7 +145,7 @@ public class MobFarmBlock extends BaseEntityBlock {
     }
 
     @Override public BlockState playerWillDestroy(Level level, BlockPos pos, BlockState state, Player player) {
-        if (!level.isClientSide && level.getBlockEntity(pos) instanceof MobFarmBlockEntity blockEntity)) {
+        if (!level.isClientSide && level.getBlockEntity(pos) instanceof MobFarmBlockEntity blockEntity) {
             ItemStack drop = new ItemStack(ModBlocks.MOB_FARM_BLOCK_ITEM.get());
             if (!blockEntity.getStored().isEmpty()) MobFarmBlockItemData.setStoredMob(drop, blockEntity.getStored());
             popResource(level, pos, drop);
