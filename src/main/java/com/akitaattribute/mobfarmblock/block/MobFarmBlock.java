@@ -74,7 +74,10 @@ public class MobFarmBlock extends BaseEntityBlock {
     @Override protected ItemInteractionResult useItemOn(ItemStack stack, BlockState state, Level level, BlockPos pos, Player player, InteractionHand hand, BlockHitResult hit) {
         if (level.isClientSide) return ItemInteractionResult.SUCCESS;
         if (!(level.getBlockEntity(pos) instanceof MobFarmBlockEntity blockEntity)) return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
-        if (stack.is(ModItems.CAPTURE_TOOL.get()) && CaptureToolItem.hasStoredMob(stack)) return insertCapturedMob(stack, player, blockEntity);
+        if (stack.is(ModItems.CAPTURE_TOOL.get())) {
+            if (CaptureToolItem.hasStoredMob(stack)) return insertCapturedMob(stack, player, blockEntity, level);
+            if (!blockEntity.getStored().isEmpty()) return extractStoredMobToCaptureTool(stack, player, blockEntity);
+        }
 
         StoredMob stored = blockEntity.getStored();
         if (stored.isEmpty()) return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
@@ -83,10 +86,11 @@ public class MobFarmBlock extends BaseEntityBlock {
         return result.consumesAction() ? ItemInteractionResult.SUCCESS : ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
     }
 
-    private ItemInteractionResult insertCapturedMob(ItemStack stack, Player player, MobFarmBlockEntity blockEntity) {
+    private ItemInteractionResult insertCapturedMob(ItemStack stack, Player player, MobFarmBlockEntity blockEntity, Level level) {
         StoredMob incoming = CaptureToolItem.getStoredMob(stack);
         MobFarmBlockEntity.InsertResult result = blockEntity.insertOrMergeDetailed(incoming);
         if (result.success()) {
+            blockEntity.resetCooldownsOnPlacement(level.getGameTime());
             if (CaptureToolItem.shouldDiscardOnDeposit(stack)) stack.shrink(1);
             else CaptureToolItem.clearStoredMob(stack);
             player.displayClientMessage(Component.translatable("block.mob_farm_block.mob_farm_block.inserted"), true);
@@ -97,6 +101,25 @@ public class MobFarmBlock extends BaseEntityBlock {
         player.displayClientMessage(Component.translatable("block.mob_farm_block.mob_farm_block.different_mob"), true);
         MobFarmDebug.insertionRejected(player, incoming, blockEntity.getStored(), result.reason());
         return ItemInteractionResult.FAIL;
+    }
+
+    private ItemInteractionResult extractStoredMobToCaptureTool(ItemStack stack, Player player, MobFarmBlockEntity blockEntity) {
+        StoredMob stored = blockEntity.getStored();
+        if (stored.isEmpty()) return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+        StoredMob captured = stored.copyWithCount(stored.count);
+        if (stack.getCount() > 1) {
+            stack.shrink(1);
+            ItemStack filled = new ItemStack(ModItems.CAPTURE_TOOL.get());
+            CaptureToolItem.setStoredMob(filled, captured);
+            CaptureToolItem.setDiscardOnDeposit(filled, false);
+            if (!player.getInventory().add(filled)) player.drop(filled, false);
+        } else {
+            CaptureToolItem.setDiscardOnDeposit(stack, false);
+            CaptureToolItem.setStoredMob(stack, captured);
+        }
+        blockEntity.setStored(StoredMob.empty());
+        player.displayClientMessage(Component.translatable("block.mob_farm_block.mob_farm_block.extracted"), true);
+        return ItemInteractionResult.SUCCESS;
     }
 
     @Override public void attack(BlockState state, Level level, BlockPos pos, Player player) {
