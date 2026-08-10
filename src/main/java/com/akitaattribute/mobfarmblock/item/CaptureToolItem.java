@@ -7,6 +7,7 @@ import com.akitaattribute.mobfarmblock.mob.MobDisplayNames;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
 
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
@@ -68,12 +69,17 @@ public class CaptureToolItem extends Item {
     }
 
     private static boolean canCapture(LivingEntity entity) {
-        return !(entity instanceof Player) && !(entity instanceof EnderDragon) && !(entity instanceof WitherBoss);
+        return !(entity instanceof Player) && !(entity instanceof EnderDragon) && !(entity instanceof WitherBoss) && !isPixelmonEntity(entity);
+    }
+
+    private static boolean isPixelmonEntity(Entity entity) {
+        return entity != null && "pixelmon:pixelmon".equals(BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString());
     }
 
     private static String rejectionReason(LivingEntity entity) {
         if (entity instanceof Player) return "players cannot be captured";
         if (entity instanceof EnderDragon || entity instanceof WitherBoss) return "boss-like entity excluded";
+        if (isPixelmonEntity(entity)) return "Pixelmon must be captured through loot-generated tools or pen pickup";
         return "unknown";
     }
 
