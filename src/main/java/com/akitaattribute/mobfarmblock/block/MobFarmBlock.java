@@ -56,7 +56,9 @@ public class MobFarmBlock extends BaseEntityBlock {
     @Override protected VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) { return SHAPE; }
 
     @Override public BlockState getStateForPlacement(BlockPlaceContext context) {
-        return defaultBlockState().setValue(FACING, context.getHorizontalDirection());
+        Direction direction = context.getHorizontalDirection();
+        Direction facing = direction.getAxis() == Direction.Axis.Z ? direction.getOpposite() : direction;
+        return defaultBlockState().setValue(FACING, facing);
     }
 
     @Override protected BlockState rotate(BlockState state, Rotation rotation) {
@@ -143,7 +145,7 @@ public class MobFarmBlock extends BaseEntityBlock {
     }
 
     @Override public BlockState playerWillDestroy(Level level, BlockPos pos, BlockState state, Player player) {
-        if (!level.isClientSide && level.getBlockEntity(pos) instanceof MobFarmBlockEntity blockEntity) {
+        if (!level.isClientSide && level.getBlockEntity(pos) instanceof MobFarmBlockEntity blockEntity)) {
             ItemStack drop = new ItemStack(ModBlocks.MOB_FARM_BLOCK_ITEM.get());
             if (!blockEntity.getStored().isEmpty()) MobFarmBlockItemData.setStoredMob(drop, blockEntity.getStored());
             popResource(level, pos, drop);
