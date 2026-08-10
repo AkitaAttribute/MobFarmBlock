@@ -97,7 +97,7 @@ public abstract class PixelmonPenSmallTargetMixin {
         boolean flatHighScale = height <= 0.50F && width >= height * 1.40F;
         return pixelmonModelScale(entity)
                 .filter(scale -> scale >= 9.0F || (flatHighScale && scale >= 3.0F))
-                .map(scale -> scale * 0.20F)
+                .map(scale -> scale >= 9.0F ? scale * 0.50F : scale * 0.20F)
                 .filter(value -> Float.isFinite(value) && value > 0.0F);
     }
 
