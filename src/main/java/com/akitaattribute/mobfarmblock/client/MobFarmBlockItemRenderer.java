@@ -36,13 +36,14 @@ public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
     public void renderByItem(ItemStack stack, ItemDisplayContext displayContext, PoseStack poseStack, MultiBufferSource buffer, int packedLight, int packedOverlay) {
         Minecraft minecraft = Minecraft.getInstance();
         boolean slotContext = displayContext == ItemDisplayContext.GUI || displayContext == ItemDisplayContext.FIXED;
+        boolean handContext = isHandContext(displayContext);
 
         poseStack.pushPose();
         if (slotContext) applyGuiBlockTransform(poseStack);
         minecraft.getBlockRenderer().renderSingleBlock(ModBlocks.MOB_FARM_BLOCK.get().defaultBlockState(), poseStack, buffer, packedLight, packedOverlay);
         poseStack.popPose();
 
-        if (!MobFarmBlockItemData.hasStoredMob(stack)) return;
+        if (!MobFarmBlockItemData.hasStoredMob(stack) || (!slotContext && !handContext)) return;
         StoredMob stored = MobFarmBlockItemData.getStoredMob(stack);
         Entity entity = safeGetRenderEntity(stored);
         if (entity == null) return;
@@ -61,13 +62,21 @@ public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
             poseStack.scale(scale, scale, scale);
             poseStack.translate(0.0D, -entity.getBbHeight() * 0.50D, 0.0D);
         }
-        ClientEntityRenderCache.freezeForRender(entity);
+        if (pixelmon && handContext) PixelmonIdleAnimation.applyPixelmonIdleClock(entity);
+        else ClientEntityRenderCache.freezeForRender(entity);
         try {
             minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0F, 0.0F, 0.0F, poseStack, buffer, LightTexture.FULL_BRIGHT);
         } catch (Throwable error) {
             warnRenderFailure(stored, error);
         }
         poseStack.popPose();
+    }
+
+    private static boolean isHandContext(ItemDisplayContext displayContext) {
+        return displayContext == ItemDisplayContext.FIRST_PERSON_LEFT_HAND
+                || displayContext == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND
+                || displayContext == ItemDisplayContext.THIRD_PERSON_LEFT_HAND
+                || displayContext == ItemDisplayContext.THIRD_PERSON_RIGHT_HAND;
     }
 
     private static void applyGuiBlockTransform(PoseStack poseStack) {
