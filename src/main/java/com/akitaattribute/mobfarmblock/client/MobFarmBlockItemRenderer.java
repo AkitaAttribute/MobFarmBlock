@@ -62,8 +62,12 @@ public class MobFarmBlockItemRenderer extends BlockEntityWithoutLevelRenderer {
             poseStack.scale(scale, scale, scale);
             poseStack.translate(0.0D, -entity.getBbHeight() * 0.50D, 0.0D);
         }
-        if (pixelmon && handContext) PixelmonIdleAnimation.applyPixelmonIdleClock(entity);
-        else ClientEntityRenderCache.freezeForRender(entity);
+        if (pixelmon && handContext) {
+            PixelmonIdleAnimation.applyPixelmonIdleClock(entity);
+        } else {
+            if (pixelmon) PixelmonIdleAnimation.freezePixelmonIdleClock(entity);
+            ClientEntityRenderCache.freezeForRender(entity);
+        }
         try {
             minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0F, 0.0F, 0.0F, poseStack, buffer, LightTexture.FULL_BRIGHT);
         } catch (Throwable error) {
