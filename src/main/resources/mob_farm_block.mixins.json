@@ -9,8 +9,7 @@
     "PixelmonPenCenteringMixin",
     "PixelmonPenRenderHeightMixin",
     "PixelmonPenSmallTargetMixin",
-    "PixelmonPenIdleAnimationMixin",
-    "PixelmonRenderLoadBudgetMixin"
+    "PixelmonPenIdleAnimationMixin"
   ],
   "injectors": {
     "defaultRequire": 0
