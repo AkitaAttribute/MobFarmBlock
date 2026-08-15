@@ -74,9 +74,12 @@ public abstract class PixelmonRenderLoadBudgetMixin {
 
     private static String mobFarmBlock$cacheKey(StoredMob stored) {
         MobFarmConfig.PixelmonRenderReplayMode mode = MobFarmConfig.PIXELMON_RENDER_REPLAY_MODE.get();
+        int payloadKey = mode == MobFarmConfig.PixelmonRenderReplayMode.HYBRID_ALL
+                ? 0
+                : mobFarmBlock$payloadHash(stored.pixelmonRenderSnapshot);
         return mode + "|" + stored.mobId + "|" + stored.speciesId + "|" + stored.display.variantKey()
                 + "|cm=" + mobFarmBlock$pixelmonSizeCentimeters(stored).orElse(0.0F)
-                + "|" + mobFarmBlock$payloadHash(stored.pixelmonRenderSnapshot);
+                + "|" + payloadKey;
     }
 
     private static Optional<Float> mobFarmBlock$pixelmonSizeCentimeters(StoredMob stored) {
