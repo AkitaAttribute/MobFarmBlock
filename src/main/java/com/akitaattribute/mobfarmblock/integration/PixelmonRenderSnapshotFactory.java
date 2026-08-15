@@ -19,8 +19,10 @@ public final class PixelmonRenderSnapshotFactory {
         Optional<ResourceLocation> species = PixelmonIntegration.getSpeciesId(entity);
         if (species.isEmpty()) return Optional.empty();
 
-        Payload payload = entityPayload(entity).orElseGet(() -> PixelmonIntegration.getPokemonObject(entity).map(PixelmonRenderSnapshotFactory::pokemonPayload).orElse(new Payload("", "")));
-        return Optional.of(new PixelmonRenderSnapshot(
+        Payload payload = entityPayload(entity).orElseGet(() -> PixelmonIntegration.getPokemonObject(entity)
+                .map(PixelmonRenderSnapshotFactory::pokemonPayload)
+                .orElse(new Payload("", "", null)));
+        PixelmonRenderSnapshot snapshot = new PixelmonRenderSnapshot(
                 species.get(),
                 PixelmonIntegration.getDisplayKey(entity).orElse(species.get().toString()),
                 payload.format(),
@@ -28,7 +30,9 @@ public final class PixelmonRenderSnapshotFactory {
                 Math.max(0.0F, entity.getBbWidth()),
                 Math.max(0.0F, entity.getBbHeight()),
                 sizeCentimeters(entity)
-        ));
+        );
+        if (payload.entityTag() != null) snapshot.cacheEntityPayload(payload.entityTag());
+        return Optional.of(snapshot);
     }
 
     private static float sizeCentimeters(Entity entity) {
@@ -78,7 +82,7 @@ public final class PixelmonRenderSnapshotFactory {
             CompoundTag tag = new CompoundTag();
             entity.saveWithoutId(tag);
             stripRuntimeEntityState(tag);
-            return Optional.of(new Payload("entity:saveWithoutId", tag.toString()));
+            return Optional.of(new Payload("entity:saveWithoutId", tag.toString(), tag.copy()));
         } catch (Throwable ignored) {
             return Optional.empty();
         }
@@ -98,11 +102,11 @@ public final class PixelmonRenderSnapshotFactory {
                 "saveToNBT", "saveToNbt", "serializeNBT", "serializeNbt", "toNBT", "toNbt", "save", "writeToNBT", "writeNbt"
         }) {
             Optional<Object> value = PixelmonIntegration.reflectNoArg(pokemon, method);
-            if (value.isPresent()) return new Payload("pokemon:" + method + ":" + value.get().getClass().getName(), String.valueOf(value.get()));
+            if (value.isPresent()) return new Payload("pokemon:" + method + ":" + value.get().getClass().getName(), String.valueOf(value.get()), null);
         }
-        return new Payload("", "");
+        return new Payload("", "", null);
     }
 
-    private record Payload(String format, String value) {}
+    private record Payload(String format, String value, CompoundTag entityTag) {}
     private PixelmonRenderSnapshotFactory() {}
 }
