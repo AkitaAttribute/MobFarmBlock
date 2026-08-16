@@ -448,18 +448,45 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
         for (InteractionDefinition definition : stored.interactionProfile.definitions()) {
             if (isPixelmonDropHarvest(definition)) {
                 usesPixelmonDropHarvest = true;
-                rows.addAll(pixelmonDropRows(stored, now));
+                rows.addAll(pixelmonExpandedDropRows(stored, now));
                 continue;
             }
-            LookRow row = compactRow(stored, definition, now);
+            LookRow row = expandedRow(stored, definition, now);
             if (row != null) rows.add(row);
         }
-        if (!usesPixelmonDropHarvest) for (DropRule rule : stored.dropProfile.drops()) rows.add(new LookRow(new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId())), "Drop", formatChance(rule.chance()), TEXT_WHITE, TEXT_YELLOW));
+        if (!usesPixelmonDropHarvest) {
+            for (DropRule rule : stored.dropProfile.drops()) {
+                ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId()));
+                rows.add(new LookRow(stack, itemLabel(stack, rule.itemId()), dropDetail(rule), TEXT_WHITE, TEXT_YELLOW));
+            }
+        }
         if (rows.isEmpty()) {
             if (hasNativePixelmonDrops(stored)) rows.add(new LookRow(new ItemStack(Items.CHEST), "Native Drops", "Pixelmon UI", TEXT_WHITE, TEXT_GREEN));
             else rows.add(new LookRow(new ItemStack(Items.BARRIER), "No Drops", "", TEXT_GRAY, TEXT_GRAY));
         }
         return rows;
+    }
+
+    private static LookRow expandedRow(StoredMob stored, InteractionDefinition definition, long now) {
+        String method = definition.methodId().toString();
+        if (method.equals(MobFarmBlockMod.id("breed").toString()) || method.equals(MobFarmBlockMod.id("milk").toString())) {
+            return compactRow(stored, definition, now);
+        }
+        if (method.equals(MobFarmBlockMod.id("shear").toString())) {
+            ItemStack stack = shearIcon(stored, definition);
+            ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
+            return new LookRow(stack, "Wool", timedDropDetail(stored, definition, itemId, now), TEXT_WHITE, readyColor(stored, definition.methodId(), now));
+        }
+        if (method.equals(MobFarmBlockMod.id("egg").toString())) {
+            return new LookRow(new ItemStack(Items.EGG), "Egg", timedDropDetail(stored, definition, BuiltInRegistries.ITEM.getKey(Items.EGG), now), TEXT_WHITE, readyColor(stored, definition.methodId(), now));
+        }
+        if (method.equals(MobFarmBlockMod.id("output_item").toString()) || method.equals(MobFarmBlockMod.id("harvest").toString())) {
+            return definition.outputItem().map(id -> {
+                ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(id));
+                return new LookRow(stack, itemLabel(stack, id), timedDropDetail(stored, definition, id, now), TEXT_WHITE, readyColor(stored, definition.methodId(), now));
+            }).orElse(null);
+        }
+        return compactRow(stored, definition, now);
     }
 
     private static boolean isPixelmonDropHarvest(InteractionDefinition definition) {
@@ -479,6 +506,47 @@ public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBl
             rows.add(new LookRow(stack, itemLabel(stack, rule.itemId()), formatChance(rule.chance()), TEXT_WHITE, color));
         }
         return rows;
+    }
+
+    private static List<LookRow> pixelmonExpandedDropRows(StoredMob stored, long now) {
+        List<LookRow> rows = new ArrayList<>();
+        String ready = readyValue(stored, MobFarmBlockMod.id("pixelmon_drops"), now);
+        int color = readyColor(stored, MobFarmBlockMod.id("pixelmon_drops"), now);
+        if (stored.dropProfile.drops().isEmpty()) {
+            rows.add(new LookRow(new ItemStack(Items.CHEST), "Pixelmon Drops", ready, TEXT_WHITE, color));
+            return rows;
+        }
+        for (DropRule rule : stored.dropProfile.drops()) {
+            ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId()));
+            rows.add(new LookRow(stack, itemLabel(stack, rule.itemId()), dropDetail(rule) + " " + ready, TEXT_WHITE, color));
+        }
+        return rows;
+    }
+
+    private static String timedDropDetail(StoredMob stored, InteractionDefinition definition, ResourceLocation itemId, long now) {
+        DropRule rule = findDropRule(stored, itemId).orElse(null);
+        int min = rule == null ? definition.minCount() : rule.minCount();
+        int max = rule == null ? definition.maxCount() : rule.maxCount();
+        double chance = rule == null ? 1.0D : rule.chance();
+        return formatCountRange(min, max) + " " + formatChance(chance) + " " + readyValue(stored, definition.methodId(), now);
+    }
+
+    private static Optional<DropRule> findDropRule(StoredMob stored, ResourceLocation itemId) {
+        if (stored == null || stored.dropProfile == null || itemId == null) return Optional.empty();
+        for (DropRule rule : stored.dropProfile.drops()) {
+            if (rule != null && itemId.equals(rule.itemId())) return Optional.of(rule);
+        }
+        return Optional.empty();
+    }
+
+    private static String dropDetail(DropRule rule) {
+        return formatCountRange(rule.minCount(), rule.maxCount()) + " " + formatChance(rule.chance());
+    }
+
+    private static String formatCountRange(int minCount, int maxCount) {
+        int min = Math.max(0, minCount);
+        int max = Math.max(min, maxCount);
+        return min == max ? Integer.toString(min) : min + "-" + max;
     }
 
     private static boolean hasNativePixelmonDrops(StoredMob stored) {
