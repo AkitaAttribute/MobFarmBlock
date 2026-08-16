@@ -1,5 +1,7 @@
 package com.akitaattribute.mobfarmblock.item;
 
+import java.util.List;
+
 import com.akitaattribute.mobfarmblock.mob.MobProfileFactory;
 import com.akitaattribute.mobfarmblock.debug.MobFarmDebug;
 import com.akitaattribute.mobfarmblock.debug.CobblemonDebugDumper;
@@ -20,6 +22,7 @@ import net.minecraft.world.entity.boss.wither.WitherBoss;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.CustomData;
 
 public class CaptureToolItem extends Item {
@@ -32,6 +35,12 @@ public class CaptureToolItem extends Item {
     public Component getName(ItemStack stack) {
         StoredMob stored = getStoredMob(stack);
         return stored == null || stored.isEmpty() ? super.getName(stack) : Component.literal(MobDisplayNames.capturedName(stored));
+    }
+
+    @Override
+    public void appendHoverText(ItemStack stack, Item.TooltipContext context, List<Component> tooltip, TooltipFlag flag) {
+        super.appendHoverText(stack, context, tooltip, flag);
+        MobFarmItemTooltip.appendStoredMob(getStoredMob(stack), tooltip);
     }
 
     @Override public InteractionResult interactLivingEntity(ItemStack stack, Player player, LivingEntity target, InteractionHand hand) {
