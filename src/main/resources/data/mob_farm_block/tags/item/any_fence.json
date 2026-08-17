@@ -1,0 +1,18 @@
+{
+  "replace": false,
+  "values": [
+    "#minecraft:fences",
+    {
+      "id": "#c:fences",
+      "required": false
+    },
+    {
+      "id": "#forge:fences",
+      "required": false
+    },
+    {
+      "id": "#neoforge:fences",
+      "required": false
+    }
+  ]
+}

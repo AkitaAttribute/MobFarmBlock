@@ -1,12 +1,18 @@
 package com.akitaattribute.mobfarmblock.item;
 
+import java.util.List;
+
 import com.akitaattribute.mobfarmblock.mob.MobProfileFactory;
 import com.akitaattribute.mobfarmblock.debug.MobFarmDebug;
+import com.akitaattribute.mobfarmblock.debug.CobblemonDebugDumper;
+import com.akitaattribute.mobfarmblock.mob.MobDisplayNames;
 import com.akitaattribute.mobfarmblock.mob.StoredMob;
 
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
@@ -16,40 +22,76 @@ import net.minecraft.world.entity.boss.wither.WitherBoss;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.CustomData;
 
 public class CaptureToolItem extends Item {
     private static final String STORED_MOB_KEY = "StoredMob";
+    private static final String DISCARD_ON_DEPOSIT_KEY = "DiscardOnDeposit";
 
     public CaptureToolItem(Properties properties) { super(properties); }
 
+    @Override
+    public Component getName(ItemStack stack) {
+        StoredMob stored = getStoredMob(stack);
+        return stored == null || stored.isEmpty() ? super.getName(stack) : Component.literal(MobDisplayNames.capturedName(stored));
+    }
+
+    @Override
+    public void appendHoverText(ItemStack stack, Item.TooltipContext context, List<Component> tooltip, TooltipFlag flag) {
+        super.appendHoverText(stack, context, tooltip, flag);
+        MobFarmItemTooltip.appendStoredMob(getStoredMob(stack), tooltip);
+    }
+
     @Override public InteractionResult interactLivingEntity(ItemStack stack, Player player, LivingEntity target, InteractionHand hand) {
         if (player.level().isClientSide) return InteractionResult.SUCCESS;
-        if (hasStoredMob(stack)) {
-            player.displayClientMessage(Component.translatable("item.mob_farm_block.capture_tool.filled"), true);
-            MobFarmDebug.captureRejected(player, target, "capture tool already filled");
-            return InteractionResult.FAIL;
-        }
         if (!canCapture(target)) {
             player.displayClientMessage(Component.translatable("item.mob_farm_block.capture_tool.invalid"), true);
             MobFarmDebug.captureRejected(player, target, rejectionReason(target));
             return InteractionResult.FAIL;
         }
-        StoredMob stored = MobProfileFactory.fromEntity(target);
-        setStoredMob(stack, stored);
+
+        StoredMob captured = MobProfileFactory.fromEntity(target);
+        StoredMob existing = getStoredMob(stack);
+        if (existing != null && !existing.isEmpty()) {
+            if (captured.isUnknownCobblemonPokemon() || existing.isUnknownCobblemonPokemon() || !existing.isSameType(captured)) {
+                player.displayClientMessage(Component.translatable("item.mob_farm_block.capture_tool.filled"), true);
+                MobFarmDebug.captureRejected(player, target, "capture tool contains a different mob");
+                return InteractionResult.FAIL;
+            }
+            existing.count += captured.count;
+            existing.mergeDiscoveredProfileFrom(captured);
+            setStoredMob(stack, existing);
+        } else if (stack.getCount() > 1) {
+            stack.shrink(1);
+            ItemStack filled = new ItemStack(this);
+            setStoredMob(filled, captured);
+            if (!player.getInventory().add(filled)) player.drop(filled, false);
+        } else {
+            setStoredMob(stack, captured);
+        }
+
         target.remove(Entity.RemovalReason.DISCARDED);
         player.displayClientMessage(Component.translatable("item.mob_farm_block.capture_tool.captured"), true);
-        MobFarmDebug.captureSuccess(player, target, stored);
+        CobblemonDebugDumper.writeEntityDump(player, target, captured, "capture");
+        if (!"cobblemon:pokemon".equals(captured.mobId.toString())) MobFarmDebug.captureSuccess(player, target, captured);
         return InteractionResult.SUCCESS;
     }
 
     private static boolean canCapture(LivingEntity entity) {
-        return !(entity instanceof Player) && !(entity instanceof EnderDragon) && !(entity instanceof WitherBoss);
+        return !(entity instanceof Player) && !(entity instanceof EnderDragon) && !(entity instanceof WitherBoss) && !isPixelmonEntity(entity);
+    }
+
+    private static boolean isPixelmonEntity(Entity entity) {
+        if (entity == null) return false;
+        ResourceLocation entityType = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+        return entityType != null && "pixelmon".equals(entityType.getNamespace());
     }
 
     private static String rejectionReason(LivingEntity entity) {
         if (entity instanceof Player) return "players cannot be captured";
         if (entity instanceof EnderDragon || entity instanceof WitherBoss) return "boss-like entity excluded";
+        if (isPixelmonEntity(entity)) return "Pixelmon entities must be captured through loot-generated tools or pen pickup";
         return "unknown";
     }
 
@@ -72,6 +114,19 @@ public class CaptureToolItem extends Item {
     public static void clearStoredMob(ItemStack stack) {
         CompoundTag tag = getOrCreateCustomNbt(stack);
         tag.remove(STORED_MOB_KEY);
+        tag.remove(DISCARD_ON_DEPOSIT_KEY);
+        stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+    }
+
+    public static boolean shouldDiscardOnDeposit(ItemStack stack) {
+        CompoundTag tag = getCustomNbt(stack);
+        return tag != null && tag.getBoolean(DISCARD_ON_DEPOSIT_KEY);
+    }
+
+    public static void setDiscardOnDeposit(ItemStack stack, boolean discardOnDeposit) {
+        CompoundTag tag = getOrCreateCustomNbt(stack);
+        if (discardOnDeposit) tag.putBoolean(DISCARD_ON_DEPOSIT_KEY, true);
+        else tag.remove(DISCARD_ON_DEPOSIT_KEY);
         stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
     }
 

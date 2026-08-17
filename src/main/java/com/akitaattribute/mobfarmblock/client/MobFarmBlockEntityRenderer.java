@@ -1,28 +1,607 @@
 package com.akitaattribute.mobfarmblock.client;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
+import com.akitaattribute.mobfarmblock.block.MobFarmBlock;
 import com.akitaattribute.mobfarmblock.block.MobFarmBlockEntity;
+import com.akitaattribute.mobfarmblock.config.MobFarmConfig;
+import com.akitaattribute.mobfarmblock.mob.DropRule;
+import com.akitaattribute.mobfarmblock.mob.InteractionDefinition;
+import com.akitaattribute.mobfarmblock.mob.MobDisplayNames;
+import com.akitaattribute.mobfarmblock.mob.PixelmonRenderSnapshot;
+import com.akitaattribute.mobfarmblock.mob.StoredMob;
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.animal.Sheep;
+import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.item.ItemDisplayContext;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import org.joml.Matrix4f;
 
 public class MobFarmBlockEntityRenderer implements BlockEntityRenderer<MobFarmBlockEntity> {
+    private static final int TEXT_WHITE = 0xFFFFFF;
+    private static final int TEXT_GREEN = 0x55FF55;
+    private static final int TEXT_YELLOW = 0xFFFF55;
+    private static final int TEXT_GRAY = 0xC0C0C0;
+    private static final int NO_TEXT_BACKGROUND = 0x00000000;
+    private static final int COMPACT_COLUMNS = 4;
+    private static final int EXPANDED_COLUMNS = 2;
+    private static final int MIN_COMPACT_COLUMN_WIDTH = 30;
+    private static final float PIXELMON_BLOCK_RENDER_HEIGHT = 0.60F;
+    private static final Pattern NUMBER = Pattern.compile("-?\\d+(?:\\.\\d+)?");
+    private static final Map<String, Sheep> SHEEP_RENDER_CACHE = new HashMap<>();
+    private static final Set<String> LOGGED_PIXELMON_PEN_METRICS = new HashSet<>();
+    private static final Path PIXELMON_PEN_METRICS_LOG = Path.of("config", "mob_farm_block", "debug", "pixelmon_pen_render_metrics.jsonl").toAbsolutePath();
+
     public MobFarmBlockEntityRenderer(BlockEntityRendererProvider.Context context) {}
 
     @Override
     public void render(MobFarmBlockEntity blockEntity, float partialTick, PoseStack poseStack, MultiBufferSource buffer, int packedLight, int packedOverlay) {
-        if (blockEntity.getStored().isEmpty()) return;
-        Entity entity = ClientEntityRenderCache.getOrCreate(blockEntity.getStored());
-        if (entity == null) return;
+        StoredMob stored = blockEntity.getStored();
+        if (stored.isEmpty()) return;
+        Minecraft minecraft = Minecraft.getInstance();
+        boolean inspected = isInspected(minecraft, blockEntity.getBlockPos());
+        boolean pixelmon = PixelmonEntityRenderCache.isPixelmonStored(stored);
+        Entity entity = renderEntity(stored, minecraft);
+        if (entity != null) {
+            float yaw = blockEntity.getBlockState().getValue(MobFarmBlock.FACING).toYRot();
+            poseStack.pushPose();
+            poseStack.translate(0.5D, 0.58D, 0.5D);
+            float scale = placedEntityScale(stored, entity, inspected);
+            PixelmonPenCentering pixelmonCentering = pixelmon ? pixelmonPenCentering(entity, stored) : PixelmonPenCentering.EMPTY;
+            poseStack.scale(scale, scale, scale);
+            if (pixelmon) {
+                poseStack.mulPose(Axis.YP.rotationDegrees(yaw));
+                applyPixelmonFacing(entity, 0.0F);
+                applyPixelmonPenCentering(poseStack, pixelmonCentering);
+                logPixelmonPenMetrics(blockEntity, stored, entity, inspected, scale, pixelmonCentering);
+            } else {
+                poseStack.mulPose(Axis.YP.rotationDegrees(yaw));
+            }
+            ClientEntityRenderCache.freezeForRender(entity);
+            try {
+                minecraft.getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, 0.0F, poseStack, buffer, 0x00F000F0);
+            } catch (Throwable error) {
+                MobFarmBlockMod.LOGGER.error("Placed pen mob render failed for {}; skipping entity overlay", stored.speciesId != null ? stored.speciesId : stored.mobId, error);
+            }
+            poseStack.popPose();
+        }
+        if (inspected) renderLookUi(blockEntity, entity, poseStack, buffer, minecraft);
+    }
+
+    private static Entity renderEntity(StoredMob stored, Minecraft minecraft) {
+        if ("minecraft:sheep".equals(stored.mobId.toString())) return sheepRenderEntity(stored, minecraft);
+        if (PixelmonEntityRenderCache.isPixelmonStored(stored)) return PixelmonEntityRenderCache.getOrCreate(stored);
+        return ClientEntityRenderCache.getOrCreate(stored);
+    }
+
+    private static void applyPixelmonFacing(Entity entity, float yaw) {
+        entity.setYRot(yaw);
+        entity.setYHeadRot(yaw);
+        if (entity instanceof LivingEntity living) {
+            living.yBodyRot = yaw;
+            living.yHeadRot = yaw;
+        }
+    }
+
+    private static PixelmonPenCentering pixelmonPenCentering(Entity entity, StoredMob stored) {
+        AABB box = entity.getBoundingBox();
+        double xCenter = ((box.minX + box.maxX) * 0.5D) - entity.getX();
+        double zCenter = ((box.minZ + box.maxZ) * 0.5D) - entity.getZ();
+        double visualLength = Math.max(renderWidth(entity, stored), pixelmonRenderHeightMeters(stored).orElse(0.0F));
+        double elongatedOffset = Math.max(0.0D, visualLength - 1.0D) * 0.50D;
+        double xOffset = Double.isFinite(xCenter) && Math.abs(xCenter) > 0.001D ? -xCenter : 0.0D;
+        double zOffset = Double.isFinite(zCenter) && Math.abs(zCenter) > 0.001D ? -zCenter : 0.0D;
+        if (Double.isFinite(elongatedOffset) && elongatedOffset > 0.001D) zOffset += elongatedOffset;
+        return new PixelmonPenCentering(xOffset, zOffset, xCenter, zCenter, visualLength, elongatedOffset);
+    }
+
+    private static void applyPixelmonPenCentering(PoseStack poseStack, PixelmonPenCentering centering) {
+        if (centering == PixelmonPenCentering.EMPTY) return;
+        if (Math.abs(centering.xOffset()) > 0.001D || Math.abs(centering.zOffset()) > 0.001D) {
+            poseStack.translate(centering.xOffset(), 0.0D, centering.zOffset());
+        }
+    }
+
+    private static float placedEntityScale(StoredMob stored, Entity entity, boolean inspected) {
+        if (PixelmonEntityRenderCache.isPixelmonStored(stored)) {
+            boolean shrink = inspected || MobFarmConfig.PENS_ALWAYS_SHOW_SMALL.get();
+            if (!shrink) return 1.0F;
+            float renderedHeight = renderHeight(entity, stored);
+            return renderedHeight > PIXELMON_BLOCK_RENDER_HEIGHT
+                    ? PIXELMON_BLOCK_RENDER_HEIGHT / Math.max(0.1F, renderedHeight)
+                    : 1.0F;
+        }
+        float scale = 0.32F;
+        if (inspected) scale = Math.min(scale, 0.60F / Math.max(0.1F, entity.getBbHeight()));
+        return scale;
+    }
+
+    private static Optional<Float> pixelmonRenderHeightMeters(StoredMob stored) {
+        if (stored == null) return Optional.empty();
+        PixelmonRenderSnapshot snapshot = stored.pixelmonRenderSnapshot;
+        if (snapshot != null && snapshot.sizeCentimeters() > 0.0F) return Optional.of(snapshot.sizeCentimeters() / 100.0F);
+        String variant = stored.display == null ? "" : stored.display.variantKey();
+        String size = parseVariantValue(variant, "size");
+        String source = size.isBlank() ? variant : size;
+        Matcher matcher = NUMBER.matcher(source);
+        if (!matcher.find()) return Optional.empty();
+        try {
+            float value = Float.parseFloat(matcher.group());
+            if (value <= 0.0F) return Optional.empty();
+            String lower = source.toLowerCase(java.util.Locale.ROOT);
+            float centimeters = lower.contains("cm") || value > 10.0F ? value : value * 100.0F;
+            return Optional.of(centimeters / 100.0F);
+        } catch (Throwable ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private static String parseVariantValue(String variantKey, String key) {
+        if (variantKey == null) return "";
+        for (String part : variantKey.split("\\|")) {
+            int equals = part.indexOf('=');
+            if (equals > 0 && part.substring(0, equals).equals(key)) return part.substring(equals + 1);
+        }
+        return "";
+    }
+
+    private static float renderHeight(Entity entity, StoredMob stored) {
+        float height = Math.max(entity.getBbHeight(), 0.35F);
+        PixelmonRenderSnapshot snapshot = stored == null ? null : stored.pixelmonRenderSnapshot;
+        if (snapshot != null && snapshot.capturedHeight() > 0.05F) height = Math.max(height, snapshot.capturedHeight());
+        return height;
+    }
+
+    private static float renderWidth(Entity entity, StoredMob stored) {
+        float width = Math.max(entity.getBbWidth(), 0.35F);
+        PixelmonRenderSnapshot snapshot = stored == null ? null : stored.pixelmonRenderSnapshot;
+        if (snapshot != null && snapshot.capturedWidth() > 0.05F) width = Math.max(width, snapshot.capturedWidth());
+        return width;
+    }
+
+    private static void logPixelmonPenMetrics(MobFarmBlockEntity blockEntity, StoredMob stored, Entity entity, boolean inspected, float appliedScale, PixelmonPenCentering centering) {
+        PixelmonRenderSnapshot snapshot = stored.pixelmonRenderSnapshot;
+        String dimension = blockEntity.getLevel() == null ? "unknown" : blockEntity.getLevel().dimension().location().toString();
+        BlockPos pos = blockEntity.getBlockPos();
+        String key = dimension + "|" + pos.asLong() + "|" + (stored.speciesId == null ? stored.mobId : stored.speciesId) + "|" + MobFarmConfig.PIXELMON_RENDER_REPLAY_MODE.get();
+        if (!LOGGED_PIXELMON_PEN_METRICS.add(key)) return;
+        try {
+            Files.createDirectories(PIXELMON_PEN_METRICS_LOG.getParent());
+            StringBuilder out = new StringBuilder(512);
+            out.append('{');
+            json(out, "dimension", dimension).append(',');
+            json(out, "pos", pos.getX() + "," + pos.getY() + "," + pos.getZ()).append(',');
+            json(out, "species", stored.speciesId == null ? stored.mobId.toString() : stored.speciesId.toString()).append(',');
+            json(out, "variant", stored.display == null ? "" : stored.display.variantKey()).append(',');
+            json(out, "replayMode", MobFarmConfig.PIXELMON_RENDER_REPLAY_MODE.get().name()).append(',');
+            json(out, "entityClass", entity.getClass().getName()).append(',');
+            num(out, "entityBbWidth", entity.getBbWidth()).append(',');
+            num(out, "entityBbHeight", entity.getBbHeight()).append(',');
+            num(out, "renderWidth", renderWidth(entity, stored)).append(',');
+            num(out, "renderHeight", renderHeight(entity, stored)).append(',');
+            num(out, "sizeCentimeters", snapshot == null ? 0.0F : snapshot.sizeCentimeters()).append(',');
+            num(out, "capturedWidth", snapshot == null ? 0.0F : snapshot.capturedWidth()).append(',');
+            num(out, "capturedHeight", snapshot == null ? 0.0F : snapshot.capturedHeight()).append(',');
+            num(out, "pixelmonSizeMeters", pixelmonRenderHeightMeters(stored).orElse(0.0F)).append(',');
+            bool(out, "inspected", inspected).append(',');
+            bool(out, "alwaysSmall", MobFarmConfig.PENS_ALWAYS_SHOW_SMALL.get()).append(',');
+            num(out, "appliedScale", appliedScale).append(',');
+            num(out, "bboxCenterX", centering.xCenter()).append(',');
+            num(out, "bboxCenterZ", centering.zCenter()).append(',');
+            num(out, "visualLength", centering.visualLength()).append(',');
+            num(out, "elongatedDepthOffset", centering.elongatedDepthOffset()).append(',');
+            num(out, "finalXOffset", centering.xOffset()).append(',');
+            num(out, "finalZOffset", centering.zOffset());
+            out.append('}').append(System.lineSeparator());
+            Files.writeString(PIXELMON_PEN_METRICS_LOG, out.toString(), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (IOException error) {
+            MobFarmBlockMod.LOGGER.warn("Failed to write Pixelmon pen render metrics", error);
+        }
+    }
+
+    private static StringBuilder json(StringBuilder out, String name, String value) {
+        out.append('"').append(name).append("\":\"");
+        String safe = value == null ? "" : value;
+        for (int i = 0; i < safe.length(); i++) {
+            char c = safe.charAt(i);
+            if (c == '\\' || c == '"') out.append('\\');
+            if (c == '\n') out.append("\\n");
+            else if (c == '\r') out.append("\\r");
+            else out.append(c);
+        }
+        return out.append('"');
+    }
+
+    private static StringBuilder num(StringBuilder out, String name, double value) {
+        return out.append('"').append(name).append("\":").append(Double.isFinite(value) ? value : 0.0D);
+    }
+
+    private static StringBuilder bool(StringBuilder out, String name, boolean value) {
+        return out.append('"').append(name).append("\":").append(value);
+    }
+
+    private static Entity sheepRenderEntity(StoredMob stored, Minecraft minecraft) {
+        if (minecraft.level == null) return null;
+        long now = minecraft.level.getGameTime();
+        long readyAt = Math.max(stored.state.getLong("nextWoolReadyAt"), stored.readyAtTicks.getOrDefault(MobFarmBlockMod.id("shear"), 0L));
+        boolean sheared = now < readyAt;
+        String colorName = stored.state.getString("sheepColor");
+        if (colorName.isBlank()) colorName = stored.display.colorKey().isBlank() ? "white" : stored.display.colorKey();
+        boolean baby = stored.display.baby();
+        String key = colorName + "|" + baby + "|" + sheared;
+        Sheep sheep = SHEEP_RENDER_CACHE.computeIfAbsent(key, ignored -> EntityType.SHEEP.create(minecraft.level));
+        if (sheep == null) return ClientEntityRenderCache.getOrCreate(stored);
+        sheep.setColor(DyeColor.byName(colorName, DyeColor.WHITE));
+        sheep.setBaby(baby);
+        sheep.setSheared(sheared);
+        return sheep;
+    }
+
+    private static boolean isInspected(Minecraft minecraft, BlockPos pos) {
+        if (minecraft.player == null || minecraft.hitResult == null || minecraft.hitResult.getType() != HitResult.Type.BLOCK) return false;
+        if (!((BlockHitResult) minecraft.hitResult).getBlockPos().equals(pos)) return false;
+        return minecraft.player.distanceToSqr(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D) <= 36.0D;
+    }
+
+    private static void renderLookUi(MobFarmBlockEntity blockEntity, Entity entity, PoseStack poseStack, MultiBufferSource buffer, Minecraft minecraft) {
+        if (MobFarmConfig.LOOK_UI_STYLE.get() == MobFarmConfig.LookUiStyle.NAMETAG) {
+            renderNametagLookUi(blockEntity, entity, poseStack, buffer, minecraft);
+        }
+    }
+
+    private static void renderNametagLookUi(MobFarmBlockEntity blockEntity, Entity entity, PoseStack poseStack, MultiBufferSource buffer, Minecraft minecraft) {
+        StoredMob stored = blockEntity.getStored();
+        long now = blockEntity.getLevel() == null ? 0L : blockEntity.getLevel().getGameTime();
+        boolean expanded = minecraft.player != null && minecraft.player.isShiftKeyDown();
+        List<LookRow> rows = expanded ? expandedRows(stored, now) : compactRows(stored, now);
+        if (rows.isEmpty()) return;
+
         poseStack.pushPose();
-        poseStack.translate(0.5D, 0.58D, 0.5D);
-        poseStack.scale(0.32F, 0.32F, 0.32F);
-        poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
-        Minecraft.getInstance().getEntityRenderDispatcher().render(entity, 0.0D, 0.0D, 0.0D, 0.0F, partialTick, poseStack, buffer, packedLight);
+        double y = 1.35D + Math.min(0.55D, entity == null ? 0.0D : entity.getBbHeight() * 0.18D);
+        poseStack.translate(0.5D, y, 0.5D);
+        poseStack.mulPose(minecraft.getEntityRenderDispatcher().cameraOrientation());
+        poseStack.scale(0.018F, -0.018F, 0.018F);
+
+        if (expanded) renderExpandedNametag(stored, rows, poseStack, buffer, minecraft);
+        else renderCompactColumns(stored, rows, poseStack, buffer, minecraft);
+
         poseStack.popPose();
     }
+
+    private static void renderExpandedNametag(StoredMob stored, List<LookRow> rows, PoseStack poseStack, MultiBufferSource buffer, Minecraft minecraft) {
+        Font font = minecraft.font;
+        int columnCount = Math.min(EXPANDED_COLUMNS, Math.max(1, rows.size()));
+        int rowCount = rowsFor(rows.size(), columnCount);
+        int cellWidth = 72;
+        for (LookRow row : rows) cellWidth = Math.max(cellWidth, rowWidth(font, row, true) + 8);
+        int width = Math.max(font.width(mobLabel(stored)) + 8, columnCount * cellWidth);
+        int height = 12 + rowCount * 13;
+        int left = -width / 2;
+        int top = -height / 2;
+        int gridLeft = left + (width - columnCount * cellWidth) / 2;
+
+        String title = mobLabel(stored);
+        drawLookText(font, title, -font.width(title) / 2.0F, top + 2, TEXT_WHITE, poseStack, buffer);
+
+        int gridTop = top + 15;
+        for (int i = 0; i < rows.size(); i++) {
+            LookRow row = rows.get(i);
+            int column = i % columnCount;
+            int gridRow = i / columnCount;
+            int cellLeft = gridLeft + column * cellWidth;
+            int rowY = gridTop + gridRow * 13;
+            if (!row.icon().isEmpty()) renderLookItem(row.icon(), cellLeft + 1, rowY - 3, poseStack, buffer, minecraft);
+            int textX = cellLeft + 16;
+            drawLookText(font, row.label(), textX, rowY, row.labelColor(), poseStack, buffer);
+            if (!row.value().isBlank()) {
+                int valueWidth = font.width(row.value());
+                drawLookText(font, row.value(), cellLeft + cellWidth - valueWidth - 4, rowY, row.valueColor(), poseStack, buffer);
+            }
+        }
+    }
+
+    private static void renderCompactColumns(StoredMob stored, List<LookRow> rows, PoseStack poseStack, MultiBufferSource buffer, Minecraft minecraft) {
+        Font font = minecraft.font;
+        int columnCount = Math.min(COMPACT_COLUMNS, Math.max(1, rows.size()));
+        int rowCount = rowsFor(rows.size(), columnCount);
+        String title = "x" + stored.count;
+        int columnWidth = MIN_COMPACT_COLUMN_WIDTH;
+        for (LookRow row : rows) columnWidth = Math.max(columnWidth, font.width(compactValue(row)) + 8);
+        int width = Math.max(font.width(title) + 8, columnCount * columnWidth);
+        int height = 12 + rowCount * 28;
+        int left = -width / 2;
+        int top = -height / 2;
+        int gridLeft = left + (width - columnCount * columnWidth) / 2;
+
+        drawLookText(font, title, -font.width(title) / 2.0F, top, TEXT_WHITE, poseStack, buffer);
+
+        int gridTop = top + 13;
+        for (int i = 0; i < rows.size(); i++) {
+            LookRow row = rows.get(i);
+            int column = i % columnCount;
+            int gridRow = i / columnCount;
+            int columnLeft = gridLeft + column * columnWidth;
+            int centerX = columnLeft + columnWidth / 2;
+            int rowTop = gridTop + gridRow * 28;
+            if (!row.icon().isEmpty()) renderLookItem(row.icon(), centerX - 8, rowTop, poseStack, buffer, minecraft);
+            String value = compactValue(row);
+            drawLookText(font, value, centerX - font.width(value) / 2.0F, rowTop + 15, row.valueColor(), poseStack, buffer);
+        }
+    }
+
+    private static int rowsFor(int itemCount, int columnCount) {
+        return (itemCount + columnCount - 1) / columnCount;
+    }
+
+    private static String compactValue(LookRow row) {
+        return row.value().isBlank() ? row.label() : row.value();
+    }
+
+    private static void drawLookText(Font font, String text, float x, float y, int color, PoseStack poseStack, MultiBufferSource buffer) {
+        font.drawInBatch(text, x, y, color, false, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, NO_TEXT_BACKGROUND, LightTexture.FULL_BRIGHT);
+    }
+
+    private static void renderLookItem(ItemStack stack, int x, int y, PoseStack poseStack, MultiBufferSource buffer, Minecraft minecraft) {
+        try {
+            BakedModel model = minecraft.getItemRenderer().getModel(stack, minecraft.level, minecraft.player, 0);
+            if (!model.isGui3d()) {
+                renderFlatSpriteIcon(model.getParticleIcon(), x, y, poseStack, buffer);
+                return;
+            }
+        } catch (Throwable ignored) {
+            // Fall through to the normal renderer when model lookup is not available.
+        }
+
+        poseStack.pushPose();
+        poseStack.translate(x + 8.0D, y + 8.0D, 0.0D);
+        poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
+        poseStack.scale(10.0F, 10.0F, 10.0F);
+        minecraft.getItemRenderer().renderStatic(stack, ItemDisplayContext.GUI, LightTexture.FULL_BRIGHT, net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY, poseStack, buffer, minecraft.level, 0);
+        poseStack.popPose();
+    }
+
+    private static void renderFlatSpriteIcon(TextureAtlasSprite sprite, int x, int y, PoseStack poseStack, MultiBufferSource buffer) {
+        poseStack.pushPose();
+        poseStack.translate(x, y, 0.0D);
+        Matrix4f matrix = poseStack.last().pose();
+        VertexConsumer consumer = buffer.getBuffer(RenderType.text(sprite.atlasLocation()));
+        vertex(consumer, matrix, 0, 0, sprite.getU0(), sprite.getV0());
+        vertex(consumer, matrix, 0, 16, sprite.getU0(), sprite.getV1());
+        vertex(consumer, matrix, 16, 16, sprite.getU1(), sprite.getV1());
+        vertex(consumer, matrix, 16, 0, sprite.getU1(), sprite.getV0());
+        poseStack.popPose();
+    }
+
+    private static void vertex(VertexConsumer consumer, Matrix4f matrix, float x, float y, float u, float v) {
+        consumer.addVertex(matrix, x, y, 0.0F).setColor(255, 255, 255, 255).setUv(u, v).setLight(LightTexture.FULL_BRIGHT);
+    }
+
+    private static List<LookRow> compactRows(StoredMob stored, long now) {
+        List<LookRow> rows = new ArrayList<>();
+        boolean usesPixelmonDropHarvest = false;
+        for (InteractionDefinition definition : stored.interactionProfile.definitions()) {
+            if (isPixelmonDropHarvest(definition)) {
+                usesPixelmonDropHarvest = true;
+                rows.addAll(pixelmonDropRows(stored, now));
+                continue;
+            }
+            LookRow row = compactRow(stored, definition, now);
+            if (row != null) rows.add(row);
+        }
+        if (!usesPixelmonDropHarvest) for (DropRule rule : stored.dropProfile.drops()) rows.add(new LookRow(new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId())), "Drop", formatChance(rule.chance()), TEXT_WHITE, TEXT_YELLOW));
+        if (rows.isEmpty()) {
+            if (hasNativePixelmonDrops(stored)) rows.add(new LookRow(new ItemStack(Items.CHEST), "Pixelmon Drops", "Native", TEXT_WHITE, TEXT_GREEN));
+            else rows.add(new LookRow(new ItemStack(Items.BARRIER), "No Drops", "", TEXT_GRAY, TEXT_GRAY));
+        }
+        return rows;
+    }
+
+    private static LookRow compactRow(StoredMob stored, InteractionDefinition definition, long now) {
+        String method = definition.methodId().toString();
+        if (method.equals(MobFarmBlockMod.id("breed").toString())) return new LookRow(breedIcon(definition), "Breed", "", TEXT_GREEN, TEXT_GREEN);
+        if (method.equals(MobFarmBlockMod.id("milk").toString())) return new LookRow(new ItemStack(Items.MILK_BUCKET), "Milk", "", TEXT_WHITE, TEXT_WHITE);
+        if (method.equals(MobFarmBlockMod.id("shear").toString())) return new LookRow(shearIcon(stored, definition), "Wool", readyValue(stored, definition.methodId(), now), TEXT_WHITE, readyColor(stored, definition.methodId(), now));
+        if (method.equals(MobFarmBlockMod.id("egg").toString())) return new LookRow(new ItemStack(Items.EGG), "Egg", readyValue(stored, definition.methodId(), now), TEXT_WHITE, readyColor(stored, definition.methodId(), now));
+        if (method.equals(MobFarmBlockMod.id("output_item").toString()) || method.equals(MobFarmBlockMod.id("harvest").toString())) return definition.outputItem().map(id -> new LookRow(new ItemStack(BuiltInRegistries.ITEM.get(id)), "Drop", readyValue(stored, definition.methodId(), now), TEXT_WHITE, readyColor(stored, definition.methodId(), now))).orElse(null);
+        return null;
+    }
+
+    private static List<LookRow> expandedRows(StoredMob stored, long now) {
+        List<LookRow> rows = new ArrayList<>();
+        boolean usesPixelmonDropHarvest = false;
+        for (InteractionDefinition definition : stored.interactionProfile.definitions()) {
+            if (isPixelmonDropHarvest(definition)) {
+                usesPixelmonDropHarvest = true;
+                rows.addAll(pixelmonExpandedDropRows(stored, now));
+                continue;
+            }
+            LookRow row = expandedRow(stored, definition, now);
+            if (row != null) rows.add(row);
+        }
+        if (!usesPixelmonDropHarvest) {
+            for (DropRule rule : stored.dropProfile.drops()) {
+                ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId()));
+                rows.add(new LookRow(stack, itemLabel(stack, rule.itemId()), dropDetail(rule), TEXT_WHITE, TEXT_YELLOW));
+            }
+        }
+        if (rows.isEmpty()) {
+            if (hasNativePixelmonDrops(stored)) rows.add(new LookRow(new ItemStack(Items.CHEST), "Native Drops", "Pixelmon UI", TEXT_WHITE, TEXT_GREEN));
+            else rows.add(new LookRow(new ItemStack(Items.BARRIER), "No Drops", "", TEXT_GRAY, TEXT_GRAY));
+        }
+        return rows;
+    }
+
+    private static LookRow expandedRow(StoredMob stored, InteractionDefinition definition, long now) {
+        String method = definition.methodId().toString();
+        if (method.equals(MobFarmBlockMod.id("breed").toString()) || method.equals(MobFarmBlockMod.id("milk").toString())) {
+            return compactRow(stored, definition, now);
+        }
+        if (method.equals(MobFarmBlockMod.id("shear").toString())) {
+            ItemStack stack = shearIcon(stored, definition);
+            ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
+            return new LookRow(stack, "Wool", timedDropDetail(stored, definition, itemId, now), TEXT_WHITE, readyColor(stored, definition.methodId(), now));
+        }
+        if (method.equals(MobFarmBlockMod.id("egg").toString())) {
+            return new LookRow(new ItemStack(Items.EGG), "Egg", timedDropDetail(stored, definition, BuiltInRegistries.ITEM.getKey(Items.EGG), now), TEXT_WHITE, readyColor(stored, definition.methodId(), now));
+        }
+        if (method.equals(MobFarmBlockMod.id("output_item").toString()) || method.equals(MobFarmBlockMod.id("harvest").toString())) {
+            return definition.outputItem().map(id -> {
+                ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(id));
+                return new LookRow(stack, itemLabel(stack, id), timedDropDetail(stored, definition, id, now), TEXT_WHITE, readyColor(stored, definition.methodId(), now));
+            }).orElse(null);
+        }
+        return compactRow(stored, definition, now);
+    }
+
+    private static boolean isPixelmonDropHarvest(InteractionDefinition definition) {
+        return definition.methodId().equals(MobFarmBlockMod.id("pixelmon_drops"));
+    }
+
+    private static List<LookRow> pixelmonDropRows(StoredMob stored, long now) {
+        List<LookRow> rows = new ArrayList<>();
+        String value = readyValue(stored, MobFarmBlockMod.id("pixelmon_drops"), now);
+        int color = readyColor(stored, MobFarmBlockMod.id("pixelmon_drops"), now);
+        if (stored.dropProfile.drops().isEmpty()) {
+            rows.add(new LookRow(new ItemStack(Items.CHEST), "Pixelmon Drops", value, TEXT_WHITE, color));
+            return rows;
+        }
+        for (DropRule rule : stored.dropProfile.drops()) {
+            ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId()));
+            rows.add(new LookRow(stack, itemLabel(stack, rule.itemId()), formatChance(rule.chance()), TEXT_WHITE, color));
+        }
+        return rows;
+    }
+
+    private static List<LookRow> pixelmonExpandedDropRows(StoredMob stored, long now) {
+        List<LookRow> rows = new ArrayList<>();
+        String ready = readyValue(stored, MobFarmBlockMod.id("pixelmon_drops"), now);
+        int color = readyColor(stored, MobFarmBlockMod.id("pixelmon_drops"), now);
+        if (stored.dropProfile.drops().isEmpty()) {
+            rows.add(new LookRow(new ItemStack(Items.CHEST), "Pixelmon Drops", ready, TEXT_WHITE, color));
+            return rows;
+        }
+        for (DropRule rule : stored.dropProfile.drops()) {
+            ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(rule.itemId()));
+            rows.add(new LookRow(stack, itemLabel(stack, rule.itemId()), dropDetail(rule) + " " + ready, TEXT_WHITE, color));
+        }
+        return rows;
+    }
+
+    private static String timedDropDetail(StoredMob stored, InteractionDefinition definition, ResourceLocation itemId, long now) {
+        DropRule rule = findDropRule(stored, itemId).orElse(null);
+        int min = rule == null ? definition.minCount() : rule.minCount();
+        int max = rule == null ? definition.maxCount() : rule.maxCount();
+        double chance = rule == null ? 1.0D : rule.chance();
+        return formatCountRange(min, max) + " " + formatChance(chance) + " " + readyValue(stored, definition.methodId(), now);
+    }
+
+    private static Optional<DropRule> findDropRule(StoredMob stored, ResourceLocation itemId) {
+        if (stored == null || stored.dropProfile == null || itemId == null) return Optional.empty();
+        for (DropRule rule : stored.dropProfile.drops()) {
+            if (rule != null && itemId.equals(rule.itemId())) return Optional.of(rule);
+        }
+        return Optional.empty();
+    }
+
+    private static String dropDetail(DropRule rule) {
+        return formatCountRange(rule.minCount(), rule.maxCount()) + " " + formatChance(rule.chance());
+    }
+
+    private static String formatCountRange(int minCount, int maxCount) {
+        int min = Math.max(0, minCount);
+        int max = Math.max(min, maxCount);
+        return min == max ? Integer.toString(min) : min + "-" + max;
+    }
+
+    private static boolean hasNativePixelmonDrops(StoredMob stored) {
+        return PixelmonEntityRenderCache.isPixelmonStored(stored) && stored.dropProfile.drops().isEmpty() && stored.dropProfileSource != null && stored.dropProfileSource.startsWith("pixelmon:");
+    }
+
+    private static ItemStack breedIcon(InteractionDefinition definition) {
+        if (definition.item().isPresent()) return new ItemStack(BuiltInRegistries.ITEM.get(definition.item().get()));
+        if (definition.itemTag().isPresent()) {
+            String tag = definition.itemTag().get().toString();
+            if ("mob_farm_block:chicken_breeding_items".equals(tag)) return new ItemStack(Items.WHEAT_SEEDS);
+            if ("mob_farm_block:pig_breeding_items".equals(tag)) return new ItemStack(Items.CARROT);
+        }
+        return new ItemStack(Items.WHEAT);
+    }
+
+    private static ItemStack shearIcon(StoredMob stored, InteractionDefinition definition) {
+        if (definition.outputItem().isPresent()) return new ItemStack(BuiltInRegistries.ITEM.get(definition.outputItem().get()));
+        DyeColor color = DyeColor.byName(stored.state.getString("sheepColor"), DyeColor.WHITE);
+        return new ItemStack(switch (color) {
+            case BLACK -> Items.BLACK_WOOL;
+            case BLUE -> Items.BLUE_WOOL;
+            case BROWN -> Items.BROWN_WOOL;
+            case CYAN -> Items.CYAN_WOOL;
+            case GRAY -> Items.GRAY_WOOL;
+            case GREEN -> Items.GREEN_WOOL;
+            case LIGHT_BLUE -> Items.LIGHT_BLUE_WOOL;
+            case LIGHT_GRAY -> Items.LIGHT_GRAY_WOOL;
+            case LIME -> Items.LIME_WOOL;
+            case MAGENTA -> Items.MAGENTA_WOOL;
+            case ORANGE -> Items.ORANGE_WOOL;
+            case PINK -> Items.PINK_WOOL;
+            case PURPLE -> Items.PURPLE_WOOL;
+            case RED -> Items.RED_WOOL;
+            case WHITE -> Items.WHITE_WOOL;
+            case YELLOW -> Items.YELLOW_WOOL;
+        });
+    }
+
+    private static String readyValue(StoredMob stored, ResourceLocation action, long now) {
+        long readyAt = stored.readyAtTicks.getOrDefault(action, 0L);
+        if (now >= readyAt) return "Ready";
+        long seconds = Math.max(1L, (readyAt - now + 19L) / 20L);
+        return seconds + "s";
+    }
+    private static int readyColor(StoredMob stored, ResourceLocation action, long now) { return now >= stored.readyAtTicks.getOrDefault(action, 0L) ? TEXT_GREEN : TEXT_YELLOW; }
+    private static String formatChance(double chance) { return Math.round(chance * 100.0D) + "%"; }
+    private static int rowWidth(Font font, LookRow row, boolean showValue) { return 16 + font.width(row.label()) + (showValue && !row.value().isBlank() ? 6 + font.width(row.value()) : 0); }
+    private static String mobLabel(StoredMob stored) { return MobDisplayNames.mobName(stored); }
+    private static String itemLabel(ItemStack stack, ResourceLocation fallbackId) {
+        String label = stack.getHoverName().getString();
+        return label == null || label.isBlank() ? MobDisplayNames.prettyName(fallbackId.getPath()) : label;
+    }
+    private record PixelmonPenCentering(double xOffset, double zOffset, double xCenter, double zCenter, double visualLength, double elongatedDepthOffset) {
+        private static final PixelmonPenCentering EMPTY = new PixelmonPenCentering(0.0D, 0.0D, 0.0D, 0.0D, 0.0D, 0.0D);
+    }
+    private record LookRow(ItemStack icon, String label, String value, int labelColor, int valueColor) {}
 }

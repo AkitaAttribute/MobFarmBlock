@@ -1,1 +1,8 @@
-{"variants":{"":{"model":"mob_farm_block:block/mob_farm_block"}}}
+{
+  "variants": {
+    "facing=north": { "model": "mob_farm_block:block/mob_farm_block" },
+    "facing=east": { "model": "mob_farm_block:block/mob_farm_block", "y": 90 },
+    "facing=south": { "model": "mob_farm_block:block/mob_farm_block", "y": 180 },
+    "facing=west": { "model": "mob_farm_block:block/mob_farm_block", "y": 270 }
+  }
+}

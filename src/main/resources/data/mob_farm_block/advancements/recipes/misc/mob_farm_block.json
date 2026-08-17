@@ -1,0 +1,44 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_any_fence": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "items": "#mob_farm_block:any_fence"
+          }
+        ]
+      }
+    },
+    "has_smooth_stone_slab": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "items": "minecraft:smooth_stone_slab"
+          }
+        ]
+      }
+    },
+    "has_the_recipe": {
+      "trigger": "minecraft:recipe_unlocked",
+      "conditions": {
+        "recipe": "mob_farm_block:mob_farm_block"
+      }
+    }
+  },
+  "requirements": [
+    [
+      "has_any_fence",
+      "has_smooth_stone_slab",
+      "has_the_recipe"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "mob_farm_block:mob_farm_block"
+    ]
+  },
+  "sends_telemetry_event": false
+}

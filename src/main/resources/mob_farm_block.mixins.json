@@ -1,0 +1,19 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "com.akitaattribute.mobfarmblock.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "PixelmonDropItemQueryListMixin",
+    "PixelmonLookUiRowsMixin",
+    "PixelmonPenCenteringMixin",
+    "PixelmonPenRenderHeightMixin",
+    "PixelmonPenSmallTargetMixin",
+    "PixelmonPenIdleAnimationMixin",
+    "PixelmonRenderPreparationMixin",
+    "PixelmonRenderReflectionCacheMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

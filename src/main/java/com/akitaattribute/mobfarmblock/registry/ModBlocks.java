@@ -3,9 +3,9 @@ package com.akitaattribute.mobfarmblock.registry;
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.block.MobFarmBlock;
 import com.akitaattribute.mobfarmblock.block.MobFarmBlockEntity;
+import com.akitaattribute.mobfarmblock.item.MobFarmBlockItem;
 
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -20,12 +20,12 @@ public final class ModBlocks {
 
     public static final DeferredHolder<Block, MobFarmBlock> MOB_FARM_BLOCK = BLOCKS.register(
             "mob_farm_block",
-            () -> new MobFarmBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.BEDROCK).strength(5.0F, 6.0F))
+            () -> new MobFarmBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.DIRT).strength(0.5F, 0.5F))
     );
 
-    public static final DeferredHolder<Item, BlockItem> MOB_FARM_BLOCK_ITEM = ModItems.ITEMS.register(
+    public static final DeferredHolder<Item, MobFarmBlockItem> MOB_FARM_BLOCK_ITEM = ModItems.ITEMS.register(
             "mob_farm_block",
-            () -> new BlockItem(MOB_FARM_BLOCK.get(), new Item.Properties())
+            () -> new MobFarmBlockItem(MOB_FARM_BLOCK.get(), new Item.Properties())
     );
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<MobFarmBlockEntity>> MOB_FARM_BLOCK_ENTITY = BLOCK_ENTITY_TYPES.register(

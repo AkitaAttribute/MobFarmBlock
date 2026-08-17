@@ -7,7 +7,9 @@ import java.util.Optional;
 
 import com.akitaattribute.mobfarmblock.MobFarmBlockMod;
 import com.akitaattribute.mobfarmblock.integration.CobblemonIntegration;
+import com.akitaattribute.mobfarmblock.integration.PixelmonDropFallback;
 import com.akitaattribute.mobfarmblock.integration.PixelmonIntegration;
+import com.akitaattribute.mobfarmblock.integration.PixelmonRenderSnapshotFactory;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
@@ -24,14 +26,41 @@ public final class MobProfileFactory {
         MobKind kind = detectKind(entity, mobId);
         DisplaySnapshot display = resolveDisplay(entity);
         ResourceLocation species = CobblemonIntegration.getSpeciesId(entity).or(() -> PixelmonIntegration.getSpeciesId(entity)).orElse(null);
-        DropProfile drops = CobblemonIntegration.resolveBattleDropProfile(entity).or(() -> PixelmonIntegration.resolveBattleDropProfile(entity)).orElse(null);
-        String source = drops != null ? (kind == MobKind.COBBLEMON ? "cobblemon" : kind == MobKind.PIXELMON ? "pixelmon" : "integration") : "vanilla";
-        if (drops == null) {
-            drops = DropProfileRegistry.get(mobId);
-            if (drops.drops().isEmpty() && drops.xp().maxXp() <= 0) source = "empty";
+        CobblemonRenderSnapshot cobblemonRenderSnapshot = null;
+        PixelmonRenderSnapshot pixelmonRenderSnapshot = null;
+        if (kind == MobKind.COBBLEMON && species != null) {
+            String variant = CobblemonIntegration.getDisplayKey(entity).orElse(species.toString());
+            display = new DisplaySnapshot(display.entityTypeId(), display.textureId(), variant, display.colorKey(), display.baby(), display.scale());
+            cobblemonRenderSnapshot = CobblemonIntegration.getRenderSnapshot(entity).orElse(null);
+        } else if (kind == MobKind.PIXELMON && species != null) {
+            String variant = PixelmonIntegration.getDisplayKey(entity).orElse(species.toString());
+            display = new DisplaySnapshot(display.entityTypeId(), display.textureId(), variant, display.colorKey(), display.baby(), display.scale());
+            pixelmonRenderSnapshot = PixelmonRenderSnapshotFactory.capture(entity).orElse(null);
+        }
+        DropProfile drops = null;
+        String source = "vanilla";
+        if (kind == MobKind.COBBLEMON) {
+            Optional<DropProfile> cobblemonDrops = CobblemonIntegration.resolveBattleDropProfile(entity);
+            drops = cobblemonDrops.orElse(DropProfile.EMPTY);
+            source = drops.drops().isEmpty() ? "cobblemon:unresolved_or_empty_drop_table" : "cobblemon:drop_table_reflection";
+        } else if (kind == MobKind.PIXELMON) {
+            drops = PixelmonIntegration.resolveBattleDropProfile(entity)
+                    .filter(profile -> !profile.drops().isEmpty() || profile.xp().maxXp() > 0)
+                    .or(() -> PixelmonDropFallback.resolve(entity))
+                    .orElse(DropProfile.EMPTY);
+            if (drops.drops().isEmpty() && drops.xp().maxXp() <= 0) source = "pixelmon:unresolved_drop_table";
+            else if (drops.drops().isEmpty()) source = "pixelmon:xp_only_unresolved_drops";
+            else source = "pixelmon:drop_table_reflection";
+        } else {
+            drops = PixelmonIntegration.resolveBattleDropProfile(entity).orElse(null);
+            source = drops != null ? "integration" : "vanilla";
+            if (drops == null) {
+                drops = DropProfileRegistry.get(mobId);
+                if (drops.drops().isEmpty() && drops.xp().maxXp() <= 0) source = "empty";
+            }
         }
         return new StoredMob(mobId, kind, 1, display, initialState(mobId, display), drops,
-                builtInInteractions(mobId), new HashMap<>(), species, source);
+                builtInInteractions(mobId), new HashMap<>(), species, source, cobblemonRenderSnapshot, pixelmonRenderSnapshot);
     }
 
     public static StoredMob vanilla(ResourceLocation mobId, DisplaySnapshot display, long count) {
@@ -46,17 +75,35 @@ public final class MobProfileFactory {
 
     public static InteractionProfile builtInInteractions(ResourceLocation mobId) {
         String id = mobId.toString();
-        if ("minecraft:cow".equals(id) || "minecraft:mooshroom".equals(id)) return new InteractionProfile(List.of(breedItem("minecraft:wheat"), methodItem(MobFarmBlockMod.id("milk"), "minecraft:bucket", "minecraft:milk_bucket")));
-        if ("minecraft:sheep".equals(id)) return new InteractionProfile(List.of(breedItem("minecraft:wheat"), method(MobFarmBlockMod.id("shear")), method(MobFarmBlockMod.id("dye"))));
+        if ("minecraft:cow".equals(id) || "minecraft:goat".equals(id)) return new InteractionProfile(List.of(breedItem("minecraft:wheat"), containerOutput(MobFarmBlockMod.id("milk"), "minecraft:bucket", "minecraft:milk_bucket")));
+        if ("minecraft:mooshroom".equals(id)) return new InteractionProfile(List.of(breedItem("minecraft:wheat"), containerOutput(MobFarmBlockMod.id("milk"), "minecraft:bucket", "minecraft:milk_bucket"), containerOutput(MobFarmBlockMod.id("output_item"), "minecraft:bowl", "minecraft:mushroom_stew"), shearOutput("minecraft:red_mushroom", 5, 5, 6000L)));
+        if ("minecraft:sheep".equals(id)) return new InteractionProfile(List.of(breedItem("minecraft:wheat"), shearMethod(), method(MobFarmBlockMod.id("dye"))));
         if ("minecraft:chicken".equals(id)) return new InteractionProfile(List.of(breedTag("mob_farm_block:chicken_breeding_items"), method(MobFarmBlockMod.id("egg"))));
         if ("minecraft:pig".equals(id)) return new InteractionProfile(List.of(breedTag("mob_farm_block:pig_breeding_items")));
+        if ("minecraft:turtle".equals(id)) return new InteractionProfile(List.of(breedItem("minecraft:seagrass"), harvestTool("minecraft:bucket", "minecraft:turtle_egg", 6000L)));
+        if ("minecraft:bee".equals(id)) return new InteractionProfile(List.of(breedItem("minecraft:poppy"), beeHarvest("minecraft:glass_bottle", "minecraft:honey_bottle", 1, 1, true, false), beeHarvest("minecraft:shears", "minecraft:honeycomb", 3, 3, false, true)));
+        if ("pixelmon:pixelmon".equals(id)) return new InteractionProfile(List.of(pixelmonDrops()));
         return InteractionProfile.EMPTY;
     }
 
     private static InteractionDefinition breedItem(String item) { return new InteractionDefinition(MobFarmBlockMod.id("breed"), Optional.of(ResourceLocation.parse(item)), Optional.empty(), Optional.empty(), 6000L, 1, 1, Optional.empty(), Map.of()); }
     private static InteractionDefinition breedTag(String tag) { return new InteractionDefinition(MobFarmBlockMod.id("breed"), Optional.empty(), Optional.of(ResourceLocation.parse(tag)), Optional.empty(), 6000L, 1, 1, Optional.empty(), Map.of()); }
     private static InteractionDefinition method(ResourceLocation method) { return new InteractionDefinition(method, Optional.empty(), Optional.empty(), Optional.empty(), 0L, 1, 1, Optional.empty(), Map.of()); }
-    private static InteractionDefinition methodItem(ResourceLocation method, String item, String output) { return new InteractionDefinition(method, Optional.of(ResourceLocation.parse(item)), Optional.empty(), Optional.of(ResourceLocation.parse(output)), 0L, 1, 1, Optional.empty(), Map.of()); }
+    private static InteractionDefinition shearMethod() { return new InteractionDefinition(MobFarmBlockMod.id("shear"), Optional.empty(), Optional.empty(), Optional.empty(), 6000L, 1, 3, Optional.empty(), Map.of()); }
+    private static InteractionDefinition shearOutput(String output, int min, int max, long cooldown) { return new InteractionDefinition(MobFarmBlockMod.id("shear"), Optional.empty(), Optional.empty(), Optional.of(ResourceLocation.parse(output)), cooldown, min, max, Optional.empty(), Map.of()); }
+    private static InteractionDefinition harvestTool(String item, String output, long cooldown) { return new InteractionDefinition(MobFarmBlockMod.id("harvest"), Optional.of(ResourceLocation.parse(item)), Optional.empty(), Optional.of(ResourceLocation.parse(output)), cooldown, 1, 1, Optional.empty(), Map.of()); }
+    private static InteractionDefinition pixelmonDrops() { return new InteractionDefinition(MobFarmBlockMod.id("pixelmon_drops"), Optional.empty(), Optional.empty(), Optional.empty(), 6000L, 1, 1, Optional.empty(), Map.of()); }
+    private static InteractionDefinition containerOutput(ResourceLocation method, String item, String output) { return new InteractionDefinition(method, Optional.of(ResourceLocation.parse(item)), Optional.empty(), Optional.of(ResourceLocation.parse(output)), 0L, 1, 1, Optional.empty(), Map.of("fillContainer", "true")); }
+    private static InteractionDefinition beeHarvest(String item, String output, int min, int max, boolean fillContainer, boolean damageTool) {
+        return new InteractionDefinition(MobFarmBlockMod.id("harvest"), Optional.of(ResourceLocation.parse(item)), Optional.empty(), Optional.of(ResourceLocation.parse(output)), 3600L, min, max, Optional.empty(), Map.of(
+                "baseCooldownTicks", "3600",
+                "cooldownReductionPerMobTicks", "200",
+                "cooldownReductionFreeCount", "1",
+                "scaleWithCount", "false",
+                "fillContainer", Boolean.toString(fillContainer),
+                "damageTool", Boolean.toString(damageTool)
+        ));
+    }
 
     private static MobKind detectKind(LivingEntity entity, ResourceLocation mobId) {
         if (CobblemonIntegration.isPokemonEntity(entity)) return MobKind.COBBLEMON;
@@ -69,6 +116,7 @@ public final class MobProfileFactory {
     private static CompoundTag initialState(ResourceLocation mobId, DisplaySnapshot display) {
         CompoundTag state = new CompoundTag();
         if ("minecraft:sheep".equals(mobId.toString())) { state.putString("sheepColor", display.colorKey().isBlank() ? "white" : display.colorKey()); state.putLong("nextWoolReadyAt", 0L); }
+        if (!display.variantKey().isBlank()) state.putString("displayVariantKey", display.variantKey());
         return state;
     }
 
